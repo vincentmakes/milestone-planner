@@ -83,6 +83,7 @@ app/
 │   ├── session.py           # Session management
 │   ├── site_access.py       # Visible sites: visible_site_ids, ensure_site_visible, ensure_site_access, …
 │   ├── sso.py               # Microsoft Entra SSO + tenant client-secret encryption helpers
+│   ├── sso_test.py          # Entra diagnostic shared by the org test and POST /auth/sso/test
 │   ├── tenant_data_migrations.py # run_data_migrations(): FK rewrites + orphan cleanup
 │   ├── tenant_manager.py    # Per-tenant connection pool management + auto-migrations
 │   └── tenant_provisioner.py # DB/user creation for new tenants

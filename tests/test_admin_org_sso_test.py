@@ -46,9 +46,7 @@ def fake_client(*, discovery=None, token=None, error=None):
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
 
-    return patch(
-        "app.routers.admin_organizations.httpx.AsyncClient", return_value=client
-    ), client
+    return patch("app.services.sso_test.httpx.AsyncClient", return_value=client), client
 
 
 def entra_rejection(code: str) -> httpx.Response:
@@ -180,6 +178,28 @@ async def test_undecryptable_secret_is_reported_as_a_key_problem():
 
 
 @pytest.mark.asyncio
+async def test_no_stored_secret_is_reported_as_not_set():
+    result, client = await run_test(org_db(sso_config(client_secret_encrypted=None)), secret=None)
+
+    secret_check = check_named(result, "Client secret")
+    assert secret_check.status == "fail"
+    assert secret_check.message == "Not set."
+    client.get.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_decrypt_error_is_reported_as_a_key_problem():
+    patcher, client = fake_client()
+    with patcher, patch("app.routers.admin_organizations.decrypt", side_effect=ValueError("key")):
+        result = await run_organization_sso_test(
+            org_id="org-uuid", admin=MagicMock(email="admin@example.com"), db=org_db(sso_config())
+        )
+
+    assert "TENANT_ENCRYPTION_KEY" in check_named(result, "Client secret").message
+    client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_missing_configuration_is_reported_plainly():
     result, _ = await run_test(org_db(None))
 
@@ -218,7 +238,7 @@ def settings_with(**overrides):
     settings.proxy_verify_ssl = True
     for key, value in overrides.items():
         setattr(settings, key, value)
-    return patch("app.routers.admin_organizations.get_settings", return_value=settings)
+    return patch("app.services.sso_test.get_settings", return_value=settings)
 
 
 @pytest.mark.asyncio

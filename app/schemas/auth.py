@@ -2,6 +2,8 @@
 Pydantic schemas for Authentication.
 """
 
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.permissions import ADMIN_ROLE_KEY, ROLE_KEY_PATTERN
@@ -125,6 +127,22 @@ class SSOConfigUpdate(BaseModel):
     # A role key (custom roles included); the route checks it exists (400).
     # Never the admin role: an SSO sign-in never creates an administrator.
     default_role: str | None = Field(None, pattern=ROLE_KEY_PATTERN)
+
+    @field_validator("tenant_id", "client_id", "client_secret", "redirect_uri", mode="before")
+    @classmethod
+    def _strip_pasted_values(cls, value: Any) -> Any:
+        """
+        Trim values pasted from the Azure portal (a trailing newline rides along).
+
+        ``None`` keeps the stored value and an exact ``""`` clears it, as
+        before. A whitespace-only value becomes ``None`` — keep the stored one —
+        so Save agrees with ``POST /auth/sso/test``, which tests the stored
+        secret for a blank field: a green test of ``"  "`` must not be followed
+        by a save that clears the secret.
+        """
+        if not isinstance(value, str) or value == "":
+            return value
+        return value.strip() or None
 
     @field_validator("default_role")
     @classmethod

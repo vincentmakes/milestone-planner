@@ -82,6 +82,13 @@ GATES = [
     ("settings", "PUT", "/api/settings/instance_title", "settings.general", {"value": "X"}),
     ("settings", "PUT", "/api/settings/sso", "settings.sso", {"default_role": "user"}),
     ("auth", "GET", "/api/sso/config/full", "settings.sso", None),
+    (
+        "auth",
+        "POST",
+        "/api/auth/sso/test",
+        "settings.sso",
+        {"tenant_id": "t", "client_id": "c", "redirect_uri": "https://x/api/auth/sso/callback"},
+    ),
     ("health", "GET", "/api/ws-debug", "system.ws_debug", None),
     ("users", "GET", "/api/users", "users.view", None),
     ("users", "DELETE", "/api/users/7", "users.delete", None),

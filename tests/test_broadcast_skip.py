@@ -122,3 +122,8 @@ def test_rbac_patterns_do_not_shadow_neighbours():
 def test_no_todos_pattern_is_left():
     # Personal todos were removed in 2.0.0: no skip pattern names them.
     assert not any("todos" in pattern.pattern for pattern in SKIP_PATTERNS)
+
+
+def test_the_sso_test_route_never_broadcasts():
+    """POST /api/auth/sso/test only reads; ^/api/auth is skipped as a whole."""
+    assert _resolve_entity_type("/api/auth/sso/test") is None

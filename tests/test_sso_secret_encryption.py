@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.settings import SSOConfig
+from app.schemas.auth import SSOConfigUpdate
 from app.services.encryption import encrypt
 from app.services.sso import (
     SSOService,
@@ -111,6 +112,44 @@ def test_mask_secret():
     assert mask_secret(SECRET) == "****1234"
     assert mask_secret(None) is None
     assert mask_secret("") is None
+
+
+# ---------------------------------------------------------------------------
+# SSOConfigUpdate trims pasted values (and agrees with POST /auth/sso/test)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("field", ["tenant_id", "client_id", "client_secret", "redirect_uri"])
+@pytest.mark.parametrize(
+    ("submitted", "expected"),
+    [
+        (None, None),  # omitted: keep the stored value
+        ("", ""),  # exact empty string: clear it
+        ("  \n", None),  # whitespace only: keep the stored value
+        (" value\n", "value"),  # anything else: trimmed
+    ],
+    ids=["none-keeps", "empty-clears", "blank-keeps", "trimmed"],
+)
+def test_sso_update_trims_pasted_values(field, submitted, expected):
+    assert getattr(SSOConfigUpdate(**{field: submitted}), field) == expected
+
+
+@pytest.mark.asyncio
+async def test_a_blank_secret_on_save_keeps_the_stored_one(authed_client, mock_db_session):
+    """Test treats "  " as the stored secret; Save must not then clear it."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    stored = encrypt(SECRET)
+    row = sso_row(client_secret=stored)
+    mock_db_session.execute.return_value = returning(row)
+
+    resp = await client.put(
+        "/api/auth/sso/config", json={"client_secret": "   ", "tenant_id": " entra-tenant\n"}
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert row.client_secret == stored
+    assert row.tenant_id == "entra-tenant"
 
 
 # ---------------------------------------------------------------------------

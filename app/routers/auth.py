@@ -36,6 +36,7 @@ from app.schemas.auth import (
     UserSessionInfo,
     UserSiteInfo,
 )
+from app.schemas.sso import SSOTestRequest, SSOTestResponse
 from app.services.encryption import (
     PasswordTooLongError,
     dummy_verify_user_password,
@@ -56,6 +57,7 @@ from app.services.permissions import (
 from app.services.response_builders import get_is_resource
 from app.services.session import SessionService
 from app.services.sso import (
+    MASKED_SECRET_PREFIX,
     apply_secret_update,
     ensure_sso_default_role,
     mask_secret,
@@ -64,6 +66,7 @@ from app.services.sso import (
     tenant_sso_is_configured,
 )
 from app.services.sso_errors import parse_entra_token_error
+from app.services.sso_test import SecretSource, SecretState, run_entra_test
 
 logger = logging.getLogger(__name__)
 
@@ -968,6 +971,66 @@ async def sso_status(
         }
 
     return result
+
+
+@router.post("/auth/sso/test", response_model=SSOTestResponse)
+async def run_tenant_sso_test(
+    data: SSOTestRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("settings.sso")),
+):
+    """
+    Check the tenant SSO values entered in Settings → SSO against Microsoft.
+
+    Requires ``settings.sso``. Nothing is saved: the values in the body are
+    tested as given, except the client secret — a missing, blank or masked
+    (``****abcd``) one means the stored secret, the same rule the save routes
+    apply (``apply_secret_update``), so Test and Save agree. The stored secret
+    is only ever sent to Microsoft, never returned. 409 while organization SSO
+    is active (it overrides the tenant configuration); the diagnostic is
+    ``app.services.sso_test``, shared with the admin-portal organization test.
+    """
+    if await _active_org_sso(request, db, strict=True) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="SSO is managed by your organization",
+        )
+
+    submitted = data.client_secret
+    secret: str | None
+    secret_state: SecretState
+    secret_source: SecretSource
+    if submitted and not submitted.startswith(MASKED_SECRET_PREFIX):
+        secret, secret_state, secret_source = submitted, "ok", "entered"
+    else:
+        result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
+        config = result.scalar_one_or_none()
+        secret_source = "stored"
+        if config is None or not config.client_secret:
+            secret, secret_state = None, "missing"
+        else:
+            secret = (read_tenant_client_secret(config) or "").strip() or None
+            secret_state = "ok" if secret else "unreadable"
+
+    response = await run_entra_test(
+        tenant_id=data.tenant_id,
+        client_id=data.client_id,
+        secret=secret,
+        secret_state=secret_state,
+        redirect_uri=data.redirect_uri,
+        shared_callback=False,
+        secret_source=secret_source,
+        log_label="tenant",
+    )
+
+    logger.info(
+        "Tenant SSO test run by user %s (%s secret): credentials_ok=%s",
+        user.id,
+        secret_source,
+        response.credentials_ok,
+    )
+    return response
 
 
 @router.get("/auth/sso/login")

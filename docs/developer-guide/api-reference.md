@@ -41,6 +41,12 @@ The OAuth `state` is HMAC-signed and carries the workspace slug plus a nonce. `/
 
 Tenant SSO configuration (`GET /api/sso/config/full`, `PUT /api/sso/config`, `PUT /api/auth/sso/config`, `PUT /api/settings/sso`) never returns the client secret in clear — only `****` plus its last four characters. On write, an omitted secret or the masked value keeps the stored secret, any other value replaces it and `""` clears it. The secret is stored AES-256-GCM encrypted.
 
+```
+POST /api/auth/sso/test     → Tests the entered tenant SSO values against Microsoft (nothing is saved)
+```
+
+Requires `settings.sso`. Body: `tenant_id` (letters, digits, `.` and `-` only, ≤ 100), `client_id` (≤ 100), `redirect_uri` (≤ 500) and an optional `client_secret` (≤ 200); each value is trimmed. A missing, blank or masked (`****abcd`) secret tests the **stored** secret — the rule the write routes apply — any other value is tested as entered. While organization SSO is active the route answers `409` ("SSO is managed by your organization"; a failed organization lookup is `503`). It writes nothing and never returns the secret. The response is `{credentialsOk, summary, checks: [{name, status, message, code}]}` with `status` one of `pass` / `warn` / `fail` / `manual`: local checks of the four values (GUID shape, a Secret ID pasted as the secret, the redirect URI shape), the outbound proxy setup, then — only when no local check failed — Microsoft's OpenID discovery for the directory and a client-credentials token for the application, and a `manual` reminder to confirm the redirect URI is registered under the Web platform. `credentialsOk` means Microsoft accepted the client ID and secret, not that a user sign-in will work. Only a validated `AADSTS` code from Microsoft's answer reaches the response. The organization test in the admin portal (`POST /admin/organizations/{id}/sso/test`, saved values) runs the same diagnostic (`app/services/sso_test.py`).
+
 ### Logout
 
 ```

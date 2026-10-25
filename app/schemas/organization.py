@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.sso import SSOTestCheck, SSOTestResponse
+
 # ---------------------------------------------------------
 # Organization Schemas
 # ---------------------------------------------------------
@@ -103,33 +105,10 @@ class OrganizationSSOConfigCreate(BaseModel):
         return value.strip() or None
 
 
-class OrganizationSSOTestCheck(BaseModel):
-    """One check performed by the organization SSO diagnostic."""
-
-    name: str
-    status: str
-    """``pass`` | ``warn`` | ``fail`` | ``manual``."""
-    message: str
-    code: str | None = None
-    """A Microsoft ``AADSTS…`` code, when Entra supplied one."""
-
-
-class OrganizationSSOTestResponse(BaseModel):
-    """
-    Result of testing an organization's SSO configuration.
-
-    ``credentials_ok`` is deliberately not called ``sso_ok``: the probe signs in
-    as the application itself, which never involves a redirect URI, so it cannot
-    tell whether the redirect URI is registered under the right platform. That
-    check is reported as a ``manual`` row for a human to confirm.
-    """
-
-    credentials_ok: bool = Field(False, alias="credentialsOk")
-    summary: str
-    checks: list[OrganizationSSOTestCheck] = []
-
-    class Config:
-        populate_by_name = True
+# The diagnostic's schemas are shared with the tenant SSO test; the old names
+# stay for the admin-portal router.
+OrganizationSSOTestCheck = SSOTestCheck
+OrganizationSSOTestResponse = SSOTestResponse
 
 
 class OrganizationSSOConfigResponse(BaseModel):
