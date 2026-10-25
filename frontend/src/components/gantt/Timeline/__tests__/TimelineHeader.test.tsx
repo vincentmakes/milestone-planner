@@ -1,10 +1,13 @@
 /**
  * The header's day cells take the colour of their first company event
  * (`--event-color` on the background and the label) and name every event of
- * the cell in the label's title, the bank holiday first.
+ * the cell in the label's title, the bank holiday first. The label's text
+ * mixes that colour with the text colour, so a pale event stays legible.
  */
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { TimelineHeader } from '../TimelineHeader';
 import { generateTimelineCells, generateTimelineHeaders } from '../../utils';
 import type { ViewMode } from '@/types';
@@ -56,6 +59,15 @@ describe('TimelineHeader company events', () => {
     expect(bg.style.getPropertyValue('--event-color')).toBe('#a855f7');
     expect(label('2026-04-08').className).toContain('eventText');
     expect(label('2026-04-08').style.getPropertyValue('--event-color')).toBe('#a855f7');
+  });
+
+  it('mixes the label colour with the text colour so pale events stay legible', () => {
+    // jsdom applies no CSS module, so the rule is read from the stylesheet
+    const css = readFileSync(join(__dirname, '..', 'TimelineHeader.module.css'), 'utf8');
+    const rule = css.match(/\.secondaryCell\.eventText\s*\{([^}]*)\}/);
+    expect(rule?.[1]).toContain(
+      'color: color-mix(in srgb, var(--event-color, var(--accent-red)) 70%, var(--text-primary));'
+    );
   });
 
   it('sets no colour variable for an event without a colour', () => {

@@ -130,8 +130,10 @@
   color: var(--accent-orange);
 }
 
+/* The event colour pulled towards the text colour, so a pale event (a yellow)
+   still reads on the header background in both themes */
 .secondaryCell.eventText {
-  color: var(--event-color, var(--accent-red));
+  color: color-mix(in srgb, var(--event-color, var(--accent-red)) 70%, var(--text-primary));
 }
 
 .dayLabel {
