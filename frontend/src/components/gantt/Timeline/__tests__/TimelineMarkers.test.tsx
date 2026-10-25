@@ -5,6 +5,8 @@
  * closures named) and the click to edit, plus the DOM hygiene the drag hooks
  * rely on (no `data-date`, no class with "row" / "bar").
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { TimelineMarkers } from '../TimelineMarkers';
@@ -704,5 +706,32 @@ describe('TimelineMarkers — DOM the drag hooks read', () => {
       }
     }
     expect(document.querySelector('[data-date]')).toBeNull();
+  });
+});
+
+describe('TimelineMarkers — the count badge and the dot', () => {
+  /** The declarations of the first `.selector { … }` block of a stylesheet */
+  const rule = (file: string, selector: string) =>
+    readFileSync(file, 'utf8').match(new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+  const markers = join(__dirname, '..', 'TimelineMarkers.module.css');
+  const sidebar = join(__dirname, '..', '..', '..', 'layout', 'Sidebar', 'Navigation.module.css');
+  const prop = (body: string, name: string) => body.match(new RegExp(`(?:^|[;\\s])${name}:\\s*([^;]+);`))?.[1];
+
+  it("wears the sidebar count badge's colours: accent blue, on-accent text", () => {
+    const badge = rule(sidebar, 'countBadge');
+    expect(prop(badge, 'background')).toBe('var(--accent-blue)');
+    expect(prop(badge, 'color')).toBe('var(--text-on-accent)');
+    const count = rule(markers, 'pipCount');
+    expect(prop(count, 'background')).toBe(prop(badge, 'background'));
+    expect(prop(count, 'color')).toBe(prop(badge, 'color'));
+    expect(prop(rule(markers, 'pipDot'), 'background')).toBe(prop(badge, 'background'));
+  });
+
+  it('keeps the 10 px badge with its radius and 9 px type', () => {
+    const count = rule(markers, 'pipCount');
+    expect(prop(count, 'height')).toBe('10px');
+    expect(prop(count, 'min-width')).toBe('10px');
+    expect(prop(count, 'border-radius')).toBe('5px');
+    expect(prop(count, 'font-size')).toBe('9px');
   });
 });

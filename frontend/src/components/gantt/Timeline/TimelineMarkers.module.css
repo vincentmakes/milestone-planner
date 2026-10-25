@@ -36,7 +36,9 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 25%, transparent);
 }
 
-/* "+N" / count badge and the narrow-cell dot, at the cell's right edge */
+/* "+N" / count badge and the narrow-cell dot, at the cell's right edge, in
+   the sidebar count badge's colours (Navigation .countBadge): accent blue with
+   the on-accent text, so they read over a band at any zoom */
 .pip {
   position: absolute;
   top: 1px;
@@ -54,8 +56,8 @@
   line-height: 10px;
   font-weight: var(--font-weight-semibold);
   text-align: center;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+  background: var(--accent-blue);
+  color: var(--text-on-accent);
 }
 
 .pipDot {
@@ -63,7 +65,7 @@
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--accent-blue);
 }
 
 /* Hit cell: transparent, the strip's 12 px (the events row's height) */
