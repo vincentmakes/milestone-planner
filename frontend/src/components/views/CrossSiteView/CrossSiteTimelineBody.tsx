@@ -8,6 +8,7 @@ import { forwardRef, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
+import { TimelineMarkers } from '@/components/gantt/Timeline/TimelineMarkers';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { ViewMode } from '@/types';
 import type { CrossSiteRow } from './CrossSiteView';
@@ -31,6 +32,9 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
   }, ref) {
     
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+    const siteId = useAppStore((s) => s.currentSite?.id);
+    // Background tints are week/month only; the strip (TimelineMarkers) is
+    // drawn at every zoom
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
     
@@ -124,34 +128,10 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
             })}
           </div>
           
-          {/* Holiday and event tooltip overlay - sits above all content */}
-          {showHighlighting && (
-            <div className={styles.holidayTooltipOverlay}>
-              {cells.map((cell, index) => {
-                if (cell.isCompanyEvent) {
-                  return (
-                    <div
-                      key={`event-tooltip-${index}`}
-                      className={styles.eventTooltipZone}
-                      style={{ left: index * cellWidth, width: cellWidth }}
-                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
-                    />
-                  );
-                }
-                if (cell.isBankHoliday) {
-                  return (
-                    <div
-                      key={`holiday-tooltip-${index}`}
-                      className={styles.holidayTooltipZone}
-                      style={{ left: index * cellWidth, width: cellWidth }}
-                      data-tooltip={cell.bankHolidayName || 'Holiday'}
-                    />
-                  );
-                }
-                return null;
-              })}
-            </div>
-          )}
+          {/* Company event strip and its panel, at every zoom (the tints above
+              stay week/month only). Events are loaded for the current site
+              only, so the strip speaks for it */}
+          <TimelineMarkers cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
         </div>
       </div>
     );

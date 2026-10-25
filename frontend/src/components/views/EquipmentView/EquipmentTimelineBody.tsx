@@ -7,6 +7,7 @@
 import { forwardRef, useMemo } from 'react';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
+import { TimelineMarkers } from '@/components/gantt/Timeline/TimelineMarkers';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell } from '@/components/gantt/utils';
@@ -44,6 +45,9 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
   }, ref) {
     
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+    const siteId = useAppStore((s) => s.currentSite?.id);
+    // Background tints are week/month only; the strip (TimelineMarkers) is
+    // drawn at every zoom
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
     const renderWeekSeparators = showHighlighting && !showWeekends;
@@ -168,41 +172,9 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
             })}
           </div>
           
-          {/* Holiday and event tooltip layer - top strip only */}
-          {showHighlighting && (
-            <div className={styles.tooltipLayer}>
-              {cells.map((cell, index) => {
-                // Priority: bank holidays first, then company events
-                if (cell.isBankHoliday) {
-                  return (
-                    <div
-                      key={`tooltip-${index}`}
-                      className={`${styles.tooltipCell} ${styles.holiday}`}
-                      style={{ left: index * cellWidth, width: cellWidth }}
-                      data-tooltip={cell.bankHolidayName || 'Holiday'}
-                    />
-                  );
-                }
-                if (cell.isCompanyEvent) {
-                  return (
-                    <div
-                      key={`tooltip-${index}`}
-                      className={`${styles.tooltipCell} ${styles.event}`}
-                      style={{
-                        left: index * cellWidth,
-                        width: cellWidth,
-                        ...(cell.companyEventColor
-                          ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
-                          : {}),
-                      }}
-                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
-                    />
-                  );
-                }
-                return null;
-              })}
-            </div>
-          )}
+          {/* Company event strip and its panel, at every zoom (the tints above
+              stay week/month only) */}
+          <TimelineMarkers cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
         </div>
       </div>
     );

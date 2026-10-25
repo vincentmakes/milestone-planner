@@ -4,7 +4,7 @@
  * shared timeline with calendar highlighting, and today on open.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent, within } from '@testing-library/react';
 import { CrossSiteView } from '../CrossSiteView';
 import { CrossSiteTimelineBody } from '../CrossSiteTimelineBody';
 import type { CrossSiteRow } from '../CrossSiteView';
@@ -158,28 +158,62 @@ describe('CrossSiteTimelineBody', () => {
   );
   const rows: CrossSiteRow[] = [{ type: 'site', site: basel, isCurrentSite: false, projectCount: 0 }];
 
-  it('highlights weekends, holidays and events with tooltips in day views', () => {
+  const hitLabels = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[class*="markerLayer"] button[class*="markerBadge"]')).map(
+      (b) => b.getAttribute('aria-label') ?? ''
+    );
+
+  it('highlights weekends, holidays and events, with the event strip, in day views', () => {
     const { container } = render(
       <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="month" />
     );
     expect(container.querySelectorAll('[class*="weekend"]').length).toBeGreaterThan(0);
-    expect(container.querySelector('[data-tooltip="National Day"]')).not.toBeNull();
-    expect(container.querySelector('[data-tooltip="Audit"]')).not.toBeNull();
-    expect(container.querySelector('[data-tooltip="Site closed: Shutdown"]')).not.toBeNull();
+    const labels = hitLabels(container);
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/— Bank holiday National Day$/),
+        expect.stringMatching(/— 1 event: Audit$/),
+        expect.stringMatching(/— 1 event: Shutdown$/),
+      ])
+    );
     expect(container.querySelector('[class*="siteClosure"]')).not.toBeNull();
+    // The old CSS tooltip zones are gone
+    expect(container.querySelector('[data-tooltip]')).toBeNull();
   });
 
-  it('hides weekends when the instance does, and highlighting in coarse views', () => {
+  it('names the closure in the panel, for the current site', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'user' }) });
+    const { container } = render(
+      <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="month" />
+    );
+    const shutdown = Array.from(container.querySelectorAll('button[class*="markerBadge"]')).find((b) =>
+      /Shutdown$/.test(b.getAttribute('aria-label') ?? '')
+    )!;
+    fireEvent.click(shutdown);
+    expect(within(screen.getByRole('dialog')).getByText('Site closure')).toBeInTheDocument();
+  });
+
+  it('hides weekends when the instance does, and the tints in coarse views, keeping the strip', () => {
     useAppStore.setState({ instanceSettings: { show_weekends: 'false' } as never });
     const { container, rerender } = render(
       <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="month" />
     );
     expect(container.querySelector('[class*="weekend"]')).toBeNull();
-    expect(container.querySelector('[data-tooltip="National Day"]')).not.toBeNull();
+    expect(hitLabels(container)).toEqual(expect.arrayContaining([expect.stringMatching(/Bank holiday National Day$/)]));
 
     rerender(
       <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="quarter" />
     );
-    expect(container.querySelector('[data-tooltip]')).toBeNull();
+    expect(container.querySelector('[class*="companyEvent"]')).toBeNull();
+    expect(container.querySelector('[class*="siteClosure"]')).toBeNull();
+    // Quarter zoom: the strip stays, one hit per week with events
+    const quarterCells = generateTimelineCells(new Date(2026, 7, 1), 'quarter', new Set(), [], new Set(), [
+      { id: 1, date: '2026-08-05', name: 'Audit', color: '#ff0000' },
+      { id: 2, date: '2026-08-06', name: 'Shutdown', counts_as_unavailable: true },
+    ]);
+    rerender(
+      <CrossSiteTimelineBody rows={rows} cells={quarterCells} cellWidth={20} totalWidth={quarterCells.length * 20} viewMode="quarter" />
+    );
+    expect(hitLabels(container)).toEqual([expect.stringMatching(/^Week \d+ — 2 events: Shutdown, Audit$/)]);
   });
 });
