@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **My Work** replaces My Todos, with three tabs: **My Approvals** (the booking requests you may decide), **My Assignments** (your bookings across projects, current and upcoming by default or all, each with an **Open** button that shows the booking in its dialog) and **My Requests** (your own requests). The sidebar badge counts the requests waiting for your decision.
 - **Comments on bookings**: the dialog of a staff booking has a **Comments** section with @-mentions. A booking on a phase or subphase shares the comment thread of its Kanban card; project-level bookings have their own project thread. The site Excel export's **Card comments** sheet also lists the project threads.
 - Every people picker (project manager, booking, Kanban assignee, absence, team members) has a search box that opens focused and filters as you type.
+- Settings → SSO: a Test configuration button checks the entered Microsoft Entra values (directory, client ID, secret, redirect URI) before they are saved.
 
 ### Changed
 - Tag groups became dropdown project fields: existing groups are converted automatically on upgrade (a single-select group becomes a dropdown, any other group a multi-select dropdown); their tags become the field's items with the same colours, order and site and team limits, and projects keep what they had selected.
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Of My Todos' tabs, **To decide** is now **My Approvals** and **My requests** is **My Requests**; **My tasks** gives way to **My Assignments**.
 - Reading a comment thread no longer needs the Kanban board: anyone who can see the project can read it (posting still needs the comment permission), so the booking dialog's thread works while the board is turned off.
 - The booking dialog opens read-only, with the reason, for a booking you cannot change: someone else's booking awaiting approval, or your own while your change request on it is open. The Gantt context menu's **Edit Assignment** follows the same rule.
+- Saving a change to live SSO sign-in settings now asks for a typed confirmation and explains who would be affected.
 
 ### Removed
 - Tag groups: the `/api/tag-groups` routes, the `tags.group_id` column and the `tag_groups` table are removed once the groups are converted.

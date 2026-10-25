@@ -26,7 +26,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | Projects | [Predefined phases](#predefined-phases) | Phase templates for new projects | Admin, Superuser |
 | | [Project fields](#project-fields) | The built-in project fields' labels, and your own dropdown, text, number and switch fields | Admin |
 | | [Tags](#tags) | Project tags and the sites they apply to | Admin |
-| Integrations | SSO | Microsoft Entra single sign-on for this workspace — see [Organization & SSO](../admin-guide/organizations-sso.md#configuring-sso-in-milestone) | Admin |
+| Integrations | SSO | Microsoft Entra single sign-on for this workspace, with a Test configuration button for the entered values and a typed confirmation before a change to live sign-in settings — see [Organization & SSO](../admin-guide/organizations-sso.md#configuring-sso-in-milestone) | Admin |
 
 Each person only sees the sections their role's [permissions](#roles-permissions) let them change — with the default roles, **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Someone whose role grants none of these sections has no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
 

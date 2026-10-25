@@ -71,7 +71,7 @@ When working on this codebase, follow these conventions:
 - **Dialog writes use `useSubmitGuard`** (`src/components/common/useSubmitGuard.ts`, a ref-based in-flight flag) so Enter-twice / double-click cannot create duplicates; Settings-hub panels report unsaved input with `useReportDirty(onDirtyChange, dirty)` (`src/components/settings/useReportDirty.ts`, one combined flag per panel) so the hub asks before switching section or closing.
 - **Action buttons use the shared `Button`** (`src/components/common/Button`, `md`, `icon` prop with `<Icon icon={…} />`) inside `PanelToolbar` (`src/components/settings/PanelToolbar.tsx`: `left` = filters/counts, `right` = secondary actions then the primary "Add X"; `align="end"` when the left slot holds labelled fields); never a raw `<button>` with local styles for an action. Back links are ghost `md` Buttons with `BackIcon`; `sm` only for actions repeated on every row. Documented exceptions: the Gantt header's compact 28 px icon buttons and the Kanban filter toolbar — see `UI_GUIDELINES.md`.
 - **Every icon is a Material icon** from `@mui/icons-material`, drawn through `src/components/common/Icon` (`icons.ts` binds each app name — `EditIcon`, `PlusIcon`, … — to its Material component by deep path; `<Icon icon={EditIcon} size={15} />`, `aria-hidden` unless given a `title`, colour `currentColor`, outlined variants by default). Add a new icon as one line in `icons.ts`, never an inline `<svg>`: `src/components/__tests__/noInlineIcons.test.ts` fails on any `<svg>` outside `noInlineIconsAllowlist.json` (Gantt dependency arrows, the Microsoft logo). No other MUI component, theme provider or `sx` — CSS Modules stay the rule; `IconStyles` in `main.tsx` (an Emotion cache with `prepend`) is the one Emotion setting, so a module rule on the svg wins a tie. See `UI_GUIDELINES.md` §3.14.
-- **Errors show in place, never in `alert()`.** A form or panel renders its message with the shared `Notice` (`src/components/common/Notice`, `tone` error/warning/info/success, `role="alert"` for errors); an action with no form of its own reports through `uiStore.showFlash()` (rendered by `layout/FlashNotice`). **Confirmations go through `confirmAction()`** (`src/utils/confirmDialog.ts`): `await confirmAction({ message, title?, destructive?, confirmLabel?, cancelLabel? })` resolves `true`/`false`; the one host `ConfirmDialog` (`src/components/common/ConfirmDialog`, mounted in `App.tsx` so the admin portal is covered too) renders it on the shared `Modal` with a `danger` **Delete** button when `destructive`. Never call `window.confirm` — a handler that confirms must be `async` and `await` the result, and confirm *before* taking a submit guard. Tests stub the service with `stubConfirm(result)` from `src/test/confirmDialog.ts` (restored after each test by `test/setup.ts`) and assert `expect.objectContaining({ message })`, never `vi.spyOn(window, 'confirm')`.
+- **Errors show in place, never in `alert()`.** A form or panel renders its message with the shared `Notice` (`src/components/common/Notice`, `tone` error/warning/info/success, `role="alert"` for errors); an action with no form of its own reports through `uiStore.showFlash()` (rendered by `layout/FlashNotice`). **Confirmations go through `confirmAction()`** (`src/utils/confirmDialog.ts`): `await confirmAction({ message, title?, destructive?, confirmLabel?, cancelLabel?, confirmWord? })` resolves `true`/`false`; the one host `ConfirmDialog` (`src/components/common/ConfirmDialog`, mounted in `App.tsx` so the admin portal is covered too) renders it on the shared `Modal` with a `danger` **Delete** button when `destructive`; with `confirmWord` the confirm button stays disabled until that word is typed (Enter confirms once it matches). Never call `window.confirm` — a handler that confirms must be `async` and `await` the result, and confirm *before* taking a submit guard. Tests stub the service with `stubConfirm(result)` from `src/test/confirmDialog.ts` (restored after each test by `test/setup.ts`) and assert `expect.objectContaining({ message })`, never `vi.spyOn(window, 'confirm')`.
 - **Dropdowns, popovers and menus dismiss through `useDismissableOverlay`** (`src/hooks/useDismissableOverlay.ts`): outside mousedown, Tab out, capture-phase Escape with focus back on the trigger. Don't hand-roll a click-outside effect; the panel is a `role="dialog"` (checkbox/radio panels), `role="menu"` (`ContextMenu`) or a `role="listbox"` (`MultiSelectDropdown`, the dialog's multi-select field and Teams → members; `SearchableSelect`) with a name, and its trigger carries `aria-expanded` + `aria-haspopup`. A panel that must escape a clipping pane renders through `AnchoredPanel` (`src/components/common/AnchoredPanel`: portal to `<body>`, fixed, below or flipped above its trigger, measured `max-height`, focus sentinels) and passes its ref as the hook's `panelRef`; never inside a `Modal` (its Tab trap).
 - **Form fields are the shared `Input` / `Select`** (`src/components/common/Input|Select`): every text-like `<input>` (text, email, password, number, …) and every `<select>` in a dialog, Settings panel, admin modal or login screen, with the visible label passed as `label` (or an `aria-label`); a list of people, or any list longer than a handful, is a **`SearchableSelect`** (`src/components/common/SearchableSelect`: a `Select`-looking trigger whose panel opens with a focused search `Input` as an ARIA combobox over the listbox, filtering label + `hint` from the first character; `onChange` only on a real change; Enter never submits the host form; test helpers in `src/test/searchableSelect.ts`), several people a `MultiSelectDropdown searchable`. The only raw ones left are documented exceptions (inline row-rename editors, the two ARIA comboboxes, the Gantt cell editor, the header `SiteSelector`, the phone-only Settings section picker, the credentials copy fields); `src/components/__tests__/rawFormControls.test.ts` counts raw controls per component against `rawFormControlsAllowlist.json` and fails when a count rises or the allowlist names a file that no longer needs it. **Dates are entered through `DateRangeField` / `DateField`** (`src/components/common/DateRangeField`: a start/end pair on one two-month calendar, or a single date) — never a `type="date"` input. Values are `YYYY-MM-DD` strings (`''` = none), the field text is `formatMediumDate`, the end can never precede the start (`onChange({start, end})` once per click), weekends are muted and the header site's bank holidays and closures are marked from `appStore`; the Settings holiday/event forms pass `markSiteCalendar={false}` (they may edit another site). `color-scheme` is set once per theme in `styles/variables.css` / `themes.css` — never set it in a component stylesheet.
 - **Stylesheets use tokens only.** `src/styles/__tests__/cssTokens.test.ts` fails on an undefined `var(--x)`, on a fallback value for a defined token, and on any `*.module.css` whose hex/rgba count rises above `rawColorAllowlist.json` (a ratchet: lower a file's number when you pay its debt, never raise one). Alpha variants are `color-mix(in srgb, var(--accent-red) 25%, transparent)`, shadows the `--shadow-*` tokens; `PhaseBar`/`ProjectBar` text colour comes from `barTextColor()`.
@@ -105,7 +105,7 @@ The repo ships [Trail](https://github.com/trailhq/Trail-Code) for Claude Code se
 - SSO `state` parameters are HMAC-signed (carrying the tenant slug through the shared organization callback) **and** bound to the browser by a one-time `sso_nonce` cookie (10 min) — never accept an unsigned, unvalidated or nonce-less state.
 - Tenant-level SSO client secrets are encrypted at rest too: read/write `sso_config.client_secret` only through `read_tenant_client_secret` / `store_tenant_client_secret` / `apply_secret_update` (`app/services/sso.py`; the masked `****abcd` form keeps the stored value). Never return it unmasked.
 - Error bodies stay generic (`/health` reports `database: "error"`, the tenant 503 is a fixed message, 500s are opaque) — details go to the log only.
-- Organization-level SSO **takes precedence** over tenant-level SSO; enabling tenant SSO while org SSO is active is rejected with 409 (`_reject_if_org_sso_active`). Preserve this guardrail.
+- Organization-level SSO **takes precedence** over tenant-level SSO; enabling tenant SSO while org SSO is active is rejected with 409 (`_reject_if_org_sso_active`). Preserve this guardrail. The Entra diagnostic lives once in `app/services/sso_test.py` (`run_entra_test`), shared by the organization test and the tenant test `POST /auth/sso/test` (entered values; blank or masked secret = the stored one; 409 while org SSO is active).
 - API docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are gated to the `system.api_docs` permission (admins only by default) — keep them gated.
 
 ### Testing Conventions
@@ -398,7 +398,8 @@ app/
   schemas/             # Pydantic request/response schemas (one file per domain;
                        #   base.py holds Node-compatible serializers + DateRangeOrdered;
                        #   project_field.py the field / item bodies; project.py carries field_values;
-                       #   TagCreate / TagUpdate are extra="forbid", so a stale group_id is a 422)
+                       #   TagCreate / TagUpdate are extra="forbid", so a stale group_id is a 422;
+                       #   sso.py the SSO test request/response shared by org and tenant tests)
   services/
     approvals.py       # Own-booking approval workflow: submit_request (202), resolve_row_write,
                        #   plan_placement / apply_shrink (auto-placed second booking), approve / reject / cancel, approver_user_ids / can_decide (live),
@@ -452,6 +453,8 @@ app/
                        #   at-rest helpers (read_/store_tenant_client_secret, apply_secret_update)
     sso_errors.py      # Entra token-endpoint failures → fixed messages (only an AADSTS code
                        #   may reach the user)
+    sso_test.py        # Entra diagnostic (local checks, outbound proxy, discovery, client-credentials
+                       #   token) shared by the organization and tenant SSO test routes
     tag_rules.py       # validate_project_tags (site / team applicability → 400) and the conflict
                        #   counters behind the 409s of tag edits (generic linked-project counters
                        #   shared with project_field_rules)
@@ -489,7 +492,8 @@ frontend/
                        #   vacations, roles
                        #   (rolesApi), health (getAppVersion), importChunks (postInChunks), kanban,
                        #   notifications, approvals (approvalsApi, isPendingResponse), mentionableCache
-                       #   (the @-mention list per site for the session)
+                       #   (the @-mention list per site for the session), sso (testTenantSSOConfig,
+                       #   SSOTestResult — re-exported by admin for the organization test)
     components/
       __tests__/       # rawFormControls.test.ts (+ rawFormControlsAllowlist.json): raw <input>/<select> ratchet
       admin/           # AdminApp, AdminLoginScreen, AdminDashboard, TenantList, OrganizationList,
@@ -531,6 +535,7 @@ frontend/
                        #   Notice (the one inline error/warning/info box, role alert/status),
                        #   ICSImportPanel (shared .ics preview/import, 5 MB cap),
                        #   ConfirmDialog (the one confirm host, fed by utils/confirmDialog.ts),
+                       #   SSOTestResult/ (SSO test checks; Settings → SSO and the admin org modal),
                        #   RoleChecklist, PendingBadge, ApprovalActions (+ RejectRequestDialog),
                        #   CardComments/ (one comment thread: list, MentionTextarea composer, own guard;
                        #   in KanbanCardModal and, after the form, in AssignmentModal),
@@ -829,6 +834,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/auth/sso/config` | public | Public SSO config (`SSOConfigResponse`) |
 | PUT | `/auth/sso/config` | admin (`settings.sso`) | Update tenant SSO (alternate path, same guardrails) |
 | GET | `/auth/sso/status` | public | Effective SSO status (org vs tenant) + group requirements |
+| POST | `/auth/sso/test` | admin (`settings.sso`) | Test the entered tenant SSO values against Microsoft, nothing saved (`app/services/sso_test.py`) → `{credentialsOk, summary, checks[]}`. A missing, blank or masked secret tests the stored one; 409 while org SSO is active; `tenant_id` limited to `[A-Za-z0-9.-]` (422) |
 | GET | `/auth/sso/login` | public | Build the Entra authorization URL (HMAC-signed `state` carries the slug + a nonce; sets the one-time `sso_nonce` cookie, 10 min) |
 | GET | `/auth/sso/callback` | public | OAuth callback: verify state **and** that its nonce matches this browser's `sso_nonce` cookie (cleared whatever the outcome), token exchange, Graph `/me`, group validation, find/auto-create user, create session |
 
@@ -1101,7 +1107,7 @@ All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (
 |--------|------|-------------|
 | GET / POST / PUT / DELETE | ``, `/{id}` | Organization CRUD |
 | GET / PUT / DELETE | `/{id}/sso` | Organization SSO config (encrypted secret) |
-| POST | `/{id}/sso/test` | SSO diagnostic: local checks, outbound-proxy report, Entra discovery and a client-credentials token request → `{credentials_ok, summary, checks[]}`. Proves the directory id, client id and secret, not the redirect URI (reported as a manual check); failures go through `parse_entra_token_error` |
+| POST | `/{id}/sso/test` | SSO diagnostic: local checks, outbound-proxy report, Entra discovery and a client-credentials token request → `{credentialsOk, summary, checks[]}` (`app/services/sso_test.py`). Proves the directory id, client id and secret, not the redirect URI (reported as a manual check); failures go through `parse_entra_token_error` |
 | PUT / DELETE | `/{id}/tenants/{tid}` | Attach / detach a tenant |
 | PATCH | `/tenants/{tid}/groups` | Set tenant SSO group access (`required_group_ids`, `group_membership_mode`) |
 
@@ -1157,7 +1163,7 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 - An organization-SSO lookup or decrypt failure **fails closed** (`OrgSSOLookupError` → "temporarily unavailable"); it never falls back to tenant-level SSO.
 - Both hops log a config fingerprint (`_config_fingerprint`, no secrets) so an operator can see which config served a sign-in; config values are whitespace-stripped.
 - `SSOConfig.is_configured` requires a client secret, so a row without one hides the sign-in button instead of failing with Entra's misleading "invalid client".
-- Admins can test an organization's credentials without a user sign-in: `POST /api/admin/organizations/{id}/sso/test`.
+- Credentials can be tested without a user sign-in at both levels, through one diagnostic (`app/services/sso_test.py`): the organization's saved values (`POST /api/admin/organizations/{id}/sso/test`, admin portal) and a tenant's entered values (`POST /api/auth/sso/test`, `settings.sso`, Settings → SSO). In Settings → SSO, saving a change to live sign-in values (ids, secret, redirect URI, switching off) asks for the typed word CHANGE.
 
 ## Multi-Tenancy Internals
 
