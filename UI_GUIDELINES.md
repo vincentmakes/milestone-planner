@@ -811,7 +811,9 @@ from the inline `project.tags[].color`, which is stale during What-If.
   not armed in the hook: Escape closes it without moving focus or stopping the key (dependency
   linking and phantom mode still see it). No hover or focus panel opens while a mouse button is
   held or a drag / resize runs (`uiStore` `isDragging` / `isResizing` / `resourceDrag`, the
-  `resource-dragging` / `kanban-dragging` body classes), and a drag starting closes one. A change of cells (a zoom, a new range, its
+  `resource-dragging` / `kanban-dragging` body classes), and a drag starting closes one. One
+  panel at a time across strips: opening one broadcasts on the module's `panelBus`
+  (`EventTarget`) and every other strip closes its own. A change of cells (a zoom, a new range, its
   cell's events gone) closes the panel for good — it never reappears when the cells come back. An event name is a ghost `sm` Button to Settings
   for `company_events.manage` (plain text otherwise, with the What-If reason as its title — never
   a disabled button). Its DOM uses no `data-date` and no class or attribute containing `row` /

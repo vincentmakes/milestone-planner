@@ -34,7 +34,8 @@
  * and the key alone (dependency linking and phantom mode still see it).
  * The panel closes when its cells change (a zoom, a new range, new events
  * without its cell): a hidden panel never comes back. No hover or focus
- * panel opens while a bar is dragged or resized.
+ * panel opens while a bar is dragged or resized, and one opening in any
+ * strip closes the panel of every other strip (`panelBus`).
  *
  * Class names and data attributes avoid "row", "rows", "bar" and
  * `data-date`: the drag/resize hooks read every `[data-date]` in the document
@@ -84,6 +85,14 @@ const HOVER_DELAY = 150;
 /** Lane pitch and the cell width below which a "+N" becomes a dot */
 const LANE_PITCH = 4;
 const PIP_MIN_CELL_WIDTH = 18;
+
+/**
+ * "A panel opened": every strip closes its own panel when another one opens,
+ * so one panel shows at a time across strips (the Gantt header and a second
+ * timeline header on screen).
+ */
+const panelBus = new EventTarget();
+const PANEL_OPENED = 'timeline-markers:opened';
 
 /** A drag, a resize or a resource drag is under way (no hover / focus panel then) */
 function dragInProgress(): boolean {
@@ -191,8 +200,9 @@ export function TimelineMarkers({
       if (!cell) return;
       openCellRef.current = cellRefs.current.get(index) ?? null;
       setOpenState({ index, mode, dateStr: cell.dateStr });
+      panelBus.dispatchEvent(new CustomEvent(PANEL_OPENED, { detail: panelId }));
     },
-    [cells, cancelOpen, cancelClose]
+    [cells, cancelOpen, cancelClose, panelId]
   );
 
   const scheduleClose = useCallback(() => {
@@ -220,6 +230,15 @@ export function TimelineMarkers({
     if (zoomed) close();
     else cancelOpen();
   }, [cells, viewMode, close, cancelOpen]);
+
+  // Another strip opened a panel: this one closes
+  useEffect(() => {
+    const onOpened = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== panelId) close();
+    };
+    panelBus.addEventListener(PANEL_OPENED, onOpened);
+    return () => panelBus.removeEventListener(PANEL_OPENED, onOpened);
+  }, [panelId, close]);
 
   // A drag or a resize starting closes a hover or focus panel
   const dragging = useUIStore((s) => s.isDragging || s.isResizing || s.resourceDrag.active);

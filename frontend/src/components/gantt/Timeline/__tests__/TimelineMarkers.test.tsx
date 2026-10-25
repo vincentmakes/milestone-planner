@@ -615,6 +615,39 @@ describe('TimelineMarkers — the panel', () => {
     }
   });
 
+  it('keeps one panel across strips: opening one closes the other strip\'s', () => {
+    vi.useFakeTimers();
+    const cells = cellsFor('month');
+    render(
+      <>
+        <div data-testid="gantt">
+          <TimelineMarkers cells={cells} cellWidth={WIDTH} viewMode="month" siteId={1} />
+        </div>
+        <div data-testid="overview">
+          <TimelineMarkers cells={cells} cellWidth={WIDTH} viewMode="month" siteId={1} />
+        </div>
+      </>
+    );
+    const index = cells.findIndex((c) => c.dateStr === EASTER);
+    const hitIn = (id: string, i = index) =>
+      screen.getByTestId(id).querySelector<HTMLButtonElement>(`button[data-cell-index="${i}"]`)!;
+
+    // A pinned panel in the first strip closes when the second strip hovers open
+    fireEvent.click(hitIn('gantt'));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    fireEvent.mouseEnter(hitIn('overview'));
+    advance(150);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(hitIn('gantt')).toHaveAttribute('aria-expanded', 'false');
+    expect(hitIn('overview')).toHaveAttribute('aria-expanded', 'true');
+
+    // And the other way round, by focus
+    act(() => hitIn('gantt', cells.findIndex((c) => c.dateStr === '2026-04-20')).focus());
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(hitIn('overview')).toHaveAttribute('aria-expanded', 'false');
+    expect(dialog()).toHaveAccessibleName(`Events on ${formatMediumDate('2026-04-20')}`);
+  });
+
   it('clears its timers on unmount', () => {
     vi.useFakeTimers();
     const { hit, indexOf, unmount } = renderMarkers();
