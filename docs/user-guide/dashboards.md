@@ -30,9 +30,13 @@ A dashboard is a set of questions, not a copy of the answers. Each viewer gets t
 
 A widget can need a permission you do not hold — the **capacity** measures, a breakdown by **person** and the **People** filter need the **Staff & Calendar** permission — a capacity measure broken down by **person** or filtered to **People** also needs **See colleagues' absences**, since its days off are their absences; the **equipment** measures, a breakdown by **equipment** or **equipment type** and the **Equipment** filters need the **Equipment view** permission; a widget that includes **archived projects** needs **Archived projects**. Such a widget shows *This widget needs the Staff view permission* (or *the Equipment view permission*, *the Archived view permission*, *the Absences permission*) in place of its chart; the rest of the dashboard works as usual.
 
-## The Overview
+## The Two Built-in Dashboards
 
-Every Milestone instance starts with the **Overview**, shared with everyone:
+Every Milestone instance starts with two dashboards, both shared with everyone. People who build dashboards can **Duplicate** either one and adapt the copy. Only an administrator can change or delete them; once deleted, a built-in dashboard does not come back.
+
+### Overview
+
+The **Overview** is the default dashboard (listed under **Default** in the picker):
 
 | Widget | What it shows |
 |--------|---------------|
@@ -45,18 +49,26 @@ Every Milestone instance starts with the **Overview**, shared with everyone:
 | **Booked weeks per month** | Booked weeks in each of the last 12 months |
 | **Projects by site** | This year's projects per site |
 
-People who build dashboards can **Duplicate** it and adapt the copy. Only an administrator can change or delete the Overview itself; once deleted, it does not come back.
+### Capacity and flows
 
-A tenant seeded with the **demo data** — the demo tenant of the Codespaces and screenshot setups, and any tenant an administrator provisions in the admin portal with the **Seed demo data** option — also comes with a second dashboard, **Capacity and flows**, shared with everyone, which shows the four larger chart kinds on that data:
+**Capacity and flows** (listed under **Everyone**) shows three of the larger chart kinds on the bookings:
 
 | Widget | What it shows |
 |--------|---------------|
-| **Utilisation this quarter** | A gauge of the quarter's utilisation, with a target of 85 % |
 | **Booked weeks per team and month** | A heatmap: one row per team, one column per month of the last 12 months |
 | **Booked weeks by site and project** | A treemap: one box per site, split into its projects, this year |
 | **Project to team flows** | A sankey: the eight projects with the most booked weeks (the rest as *Other*) flowing to the teams that work on them |
 
-The gauge's utilisation needs the **Staff & Calendar** permission (the User and Superuser roles hold it by default); a role without it sees the permission message on that tile and the other three widgets as usual.
+Neither dashboard needs a permission beyond **Dashboards**, so everyone who can open the view sees every tile.
+
+### With the Demo Data
+
+A tenant seeded with the **demo data** — the demo tenant of the Codespaces and screenshot setups, and any tenant an administrator provisions in the admin portal with the **Seed demo data** option — gets the same two dashboards with a few more widgets:
+
+- the **Overview** adds **Share of time by Project type per team** and **Booked weeks by Area**, over the demo's two project fields;
+- **Capacity and flows** starts with **Utilisation this quarter**, a gauge of the quarter's utilisation with a target of 85 %, beside the heatmap.
+
+The gauge's utilisation needs the **Staff & Calendar** permission (the User and Superuser roles hold it by default); a role without it sees the permission message on that tile and the other widgets as usual. This is why the gauge is not part of what every instance gets.
 
 ## Chart Kinds
 
