@@ -26,6 +26,7 @@ The right side shows a horizontal timeline with:
 - **Absence blocks** — Drawn in the color of their [absence type](vacations.md#absence-types). Only types that count as unavailable reduce capacity; a Home Office day is shown but leaves the person available
 - **Workload indicator** — Thin bar showing total utilization level
 - **Site closures** — Company events marked as closures make the staff of their sites unavailable; see [below](#site-closures-in-the-workload)
+- **Event strip** — The thin strip along the top lists every bank holiday and company event of a day, as on the [Gantt chart](gantt-charts.md#holidays-and-events-on-the-timeline)
 - **Bank holidays and company events** — Expandable rows at the bottom. Admins and superusers can click an entry to edit it, or **+** to add one, in [Settings](settings.md#bank-holidays); changes appear for other users straight away
 
 ## Site Closures in the Workload

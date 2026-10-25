@@ -436,10 +436,11 @@ Editing an event changes it on every site it is linked to.
 
 ### How Events Appear
 
-- Company events display as **colored markers** on the Staff Overview timeline
+- Company events display as **colored bands** in the strip along the top of every timeline (Gantt, Staff, Equipment, Cross-site and Archived), at every zoom — see [Holidays and events on the timeline](gantt-charts.md#holidays-and-events-on-the-timeline)
+- **Several events on the same day** are stacked on up to three lanes (below a bank holiday's orange line), with **+N** for any that do not fit; at quarter and year zoom a week or month shows one band and the number of its events. Hover or click the strip to list them all, with their dates, and **Site closure**, **Closure for &lt;teams&gt;** or **Teams: &lt;teams&gt;** on the events limited to teams
 - A plain event is informational only — it **does not affect working day calculations** or staff availability
 - Events are visible to all users on the sites they are linked to
-- In the Staff Overview, admins and superusers can click an event to edit it in Settings, or click **+** on the Company Events row to add one
+- In the Staff Overview, admins and superusers can click an event to edit it in Settings, or click **+** on the Company Events row to add one; in the timeline strip's panel, a click on an event's name opens it the same way
 - An event limited to teams follows the header [team filter](#team-filter), and the Company Events row names its teams after the event's name
 
 ### Site Closures
@@ -449,7 +450,7 @@ Tick **Site closure — staff on these sites are unavailable** (it reads *staff 
 - In the [Staff workload view](staff-management.md#site-closures-in-the-workload) their cells show **0% available** in the event's color, with the tooltip *Site closed: &lt;event name&gt;*. Work assigned on those days is flagged as a **conflict**
 - Today's availability in the Staff Overview and on the resource cards shows them as unavailable during a closure
 - Their assignment bars in the Gantt chart are marked on the closed days
-- The timeline columns of the event get a stronger, hatched tint, and the Staff Overview's Company Events row labels the entry **Closure** instead of **Event**
+- The timeline columns of the event get a stronger, hatched tint, the timeline strip's panel tags it **Site closure**, and the Staff Overview's Company Events row labels the entry **Closure** instead of **Event**
 
 A person on several sites is unavailable when **any** of their sites is closed. Plain events and bank holidays do not reduce anyone's availability — only events marked as closures do.
 
