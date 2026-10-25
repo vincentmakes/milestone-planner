@@ -174,7 +174,7 @@ describe('ArchivedView event strip', () => {
   });
 
   it.each(['month', 'quarter'] as const)(
-    'mounts one strip above every project row at %s zoom, the tints left plain',
+    'draws one strip, in the header, above every project row at %s zoom, the tints left plain',
     (viewMode) => {
       const isoOffset = (days: number) => {
         const d = new Date();
@@ -193,7 +193,10 @@ describe('ArchivedView event strip', () => {
       useViewStore.setState({ viewMode, currentDate: new Date(), teamFilters: {} });
       const { container } = render(<ArchivedView />);
 
-      expect(container.querySelectorAll('[class*="markerLayer"]')).toHaveLength(1);
+      const layers = container.querySelectorAll('[class*="markerLayer"]');
+      expect(layers).toHaveLength(1);
+      expect(layers[0].closest('[class*="eventsRow"]')).not.toBeNull();
+      expect(container.querySelector('[class*="timelineBody"] [class*="markerLayer"]')).toBeNull();
       const hits = container.querySelectorAll('button[class*="markerBadge"]');
       expect(hits).toHaveLength(1);
       expect(hits[0].getAttribute('aria-label')).toMatch(/— 1 event: ISO audit$/);

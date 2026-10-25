@@ -15,7 +15,7 @@
 .header {
   display: flex;
   align-items: center;
-  height: 52px; /* Match timeline header: 24px + 28px */
+  height: var(--timeline-header-total); /* Match the timeline header */
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;

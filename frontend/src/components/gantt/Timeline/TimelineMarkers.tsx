@@ -1,8 +1,9 @@
 /**
- * TimelineMarkers — the strip at the top of a timeline body: bank-holiday
- * lines, company-event bands and the panel listing a cell's events. One
- * component for every timeline (Gantt, Staff, Equipment, Cross-site,
- * Archived), drawn at every zoom.
+ * TimelineMarkers — the strip in the timeline header's events row (below the
+ * day labels, above the first row's bars): bank-holiday lines, company-event
+ * bands and the panel listing a cell's events. Mounted once by
+ * `TimelineHeader`, so every timeline with a header (Gantt, Staff, Equipment,
+ * Cross-site, Archived) shows it, at every zoom.
  *
  * Day cells (week / month zoom):
  *   - a 3 px orange line on lane 0 of every bank-holiday cell
@@ -16,8 +17,8 @@
  * holiday line there (a quarter week's holiday flag covers only its Monday,
  * a year month has none), so a span cell's panel lists events only.
  *
- * Every cell with something to show gets a transparent 12 px hit button
- * (the bars start 4–5 px into the first row, so the strip never covers them).
+ * Every cell with something to show gets a transparent 12 px hit button,
+ * the height of the events row (it never reaches the bars below the header).
  * Hover (after 150 ms), keyboard focus or a click opens the panel — an
  * `AnchoredPanel` (`role="dialog"`, no focus trap: it is a popover, not a
  * modal) listing the cell's events with their dates, their teams at this site

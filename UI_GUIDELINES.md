@@ -788,16 +788,22 @@ from the inline `project.tags[].color`, which is stale during What-If.
   8601; the current month is highlighted; weekends can be hidden (then week separators appear).
   Every cell carries `companyEvents` (all events overlapping its day, week or month, closures
   first); the header tints a cell in its first event's colour and names every event in its title.
-- **Event strip** (`gantt/Timeline/TimelineMarkers.tsx`) is the one holiday / event overlay of
-  all five timelines (Gantt, Staff, Equipment, Cross-site, Archived — Archived mounts it once
-  for the body, not per row). Mount it as a direct child of the positioned timeline content, at
-  **every** zoom (only the background tints stay week / month), with the current site's id.
+- **Event strip** (`gantt/Timeline/TimelineMarkers.tsx`) is the one holiday / event strip of
+  all five timelines (Gantt, Staff, Equipment, Cross-site, Archived). `TimelineHeader` mounts
+  it in its third row, `eventsRow` (14 px: the 12 px strip, a 1 px top border, 1 px below), at
+  **every** zoom (only the background tints stay week / month), with the current site's id read
+  from `appStore` — never in a timeline body, where the bands and hit cells would sit on the
+  first row's bars. The header is `--timeline-header-total` (66 px: 23 + 28 + 14 + its 1 px
+  bottom border) high and every left pane's header reads that token (`ProjectPanel`, Staff,
+  Equipment, Cross-site, Archived), so both panes shift together and the rows stay level. The
+  Staff / Equipment panels embedded below the Gantt have no header of their own (they sit under
+  the Gantt's).
   Day zoom: a 3 px band per event in its colour on up to three lanes (`eventLanes.ts`, lane 0
   kept for the orange holiday line), `+N` (a dot below 18 px cells) for what does not fit;
   quarter / year: one band + a count per cell. The hit cells are `button.markerBadge`, 12 px
   high, transparent — the `Badge` in the class keeps them out of the 44 px / 40 px mobile
-  button rule (`mobileTouchTargets.test.ts` pins it), since a taller hit area would cover the
-  first row's bars. The panel is the shared `AnchoredPanel` (`role="dialog"`, no focus trap):
+  button rule (`mobileTouchTargets.test.ts` pins it), since a taller hit area would spill over
+  the day labels and the first row's bars. The panel is the shared `AnchoredPanel` (`role="dialog"`, no focus trap):
   hover opens it after 150 ms and closes it 150 ms after the pointer leaves cell and panel (or
   when the timeline scrolls); focus opens it; a click / tap pins it, a second click closes;
   Escape, an outside mousedown and Tab out close any mode through `useDismissableOverlay`, and

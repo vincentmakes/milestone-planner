@@ -48,9 +48,10 @@ describe('mobile touch targets (global.css)', () => {
     expect(block).toMatch(/label:has\(> input\[type="radio"\]\)[\s\S]*?min-height: 44px/);
   });
 
-  // The timeline strip's hit cells (TimelineMarkers) are 12 px tall over the
-  // top of the timeline body: a 44 px (or 40 px on touch) minimum would cover
-  // the bars of the first row and swallow their clicks and drags. The
+  // The timeline strip's hit cells (TimelineMarkers) are 12 px tall, the
+  // height of the header's events row: a 44 px (or 40 px on touch) minimum
+  // would spill over the day labels and the first row's bars and swallow
+  // their clicks and drags. The
   // "Badge" substring of their class keeps them out of both rules.
   it('leaves the timeline strip hit cells (markerBadge) at 12 px', () => {
     const touchBlock = css.slice(css.indexOf('@media (hover: none) and (pointer: coarse)'));

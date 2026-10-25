@@ -170,6 +170,33 @@
   opacity: 0.7;
 }
 
+/* Events row: the strip (TimelineMarkers) — 12 px + the top border + 1 px
+   below. Its layer's z-index stays inside the row (isolation). With the
+   period and label rows it makes --timeline-header-total. */
+.eventsRow {
+  position: relative;
+  height: 14px;
+  padding-bottom: 1px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  isolation: isolate;
+}
+
+/* The same vertical grid lines as the label row, under the strip */
+.eventsRow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
+}
+
 /* Spacer to align with custom column headers in ProjectPanel (28px height) */
 .customColumnSpacer {
   height: 28px;

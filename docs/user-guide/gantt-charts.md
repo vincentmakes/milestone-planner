@@ -32,16 +32,16 @@ The right side shows horizontal bars representing duration of each project, phas
 - Week numbers follow **ISO 8601**: weeks start on Monday and week 1 is the week containing the first Thursday of the year, so 1–3 January 2027 show as week 53 (of 2026)
 - The timeline opens centred on today in every view
 - Bank holidays and company events are highlighted on the background at week and month zoom; a company event marked as a [site closure](settings.md#site-closures) gets a stronger, hatched tint
-- A thin strip along the top of the timeline names every holiday and company event of a day — see [Holidays and events on the timeline](#holidays-and-events-on-the-timeline)
+- A thin strip in the timeline header, under the day labels, names every holiday and company event of a day — see [Holidays and events on the timeline](#holidays-and-events-on-the-timeline)
 - Staff assignment bars are marked on days the person is away — an unavailable absence, or a closure of one of their sites
 
 ### Holidays and Events on the Timeline
 
-Along the top edge of the timeline runs a thin strip with one coloured band per [company event](settings.md#company-events), in the event's own colour. Several events on the same days are stacked on up to **three lanes**; a bank holiday is the orange line on the top lane, the events go below it. When a day holds more than fits, a small **+N** marks how many are left out (a dot on narrow days). A site closure's band carries a thin outline. At **quarter** and **year** zoom each week or month with events gets one band, in the colour of its first event, and a count of its events.
+Under the day labels, the timeline header holds a thin strip — its own row, above the project bars — with one coloured band per [company event](settings.md#company-events), in the event's own colour. Several events on the same days are stacked on up to **three lanes**; a bank holiday is the orange line on the top lane, the events go below it. When a day holds more than fits, a small **+N** marks how many are left out (a dot on narrow days). A site closure's band carries a thin outline. At **quarter** and **year** zoom each week or month with events gets one band, in the colour of its first event, and a count of its events.
 
 Hover the strip — or move the keyboard focus onto it with Tab — and a panel opens listing everything on that day, week or month: the bank holiday, then each event with its colour, its dates and, when it applies, **Site closure**, **Closure for &lt;teams&gt;** (a closure limited to teams) or **Teams: &lt;teams&gt;** (a plain event limited to teams). Click the strip (tap on a phone) to keep the panel open; click again, click elsewhere or press Escape to close it. If you may manage company events, click an event's name to open it in [Settings → Company events](settings.md#company-events).
 
-The strip follows the header [team filter](settings.md#team-filter): an event limited to teams you have filtered out leaves the strip and the panel. The same strip is drawn on the Staff, Equipment, Cross-site and Archived timelines.
+The strip follows the header [team filter](settings.md#team-filter): an event limited to teams you have filtered out leaves the strip and the panel. The same strip is drawn on the Staff, Equipment, Cross-site and Archived timelines; the Staff and Equipment panels shown below the Gantt use the Gantt's own header strip.
 
 ## Resource Panels
 

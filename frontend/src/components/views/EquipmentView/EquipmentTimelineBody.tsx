@@ -7,7 +7,6 @@
 import { forwardRef, useMemo } from 'react';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
-import { TimelineMarkers } from '@/components/gantt/Timeline/TimelineMarkers';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell } from '@/components/gantt/utils';
@@ -45,9 +44,8 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
   }, ref) {
     
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
-    const siteId = useAppStore((s) => s.currentSite?.id);
-    // Background tints are week/month only; the strip (TimelineMarkers) is
-    // drawn at every zoom
+    // Background tints are week/month only; the event strip sits in the
+    // header's events row (TimelineHeader)
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
     const renderWeekSeparators = showHighlighting && !showWeekends;
@@ -171,10 +169,6 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
               );
             })}
           </div>
-          
-          {/* Company event strip and its panel, at every zoom (the tints above
-              stay week/month only) */}
-          <TimelineMarkers cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
         </div>
       </div>
     );

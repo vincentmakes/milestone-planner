@@ -436,7 +436,7 @@ Editing an event changes it on every site it is linked to.
 
 ### How Events Appear
 
-- Company events display as **colored bands** in the strip along the top of every timeline (Gantt, Staff, Equipment, Cross-site and Archived), at every zoom — see [Holidays and events on the timeline](gantt-charts.md#holidays-and-events-on-the-timeline)
+- Company events display as **colored bands** in the strip under the day labels of every timeline header (Gantt, Staff, Equipment, Cross-site and Archived), at every zoom — see [Holidays and events on the timeline](gantt-charts.md#holidays-and-events-on-the-timeline)
 - **Several events on the same day** are stacked on up to three lanes (below a bank holiday's orange line), with **+N** for any that do not fit; at quarter and year zoom a week or month shows one band and the number of its events. Hover or click the strip to list them all, with their dates, and **Site closure**, **Closure for &lt;teams&gt;** or **Teams: &lt;teams&gt;** on the events limited to teams
 - A plain event is informational only — it **does not affect working day calculations** or staff availability
 - Events are visible to all users on the sites they are linked to

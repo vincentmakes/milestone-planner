@@ -14,7 +14,6 @@ import { canEditProject } from '@/utils/permissions';
 import { builtInFieldLabel, isBuiltInFieldHidden } from '@/utils/instanceSettings';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
-import { TimelineMarkers } from '@/components/gantt/Timeline/TimelineMarkers';
 import { TimelineRow } from './TimelineRow';
 import styles from './ArchivedView.module.css';
 import { Icon, EditIcon } from '@/components/common/Icon';
@@ -64,7 +63,7 @@ export function ArchivedView() {
   const totalWidth = cells.length * cellWidth;
   
   // Weekend/holiday/event tints for week and month views only; the event
-  // strip (TimelineMarkers) is drawn at every zoom
+  // strip sits in the header's events row (TimelineHeader)
   const showHighlighting = viewMode === 'week' || viewMode === 'month';
   
   return (
@@ -149,13 +148,6 @@ export function ArchivedView() {
                   '--cell-width': `${cellWidth}px`
                 } as React.CSSProperties}
               >
-                {/* One event strip for the whole body, not one per project */}
-                <TimelineMarkers
-                  cells={cells}
-                  cellWidth={cellWidth}
-                  viewMode={viewMode}
-                  siteId={currentSite?.id}
-                />
                 {archivedProjects.length === 0 ? (
                   <div className={styles.emptyTimeline} />
                 ) : (

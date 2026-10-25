@@ -14,7 +14,6 @@ import { DependencyLayer } from './DependencyLayer';
 import { DragIndicator } from './DragIndicator';
 import { PhantomOverlay } from './PhantomOverlay';
 import { ResourceDropOverlay } from './ResourceDropOverlay';
-import { TimelineMarkers } from './TimelineMarkers';
 import { calculateTodayPosition, calculateRowPositions } from '../utils';
 import type { TimelineCell } from '../utils';
 import { flatGanttRows } from '../utils/projectSections';
@@ -71,7 +70,6 @@ export const TimelineBody = memo(forwardRef<HTMLDivElement, TimelineBodyProps>(
     const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
     const resourceDrag = useUIStore((s) => s.resourceDrag);
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
-    const siteId = useAppStore((s) => s.currentSite?.id);
     
     // Memoised so the row positions keep their identity between renders.
     const flatRows = useMemo(() => flatGanttRows(projects), [projects]);
@@ -176,7 +174,7 @@ export const TimelineBody = memo(forwardRef<HTMLDivElement, TimelineBodyProps>(
     );
 
     // Background tints (weekends, holidays, events) only at week and month zoom;
-    // the strip (TimelineMarkers) is drawn at every zoom
+    // the event strip sits in the header's events row (TimelineHeader)
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
     const renderWeekSeparators = showHighlighting && !showWeekends;
@@ -294,10 +292,6 @@ export const TimelineBody = memo(forwardRef<HTMLDivElement, TimelineBodyProps>(
             )}
           </div>
           
-          {/* Holiday / company-event strip and its panel, at every zoom
-              (top 12 px only, so it never covers the bars) */}
-          <TimelineMarkers cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
-
           {/* Dependency arrows overlay */}
           <DependencyLayer
             projects={projects}

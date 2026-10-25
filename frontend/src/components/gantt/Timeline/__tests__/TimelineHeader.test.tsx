@@ -3,13 +3,17 @@
  * (`--event-color` on the background and the label) and name every event of
  * the cell in the label's title, the bank holiday first. The label's text
  * mixes that colour with the text colour, so a pale event stays legible.
+ * Below the labels, the events row holds the strip (TimelineMarkers) at
+ * every zoom, for the current site.
  */
-import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TimelineHeader } from '../TimelineHeader';
 import { generateTimelineCells, generateTimelineHeaders } from '../../utils';
+import { useAppStore } from '@/stores/appStore';
+import { makeSite, makeTeam, makeUser } from '@/test/factories';
 import type { ViewMode } from '@/types';
 
 const HOLIDAY = '2026-04-06';
@@ -23,7 +27,7 @@ const cells = (mode: ViewMode = 'month') =>
     [
       { id: 1, date: HOLIDAY, name: 'ISO 9001 audit', color: '#f59e0b' },
       { id: 2, date: HOLIDAY, name: 'Lab safety walk-through', color: '#14b8a6' },
-      { id: 3, date: '2026-04-08', name: 'Instrument calibration day', color: '#a855f7' },
+      { id: 3, date: '2026-04-08', name: 'Instrument calibration day', color: '#a855f7', team_ids: [10] },
       { id: 4, date: '2026-04-09', name: 'Supplier visit' },
       { id: 5, date: '2026-04-10', name: 'Review', color: '#14b8a6' },
       { id: 6, date: '2026-04-10', name: 'Workshop' },
@@ -113,5 +117,65 @@ describe('TimelineHeader company events', () => {
     );
     expect(label(HOLIDAY).style.getPropertyValue('--event-color')).toBe('#f59e0b');
     expect(container.querySelector('[class*="bgLayer"]')).toBeNull();
+  });
+});
+
+describe('TimelineHeader events row', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      currentSite: makeSite({ id: 1 }),
+      currentUser: makeUser({ role: 'user' }),
+      teams: [makeTeam({ id: 10, site_id: 1, name: 'Analytical Lab' })],
+    });
+  });
+
+  it.each(['week', 'month', 'quarter', 'year'] as ViewMode[])(
+    'draws the strip once, in its own row below the day labels, at %s zoom',
+    (mode) => {
+      const { container } = renderHeader(mode);
+      const rows = container.querySelectorAll('[class*="eventsRow"]');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].previousElementSibling?.className).toContain('secondaryRow');
+      const layers = container.querySelectorAll('[class*="markerLayer"]');
+      expect(layers).toHaveLength(1);
+      expect(rows[0].contains(layers[0])).toBe(true);
+      expect(layers[0].querySelectorAll('button[aria-haspopup="dialog"]').length).toBeGreaterThan(0);
+    }
+  );
+
+  it('keeps the custom-column spacer below the events row', () => {
+    const list = cells('month');
+    const { container } = render(
+      <TimelineHeader
+        headers={generateTimelineHeaders(list, 'month')}
+        cells={list}
+        cellWidth={20}
+        totalWidth={list.length * 20}
+        viewMode="month"
+        hasCustomColumns
+      />
+    );
+    const spacer = container.querySelector('[class*="customColumnSpacer"]')!;
+    expect(spacer.previousElementSibling?.className).toContain('eventsRow');
+  });
+
+  it('names the teams of the current site in the panel', () => {
+    const { container } = renderHeader('month');
+    const index = cells('month').findIndex((c) => c.dateStr === '2026-04-08');
+    fireEvent.click(container.querySelector(`[class*="markerBadge"][data-cell-index="${index}"]`)!);
+    expect(within(screen.getByRole('dialog')).getByText('Teams: Analytical Lab')).toBeInTheDocument();
+  });
+
+  it('sizes its rows to --timeline-header-total (23 + 28 + 14 + the 1 px border)', () => {
+    const css = readFileSync(join(__dirname, '..', 'TimelineHeader.module.css'), 'utf8');
+    const px = (selector: string, prop: string) => {
+      const rule = css.match(new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+      return Number(rule.match(new RegExp(`(?:^|[;\\s])${prop}:\\s*(\\d+)px`))?.[1]);
+    };
+    expect(px('primaryRow', 'height')).toBe(23);
+    expect(px('secondaryRow', 'height')).toBe(28);
+    expect(px('eventsRow', 'height')).toBe(14);
+    expect(css).toMatch(/\.header\s*\{[^}]*border-bottom: 1px solid/);
+    expect(23 + 28 + 14 + 1).toBe(66);
   });
 });

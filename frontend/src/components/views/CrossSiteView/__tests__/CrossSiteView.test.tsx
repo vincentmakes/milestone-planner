@@ -7,8 +7,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, act, fireEvent, within } from '@testing-library/react';
 import { CrossSiteView } from '../CrossSiteView';
 import { CrossSiteTimelineBody } from '../CrossSiteTimelineBody';
+import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import type { CrossSiteRow } from '../CrossSiteView';
-import { generateTimelineCells } from '@/components/gantt/utils';
+import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils';
+import type { TimelineCell } from '@/components/gantt/utils';
 import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
 import { formatDateISO } from '@/utils/date';
 import { makeProject, makeSite, makeTeam, makeUser } from '@/test/factories';
@@ -144,6 +146,23 @@ describe('CrossSiteView', () => {
   });
 });
 
+describe('CrossSiteView event strip', () => {
+  it.each(['month', 'quarter'] as const)('draws the strip exactly once, in the timeline header, at %s zoom', (viewMode) => {
+    const events: CompanyEvent[] = [
+      { id: 91, site_id: 1, site_ids: [1], date: iso(2), end_date: null, name: 'ISO audit', team_ids: [] },
+    ];
+    useAppStore.setState({ companyEvents: events, companyEventDates: buildEventDateSet(events) });
+    useViewStore.setState({ viewMode });
+    const { container } = render(<CrossSiteView />);
+    const layers = container.querySelectorAll('[class*="markerLayer"]');
+    expect(layers).toHaveLength(1);
+    expect(layers[0].closest('[class*="eventsRow"]')).not.toBeNull();
+    const hits = layers[0].querySelectorAll('button[class*="markerBadge"]');
+    expect(hits).toHaveLength(1);
+    expect(hits[0].getAttribute('aria-label')).toMatch(/— 1 event: ISO audit$/);
+  });
+});
+
 describe('CrossSiteTimelineBody', () => {
   const cells = generateTimelineCells(
     new Date(2026, 7, 1),
@@ -162,13 +181,24 @@ describe('CrossSiteTimelineBody', () => {
     Array.from(container.querySelectorAll('[class*="markerLayer"] button[class*="markerBadge"]')).map(
       (b) => b.getAttribute('aria-label') ?? ''
     );
+  // The strip is the header's (its events row), not the body's
+  const header = (list: TimelineCell[], viewMode: 'month' | 'quarter') => (
+    <TimelineHeader
+      headers={generateTimelineHeaders(list, viewMode)}
+      cells={list}
+      cellWidth={20}
+      totalWidth={list.length * 20}
+      viewMode={viewMode}
+    />
+  );
 
-  it('highlights weekends, holidays and events, with the event strip, in day views', () => {
+  it('highlights weekends, holidays and events in day views, the strip in the header', () => {
     const { container } = render(
       <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="month" />
     );
     expect(container.querySelectorAll('[class*="weekend"]').length).toBeGreaterThan(0);
-    const labels = hitLabels(container);
+    expect(container.querySelector('[class*="markerLayer"]')).toBeNull();
+    const labels = hitLabels(render(header(cells, 'month')).container);
     expect(labels).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/— Bank holiday National Day$/),
@@ -183,9 +213,7 @@ describe('CrossSiteTimelineBody', () => {
 
   it('names the closure in the panel, for the current site', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user' }) });
-    const { container } = render(
-      <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="month" />
-    );
+    const { container } = render(header(cells, 'month'));
     const shutdown = Array.from(container.querySelectorAll('button[class*="markerBadge"]')).find((b) =>
       /Shutdown$/.test(b.getAttribute('aria-label') ?? '')
     )!;
@@ -199,7 +227,10 @@ describe('CrossSiteTimelineBody', () => {
       <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="month" />
     );
     expect(container.querySelector('[class*="weekend"]')).toBeNull();
-    expect(hitLabels(container)).toEqual(expect.arrayContaining([expect.stringMatching(/Bank holiday National Day$/)]));
+    const strip = render(header(cells, 'month'));
+    expect(hitLabels(strip.container)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/Bank holiday National Day$/)])
+    );
 
     rerender(
       <CrossSiteTimelineBody rows={rows} cells={cells} cellWidth={20} totalWidth={cells.length * 20} viewMode="quarter" />
@@ -211,9 +242,7 @@ describe('CrossSiteTimelineBody', () => {
       { id: 1, date: '2026-08-05', name: 'Audit', color: '#ff0000' },
       { id: 2, date: '2026-08-06', name: 'Shutdown', counts_as_unavailable: true },
     ]);
-    rerender(
-      <CrossSiteTimelineBody rows={rows} cells={quarterCells} cellWidth={20} totalWidth={quarterCells.length * 20} viewMode="quarter" />
-    );
-    expect(hitLabels(container)).toEqual([expect.stringMatching(/^Week \d+ — 2 events: Shutdown, Audit$/)]);
+    strip.rerender(header(quarterCells, 'quarter'));
+    expect(hitLabels(strip.container)).toEqual([expect.stringMatching(/^Week \d+ — 2 events: Shutdown, Audit$/)]);
   });
 });

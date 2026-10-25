@@ -8,7 +8,6 @@ import { forwardRef, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
-import { TimelineMarkers } from '@/components/gantt/Timeline/TimelineMarkers';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { ViewMode } from '@/types';
 import type { CrossSiteRow } from './CrossSiteView';
@@ -32,9 +31,8 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
   }, ref) {
     
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
-    const siteId = useAppStore((s) => s.currentSite?.id);
-    // Background tints are week/month only; the strip (TimelineMarkers) is
-    // drawn at every zoom
+    // Background tints are week/month only; the event strip sits in the
+    // header's events row (TimelineHeader)
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
     
@@ -127,11 +125,6 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
               }
             })}
           </div>
-          
-          {/* Company event strip and its panel, at every zoom (the tints above
-              stay week/month only). Events are loaded for the current site
-              only, so the strip speaks for it */}
-          <TimelineMarkers cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
         </div>
       </div>
     );

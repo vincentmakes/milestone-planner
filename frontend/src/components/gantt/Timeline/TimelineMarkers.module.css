@@ -1,5 +1,5 @@
-/* TimelineMarkers — the holiday / company-event strip at the top of a
-   timeline body and its panel. No class here may contain "row", "rows" or
+/* TimelineMarkers — the holiday / company-event strip in the timeline
+   header's events row, and its panel. No class here may contain "row", "rows" or
    "bar" (the drag hooks and DependencyLayer select on those substrings). */
 
 .markerLayer {
@@ -66,7 +66,7 @@
   background: var(--text-muted);
 }
 
-/* Hit cell: transparent, the strip's 12 px (the bars start below it) */
+/* Hit cell: transparent, the strip's 12 px (the events row's height) */
 .markerBadge {
   position: absolute;
   top: 0;
