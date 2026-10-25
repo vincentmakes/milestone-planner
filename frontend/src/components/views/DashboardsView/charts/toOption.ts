@@ -219,6 +219,9 @@ export function gaugeScale(
   };
 }
 
+/** The gauge's track (and progress) width in pixels. */
+export const GAUGE_TRACK_WIDTH = 20;
+
 /** A gauge of the result's total (its dimensions, which only the API can send, are ignored). */
 function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartTheme): ChartOption {
   const palette = theme.palette;
@@ -240,8 +243,8 @@ function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartThem
         max: scale.max,
         startAngle: 210,
         endAngle: -30,
-        progress: { show: true, width: 12, itemStyle: { color: scale.band(value) } },
-        axisLine: { lineStyle: { width: 12, color: scale.stops } },
+        progress: { show: true, width: GAUGE_TRACK_WIDTH, itemStyle: { color: scale.band(value) } },
+        axisLine: { lineStyle: { width: GAUGE_TRACK_WIDTH, color: scale.stops } },
         pointer: { show: false },
         axisTick: { show: false },
         splitLine: { show: false },
