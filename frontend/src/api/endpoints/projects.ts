@@ -314,21 +314,13 @@ export async function deleteStaffAssignment(
  * Can be assigned to project, phase, or subphase
  */
 export async function createEquipmentAssignment(
-  data: CreateEquipmentAssignmentRequest & { 
-    project_id?: number; 
-    phase_id?: number; 
-    subphase_id?: number; 
-  }
+  data: CreateEquipmentAssignmentRequest & { project_id: number }
 ): Promise<EquipmentAssignment> {
-  // Determine endpoint based on what we're assigning to
-  if (data.subphase_id) {
-    return apiPost<EquipmentAssignment>(`/api/subphases/${data.subphase_id}/equipment`, data);
-  } else if (data.phase_id) {
-    return apiPost<EquipmentAssignment>(`/api/phases/${data.phase_id}/equipment`, data);
-  } else if (data.project_id) {
-    return apiPost<EquipmentAssignment>(`/api/projects/${data.project_id}/equipment`, data);
-  }
-  throw new Error('Must specify project_id, phase_id, or subphase_id');
+  // Equipment bookings are project-level: booked from a phase or subphase row
+  // too, they go to the project (the server has no phase / subphase route).
+  const { project_id, equipment_id, start_date, end_date, note } = data;
+  const body = { equipment_id, start_date, end_date, ...(note !== undefined ? { note } : {}) };
+  return apiPost<EquipmentAssignment>(`/api/projects/${project_id}/equipment`, body);
 }
 
 /**
@@ -522,6 +514,7 @@ function transformEquipmentAssignment(assignment: Record<string, unknown>): Equi
     subphase_id: assignment.subphase_id as number | null | undefined,
     start_date: assignment.start_date as string,
     end_date: assignment.end_date as string,
+    note: (assignment.note as string | null | undefined) ?? null,
   };
 }
 

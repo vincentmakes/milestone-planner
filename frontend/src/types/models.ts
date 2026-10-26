@@ -360,6 +360,8 @@ export interface EquipmentAssignment {
   subphase_id?: number | null;
   start_date: string;
   end_date: string;
+  /** The booking's optional note (null when none) */
+  note?: string | null;
 }
 
 // =============================================================================
@@ -768,6 +770,13 @@ export interface CreateStaffAssignmentRequest {
    */
   start_date?: string;
   end_date?: string;
+  /**
+   * Optional, sent only when not blank (≤ 4000, `@[Name](id)` mentions). A
+   * direct booking posts it to the booking's comment thread (needs
+   * `kanban.comment`); a request (202) carries it as its note to the
+   * approvers, added to the thread once approved.
+   */
+  comment?: string;
 }
 
 /**
@@ -782,12 +791,13 @@ export interface UpdateStaffAssignmentRequest {
   end_date?: string | null;
 }
 
+/** Equipment is always booked on the project (there is no phase / subphase route). */
 export interface CreateEquipmentAssignmentRequest {
   equipment_id: number;
-  phase_id?: number | null;
-  subphase_id?: number | null;
   start_date: string;
   end_date: string;
+  /** Optional (≤ 2000). On an update, `""` clears it and leaving it out keeps it. */
+  note?: string;
 }
 
 /** Result of a bulk calendar import (vacations, holidays, company events) */

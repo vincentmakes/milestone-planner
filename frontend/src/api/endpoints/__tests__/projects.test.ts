@@ -215,17 +215,22 @@ describe('assignments route by level', () => {
     ]);
   });
 
-  it('routes equipment assignments', async () => {
+  it('books equipment on the project only, whatever row it comes from', async () => {
+    // Regression: phase / subphase rows used to post to /api/phases/{id}/equipment
+    // and /api/subphases/{id}/equipment, which do not exist (404).
     const base = { equipment_id: 1, start_date: 'a', end_date: 'b' };
-    await createEquipmentAssignment({ ...base, subphase_id: 3 } as never);
-    await createEquipmentAssignment({ ...base, phase_id: 2 } as never);
-    await createEquipmentAssignment({ ...base, project_id: 1 } as never);
-    expect(post.mock.calls.map((c) => c[0])).toEqual([
-      '/api/subphases/3/equipment',
-      '/api/phases/2/equipment',
-      '/api/projects/1/equipment',
+    await createEquipmentAssignment({ ...base, project_id: 1 });
+    await createEquipmentAssignment({ ...base, project_id: 4, note: 'Bring the column' });
+    // Ids a caller still passes along are never sent, nor do they pick the route.
+    await createEquipmentAssignment({ ...base, project_id: 5, phase_id: 2, subphase_id: 3 } as never);
+    expect(post.mock.calls).toEqual([
+      ['/api/projects/1/equipment', base],
+      ['/api/projects/4/equipment', { ...base, note: 'Bring the column' }],
+      ['/api/projects/5/equipment', base],
     ]);
-    await expect(createEquipmentAssignment(base as never)).rejects.toThrow('Must specify');
+  });
+
+  it('updates and deletes equipment assignments', async () => {
     await updateEquipmentAssignment(8, { end_date: 'c' } as never);
     await deleteEquipmentAssignment(8);
     expect(put).toHaveBeenCalledWith('/api/equipment-assignments/8', { end_date: 'c' });
@@ -324,7 +329,7 @@ describe('fetchAllProjects transform layer', () => {
                 start_date: '2026-01-01',
                 end_date: '2026-01-10',
                 is_milestone: 0,
-                equipmentAssignments: [{ id: 4, equipment_id: 9 }],
+                equipmentAssignments: [{ id: 4, equipment_id: 9, note: 'Bring the column' }],
                 children: [
                   {
                     id: 21,
@@ -367,6 +372,8 @@ describe('fetchAllProjects transform layer', () => {
       }),
     ]);
     expect(project.equipmentAssignments[0]).toMatchObject({ equipment_id: 9, equipment_name: 'Reactor' });
+    // No note sent (an older server): null, never undefined.
+    expect(project.equipmentAssignments[0].note).toBeNull();
 
     const [design, fallback, unnamed] = project.phases;
     expect(design).toMatchObject({
@@ -394,6 +401,7 @@ describe('fetchAllProjects transform layer', () => {
       color: '#05B6D4',
     });
     expect(child.equipmentAssignments[0].equipment_id).toBe(9);
+    expect(child.equipmentAssignments[0].note).toBe('Bring the column');
 
     const grandchild = child.children[0];
     expect(grandchild).toMatchObject({

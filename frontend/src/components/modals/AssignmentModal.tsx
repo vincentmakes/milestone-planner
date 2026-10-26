@@ -10,6 +10,14 @@
  * user may not change (`assignmentLock`: someone else's pending join, an open
  * request of mine, no right) opens read-only with a Notice saying why — My
  * Work's Open always lands here — while its comments stay usable.
+ *
+ * A new staff booking may carry a comment (`MentionTextarea`, inside the
+ * form — Enter in it adds a line, it never submits): assigned directly it is
+ * added to the booking's comment thread, so the field shows only with
+ * `kanban.comment`; as a request ("Request to assign me") it is the message
+ * for the approver, always offered, and added to the thread once approved
+ * when the user may comment. Equipment bookings carry an optional note
+ * (create and edit; an edit always sends it, `""` clears it).
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -54,10 +62,17 @@ import {
   markRequestPendingLocally,
 } from '@/utils/pendingBookings';
 import { CardComments } from '@/components/common/CardComments';
+import { MentionTextarea } from '@/components/common/MentionTextarea';
+import { useHasPermission } from '@/hooks/useCan';
+import { useMentionCandidates } from '@/hooks/useMentionCandidates';
+import { serializeMentions, type MentionAnchor } from '@/utils/mentions';
 import { AllocationSlider, snapToStep } from '@/components/common/AllocationSlider';
 import styles from './AssignmentModal.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
 import { Icon, PinIcon } from '@/components/common/Icon';
+
+// Stable empty list: a fresh [] per render would recompute the mention candidates.
+const NO_PARTICIPANTS: readonly never[] = [];
 
 interface AssignmentModalProps {
   mode: 'staff' | 'equipment';
@@ -101,6 +116,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   // Phase / subphase staff: the booking follows the card's dates (linked) or
   // has its own dates inside the card (an unlinked segment).
   const [followCard, setFollowCard] = useState(true);
+  // A new staff booking's comment (text + picked mentions), an equipment booking's note.
+  const [commentDraft, setCommentDraft] = useState('');
+  const [commentAnchors, setCommentAnchors] = useState<MentionAnchor[]>([]);
+  const [note, setNote] = useState('');
+  const canComment = useHasPermission('kanban.comment');
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
@@ -207,6 +227,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         setFollowCard(editingStaffAssignment.linked !== false);
       } else if (!isStaff && editingEquipmentAssignment) {
         setResourceId(editingEquipmentAssignment.equipment_id.toString());
+        setNote(editingEquipmentAssignment.note ?? '');
       }
       setStartDate(toInputDateFormat(editingAssignment.start_date));
       setEndDate(toInputDateFormat(editingAssignment.end_date));
@@ -225,7 +246,10 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       setEndDate(toInputDateFormat(targetItem?.end_date) || today);
       // A new booking is linked by default; the switch gives it own dates.
       setFollowCard(true);
+      setNote('');
     }
+    setCommentDraft('');
+    setCommentAnchors([]);
     setError(null);
   }, [isOpen, initKey, editingAssignment, editingStaffAssignment, editingEquipmentAssignment, isStaff, targetItem, selfOnly, currentUser, ownMaxCapacity]);
 
@@ -263,6 +287,24 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const ownCardDates = isStaff && isPhaseOrSubphase && !followCard;
   const cardStart = isPhaseOrSubphase && targetItem?.start_date ? toDateOnly(targetItem.start_date) : undefined;
   const cardEnd = isPhaseOrSubphase && targetItem?.end_date ? toDateOnly(targetItem.end_date) : undefined;
+
+  // The comment of a new staff booking: a request's message for the approver
+  // (always offered), or a direct booking's first word in its thread (only
+  // for those who may comment -- the server answers 403 otherwise).
+  const isRequest = selfNeedsApproval;
+  const showCommentField =
+    isStaff && !isEditing && !selfDenied && !createBlockedReason && (isRequest || canComment);
+  const commentCandidates = useMentionCandidates(
+    showCommentField ? dialogProject?.site_id : null,
+    targetItem?.staffAssignments ?? NO_PARTICIPANTS,
+    currentUser?.id
+  );
+  const commentLabel = isRequest ? 'Message for the approver (optional)' : 'Comment (optional)';
+  const commentHint = !canComment
+    ? null
+    : isRequest
+      ? "Added to the booking's comment thread once approved."
+      : "Added to the booking's comment thread.";
 
   const handleFollowCardChange = (follow: boolean) => {
     setFollowCard(follow);
@@ -341,10 +383,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           // On a phase / subphase, dates make an unlinked segment: sent only
           // when the booking does not follow the card.
           const withDates = !isPhaseOrSubphase || !followCard;
+          // Serialize first, then trim: trimming the draft would shift the
+          // mention anchors' offsets.
+          const comment = showCommentField
+            ? serializeMentions(commentDraft, commentAnchors).trim()
+            : '';
           const assignmentData = {
             staff_id: parseInt(resourceId),
             allocation,
             ...(withDates ? { start_date: startDate, end_date: endDate } : {}),
+            ...(comment ? { comment } : {}),
             project_id: projectId || undefined,
             phase_id: phaseId || undefined,
             subphase_id: subphaseId || undefined,
@@ -352,25 +400,35 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           sentForApproval = isPendingResponse(await createStaffAssignment(assignmentData));
         }
       } else {
-        const assignmentData = {
-          equipment_id: parseInt(resourceId),
-          start_date: startDate,
-          end_date: endDate,
-          project_id: projectId || undefined,
-          phase_id: phaseId || undefined,
-          subphase_id: subphaseId || undefined,
-        };
-
+        const trimmedNote = note.trim();
         if (isEditing && editingEquipmentAssignment) {
-          await updateEquipmentAssignment(editingEquipmentAssignment.id, assignmentData);
+          // Always sent on an edit: "" clears the note.
+          await updateEquipmentAssignment(editingEquipmentAssignment.id, {
+            equipment_id: parseInt(resourceId),
+            start_date: startDate,
+            end_date: endDate,
+            note: trimmedNote,
+          });
           if (projectId) {
             patchEquipmentAssignmentLocally(projectId, editingEquipmentAssignment.id, {
               start_date: startDate,
               end_date: endDate,
+              note: trimmedNote || null,
             });
           }
         } else {
-          await createEquipmentAssignment(assignmentData);
+          if (!projectId) {
+            setError('No project to book the equipment on');
+            return;
+          }
+          // Equipment is booked on the project, also from a phase or subphase row.
+          await createEquipmentAssignment({
+            equipment_id: parseInt(resourceId),
+            start_date: startDate,
+            end_date: endDate,
+            ...(trimmedNote ? { note: trimmedNote } : {}),
+            project_id: projectId,
+          });
         }
       }
 
@@ -629,6 +687,42 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
               }}
             />
           </div>
+        )}
+
+        {/* A new staff booking's comment: inside the form, Enter adds a line */}
+        {showCommentField && (
+          <div className={styles.formGroup}>
+            <span className={styles.fieldLabel} aria-hidden="true">
+              {commentLabel}
+            </span>
+            <MentionTextarea
+              value={commentDraft}
+              anchors={commentAnchors}
+              onChange={(text, next) => {
+                setCommentDraft(text);
+                setCommentAnchors(next);
+              }}
+              candidates={commentCandidates}
+              rows={3}
+              disabled={isSubmitting}
+              aria-label={commentLabel}
+              targetGroupLabel={assignmentLevel === 'project' ? 'On this project' : 'On this card'}
+              placeholder="Type @ to notify someone."
+            />
+            {commentHint && <span className={styles.fieldHint}>{commentHint}</span>}
+          </div>
+        )}
+
+        {/* An equipment booking's note (create and edit) */}
+        {!isStaff && (
+          <Input
+            label="Note (optional)"
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={2000}
+            fullWidth
+          />
         )}
       </form>
 

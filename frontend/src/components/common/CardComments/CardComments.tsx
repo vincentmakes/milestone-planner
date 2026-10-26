@@ -10,7 +10,7 @@
  * composer always shows; without `kanban.comment` the server's refusal shows
  * in the Notice. Mention candidates are the people on the target first
  * (`participants`), then everyone mentionable at the site (cached per site
- * for the session, `mentionableCache.ts`), never yourself.
+ * for the session, `useMentionCandidates`), never yourself.
  *
  * Every button is `type="button"`: a host may render the thread next to its
  * own form, and a submit button would send that form. Render it OUTSIDE any
@@ -18,7 +18,7 @@
  * but nothing here is meant to submit it.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -28,18 +28,12 @@ import {
   createComment,
   deleteComment,
   getComments,
-  getMentionableUsers,
   type CardComment,
   type CommentEntityType,
 } from '@/api/endpoints/kanban';
-import { mentionableUsersFor, type CachedMentionableUser } from '@/api/endpoints/mentionableCache';
 import { useHasPermission } from '@/hooks/useCan';
-import {
-  buildMentionCandidates,
-  mentionedUserIds,
-  serializeMentions,
-  type MentionAnchor,
-} from '@/utils/mentions';
+import { useMentionCandidates } from '@/hooks/useMentionCandidates';
+import { mentionedUserIds, serializeMentions, type MentionAnchor } from '@/utils/mentions';
 import { confirmAction } from '@/utils/confirmDialog';
 import type { StaffAssignment } from '@/types';
 import styles from './CardComments.module.css';
@@ -75,9 +69,6 @@ export function CardComments({
   const [comments, setComments] = useState<CardComment[]>([]);
   const [draft, setDraft] = useState('');
   const [anchors, setAnchors] = useState<MentionAnchor[]>([]);
-  const [mentionable, setMentionable] = useState<{ siteId: number; users: CachedMentionableUser[] } | null>(
-    null
-  );
   const [error, setError] = useState<string | null>(null);
   const { isSubmitting: busy, begin, end } = useSubmitGuard();
 
@@ -98,33 +89,7 @@ export function CardComments({
     void reloadComments();
   }, [reloadComments, projectId]);
 
-  useEffect(() => {
-    if (siteId === undefined || siteId === null) return;
-    let cancelled = false;
-    mentionableUsersFor(siteId, getMentionableUsers)
-      .then((users) => {
-        if (!cancelled) setMentionable({ siteId, users });
-      })
-      .catch((err) => console.error('[Comments] Failed to load mentionable users:', err));
-    return () => {
-      cancelled = true;
-    };
-  }, [siteId]);
-
-  const mentionCandidates = useMemo(
-    () =>
-      buildMentionCandidates(
-        [...participants],
-        (mentionable && mentionable.siteId === siteId ? mentionable.users : []).map((u) => ({
-          id: u.id,
-          name: u.name,
-          role: u.job_title ?? undefined,
-        })),
-        // Mentioning yourself would render a pill that notifies nobody.
-        meUserId ?? undefined
-      ),
-    [participants, mentionable, siteId, meUserId]
-  );
+  const mentionCandidates = useMentionCandidates(siteId, participants, meUserId);
 
   const handleComment = async () => {
     if (!draft.trim()) return;

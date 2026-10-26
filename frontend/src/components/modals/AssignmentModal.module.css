@@ -30,6 +30,18 @@
   gap: 1rem;
 }
 
+/* A field without a shared Input (the comment's MentionTextarea): the Input's label and hint look */
+.fieldLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.fieldHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
 /* A grid cell wrapping a shared Input: lets a date field shrink below its intrinsic width */
 .field {
   min-width: 0;

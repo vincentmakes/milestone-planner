@@ -247,14 +247,13 @@ export function ResourceDropOverlay({
         });
         sentForApproval = isPendingResponse(res);
       } else if (resourceDrag.type === 'equipment') {
+        // Equipment is booked on the project, also when dropped on a phase
+        // or subphase row (with the dropped days).
         await createEquipmentAssignment({
           equipment_id: resourceDrag.resourceId,
           start_date: startDate,
           end_date: endDate,
-          // Always pass project_id for all levels
           project_id: hoveredTarget.projectId,
-          phase_id: isPhaseLevel ? hoveredTarget.phaseId! : undefined,
-          subphase_id: isSubphaseLevel ? hoveredTarget.subphaseId! : undefined,
         });
       }
 
