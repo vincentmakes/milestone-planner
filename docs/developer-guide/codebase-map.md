@@ -51,7 +51,7 @@ Code described: the whole repository — `app/`, `frontend/`, `migrations/`, `sc
 - **Site** — a physical location *within* a tenant (labs/offices). Most data (projects, equipment, holidays, events) is site-scoped; users belong to one or more sites via `user_sites`, equipment via `equipment_sites`, company events via `company_event_sites`. **Sites scope access**: without `sites.view_all` (admin-only by default) a user reads and writes only the data of their *visible sites* (their live `user_sites`), see [Tenant role model](auth-and-tenancy.md#tenant-role-model).
 - **Organization** — a master-DB grouping of tenants that share one Microsoft Entra SSO configuration.
 - **Tenant role** (`users.role`, FK → `roles.key`) — a named **permission set**: one mode per catalogue key (`allow`, `approval` on the three own-booking keys, or deny). Three system roles are seeded — `admin` (every key, in code; not editable), `superuser` and `user` (editable defaults reproducing the pre-1.13 behaviour) — and admins add custom roles in Settings → Roles. See [Tenant role model](auth-and-tenancy.md#tenant-role-model).
-- **Permission key** — one entry of the catalogue in `app/services/permissions.py` (58 keys, 17 groups), e.g. `projects.create`, `sites.view_all`. Locked: `projects.view` (always allow) and `roles.manage` (admin only). The **PM bundle** is the 6 keys a holder of `projects.manage_as_pm` gets on the projects whose `pm_id` they are.
+- **Permission key** — one entry of the catalogue in `app/services/permissions.py` (60 keys, 18 groups), e.g. `projects.create`, `sites.view_all`. Locked: `projects.view` (always allow) and `roles.manage` (admin only). The **PM bundle** is the 6 keys a holder of `projects.manage_as_pm` gets on the projects whose `pm_id` they are.
 - **Visible sites** — the sites a user reads and writes: every site with `sites.view_all`, otherwise their live `user_sites`.
 - **Approval request** — an own booking (`assignments.self_*` in approval mode) waiting for an approver; its pending create is a real assignment row with `approval_status = 'pending'`.
 - **My Work** — the per-user view replacing My Todos (2.0.0; personal tasks were removed): **My Approvals** (requests the user may decide), **My Assignments** (their approved bookings, derived client-side) and **My Requests** (their own requests).
@@ -64,6 +64,9 @@ Code described: the whole repository — `app/`, `frontend/`, `migrations/`, `sc
 - **Project field** — a field on every project, instance-wide: `text` (≤ 2000 chars), `number` (optional `decimals` 0–3: new values rounded half-up on write, mirrored by `roundFieldNumber`), `toggle`, `select` (one item) or `multiselect`; dropdown *items* (`project_field_options`) are coloured, ordered and limited to sites/teams like tags. Values live in `project_field_values` (text/number/toggle) and `project_field_selections` (items); none is required. The four **built-in fields** (Customer, Sales PM, Volume, Confirmed — `projects` columns) can be renamed and the first three hidden (settings `project_field_labels` / `project_fields_hidden`); Confirmed is never hidden (it drives stripes, ordering and counts). Managed in Settings → Project fields (`project_fields.manage`); filled in the project dialog. Any user filters (*Filter*), groups (*Group by*, dropdown fields) and colours (*Colour by*, dropdown fields or *Tags*) the Gantt by them — per-browser preferences, not field settings.
 - **Absence / absence type** — a vacation row is an *absence*; its tenant-wide *absence type* (Holidays, Home Office, Illness, …) decides via `counts_as_unavailable` whether it reduces capacity. Home Office is shown but leaves the person plannable.
 - **What-If mode** — a client-side sandbox: edits are queued locally instead of sent to the server, then applied or discarded.
+- **Dashboard** (2.1.0) — a named, instance-wide page of widgets (`dashboards`), owned by its creator (`owner_id`, NULL = admin-owned) and `private`, `shared` with chosen roles, sites, teams and people together (`dashboard_roles` / `dashboard_sites` / `dashboard_teams` / `dashboard_users` — **any** match opens it; a site means its live members, not those who merely see it; view only) or shared with `everyone` who holds `views.dashboards`; at most one is the default (`is_default`, the seeded **Overview**); two are seeded for every tenant, the Overview and **Capacity and flows** (`dashboard_seed.BASE_DASHBOARDS`). Every viewer sees their own numbers (visible sites, archived rule).
+- **Widget** — one tile of a dashboard (`dashboard_widgets`): one of nine kinds (`kpi` / `gauge` / `bar` / `line` / `pie` / `heatmap` / `treemap` / `sankey` / `table`; the dimension rules — gauge none, heatmap and sankey exactly two, treemap one or two, no period and no `NO_PERCENT_MEASURES` on treemap / sankey — are the builder's, `builder/widgetDraft.ts`, the server only validates the query), a title, a metric query, display options (`stacked`, `percent`, `orientation`, `number_format`, `show_legend`, `kpi_bucket`, `target` — the gauge's target in the measure's unit, 0 to 1e9, kept by the client on a gauge only) and a grid position per breakpoint (`lg` / `md` / `sm`).
+- **Metric query** — a widget's question to the metric engine (`app/services/metrics.py`, spec `MetricQuery` in `app/schemas/dashboard.py`): a measure, up to two dimensions, filters, a period, `percent_of` and `top_n`. Measures come in five **families** (`FAMILY`): booking (booked days / weeks, bookings, people booked), project (projects, project weeks, volume), phase (phases, phase weeks, phases due / overdue), capacity (`views.staff`: capacity days, available days, utilisation, people over capacity) and equipment (`views.equipment`: equipment booked days, bookings, equipment booked, equipment utilisation); each family takes its own filters (`MEASURE_FILTERS`). The **composites** (`COMPOSITES`: available days, utilisation and people over capacity over `booked_days` / `capacity_days`, equipment utilisation over `equipment_booked_days` / the internal `equipment_available_days`) are folded from two sides by `COMPOSITE_RULES`. Booking measures are **planned** time (approved bookings), not recorded time.
 
 ## Project Structure
 
@@ -83,6 +86,8 @@ docker-entrypoint.sh   # DB wait + optional AUTO_INIT_DB, then uvicorn
 shared/
   permission-keys.json # Committed mirror of the permission catalogue ({keys, approvable, pm_bundle, disableable}),
                        #   generated by permissions.permission_keys_json(); read by the frontend tests
+  metric-matrix.json   # Committed mirror of the dashboards' validity matrix (measures → unit + dimensions,
+                       #   needs, periods, grains), generated by metrics.metric_matrix_json() (2.1.0)
 deploy-react.sh        # Copies frontend/dist → public/ atomically
 setup_databases.sql    # Canonical full schema for fresh installs
 .env.example           # Environment template
@@ -121,6 +126,8 @@ app/
                        #   mentioned_user_ids derived from the body
     notification.py    # Notification — per-recipient inbox (due-soon/overdue are derived client-side)
     rbac.py            # Role, RolePermission, ApprovalPolicy, ApprovalPolicyRole, ApprovalRequest
+    dashboard.py       # Dashboard (widgets, roles / sites / teams / users + their *_ids), DashboardRole,
+                       #   DashboardSite, DashboardTeam, DashboardUser, DashboardWidget (2.1.0)
     note.py            # Note — tablename is staff_notes
     settings.py        # Settings (KV), PredefinedPhase, SSOConfig (singleton)
     session.py         # Session (express-session compatible)
@@ -136,6 +143,8 @@ app/
     assignments.py     # Staff assignments (3 levels; own bookings may answer 202) + equipment assignments
     auth.py            # Login/logout/me, password change, SSO config/login/callback
     custom_columns.py  # Custom column + value CRUD
+    dashboards.py      # Dashboards CRUD (sharing targets + shared_with) + /shareable-users (people picker)
+                       #   + /query (builder preview) + /{id}/data (every widget's result)
     equipment.py       # Equipment, equipment types, bookings, blocks
     export.py          # MPP/CSV project export + full site export to Excel (.xlsx)
     health.py          # /health + /api/health + WS debug endpoints
@@ -148,7 +157,7 @@ app/
     projects.py        # Project/phase/subphase CRUD + reorder (+ project field_values)
     project_fields.py  # Project fields + dropdown items CRUD, reorder, usage (writes: project_fields.manage)
     roles.py           # GET /permissions (the catalogue for the matrix) + role CRUD (writes require_admin)
-    settings.py        # Instance settings (KV; known keys validated, see Settings keys) + tenant SSO settings
+    settings.py        # Instance settings (KV; known keys validated, see routes.md → Settings keys) + tenant SSO settings
     sites.py           # Sites, bank holidays (edit, .ics import, Nager refresh), multi-site
                        #   company events (/events routes + legacy /sites/{id}/events)
     skills.py          # Skills + user-skill assignment
@@ -161,7 +170,8 @@ app/
                        #   base.py holds Node-compatible serializers + DateRangeOrdered;
                        #   project_field.py the field / item bodies; project.py carries field_values;
                        #   TagCreate / TagUpdate are extra="forbid", so a stale group_id is a 422;
-                       #   sso.py the SSO test request/response shared by org and tenant tests)
+                       #   sso.py the SSO test request/response shared by org and tenant tests;
+                       #   dashboard.py the MetricQuery spec + dashboard / widget bodies)
   services/
     approvals.py       # Own-booking approval workflow: submit_request (202), resolve_row_write,
                        #   plan_placement / apply_shrink (auto-placed second booking), approve / reject / cancel, approver_user_ids / can_decide (live),
@@ -177,7 +187,10 @@ app/
                        #   deliver() after the caller's commit (advisory lock, 10-min coalescing)
     demo_seed.py       # insert_demo_data(conn, demo, admin_password_hash=…): the guarded
                        #   names→ids loader of the demo set, shared by seed_demo and the admin
-                       #   portal's "Seed demo data" provisioning option
+                       #   portal's "Seed demo data" provisioning option; insert_demo_dashboards(conn,
+                       #   field_ids) (the two base dashboards + the demo extras: the Overview's two
+                       #   field widgets, the Capacity gauge; widgets only in the run that creates
+                       #   their dashboard; callable standalone on a seeded tenant)
     date_range.py      # parse_day / parse_day_range (400 on bad/inverted/>366-day ranges),
                        #   ensure_date_order (422) for partial updates
     encryption.py      # AES-256-GCM credentials + bcrypt/PBKDF2 password hashing
@@ -189,9 +202,25 @@ app/
                        #   verify_admin_exists() (auto-creates admin@milestone.local)
     mentions.py        # @[Name](id) mention tokens: parse_mention_ids / strip_mention_tokens
                        #   (mirrored in frontend/src/utils/mentions.ts)
+    absence_patterns.py # [R:d,…] recurring absences: parse_recurring_days, js_weekday, absence_weekdays
+                       #   (mirrored in frontend/src/utils/recurringVacation.ts). Import-light
+    people_lists.py    # shareable_users_statement: the one "people you may name" query (mention picker,
+                       #   dashboard people picker and its check)
     notifications.py   # Notification rows for Kanban and approval events (actor excluded,
                        #   one per recipient, priority order; the change notifications live in
                        #   change_notifications.py)
+    metrics.py         # The dashboards' metric engine: vocabulary (FAMILY, MEASURE_FILTERS, MEASURE_NEEDS /
+                       #   FILTER_NEEDS, COMPOSITES + COMPOSITE_RULES, NO_PERCENT_MEASURES) + MATRIX
+                       #   (metric_matrix_json), working-day calendar (person_off_days / equipment_off_days),
+                       #   resolve_period, load_extent / load_facts (one bulk load; capacity and equipment
+                       #   facts only for the families asked), pure aggregate (FACT_CASES in
+                       #   tests/test_metrics.py). Import-light: models in the loader
+    dashboard_access.py # ViewerScope + load_viewer_scope (role id, site / team membership, once per request),
+                       #   can_view / can_edit / visible_dashboards_clause (agrees with can_view)
+    dashboard_seed.py  # BASE_DASHBOARDS = BASE_DASHBOARD ("Overview") + CAPACITY_DASHBOARD ("Capacity and
+                       #   flows": heatmap, treemap, sankey) as plain Python; base_dashboard_rows (both),
+                       #   overview_rows (+ DEMO_EXTRA_WIDGETS), capacity_dashboard_rows(with_gauge) (the
+                       #   gauge first: demo-only, its utilisation needs views.staff)
     permissions.py     # The permission catalogue (PERMISSIONS, APPROVABLE_KEYS, PM_BUNDLE, LOCKED_KEYS,
                        #   SYSTEM_ROLES, DISABLEABLE_KEYS, default seed SQL, permission_keys_json) +
                        #   PermissionSet / load_permission_set / effective_permission_set (per-request
@@ -270,7 +299,14 @@ frontend/
                        #   diffProjects, projectSections, rowPositions, timeline)
       views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView,
                        #   KanbanView/ (KanbanView, KanbanBoard, KanbanColumn, KanbanCard, KanbanToolbar),
-                       #   WorkView/ (My Work: WorkView tabs, ApprovalRequestRow + MyRequestRow, MyAssignmentRow, CardLink)
+                       #   WorkView/ (My Work: WorkView tabs, ApprovalRequestRow + MyRequestRow, MyAssignmentRow, CardLink),
+                       #   DashboardsView/ (lazy, not in the barrel: DashboardsView toolbar + picker, DashboardGrid
+                       #   (react-grid-layout Responsive), WidgetCard, gridLayouts; charts/ (EChart, echartsTheme,
+                       #   toOption (+ gaugeScale, heatmapLabelsFit, hasDrawableData — the "Nothing to show"
+                       #   guard), KpiTile, kpi, TableWidget); SharedWithLine (the "Shared with" chips) +
+                       #   sharing.ts (sharedWithNoOne); builder/ (WidgetEditor (xxl Modal) + live preview,
+                       #   DashboardDialog (mode new / share: visibility + roles / sites / teams / people),
+                       #   useDashboardEditor (the draft carries the four target lists), widgetDraft))
       screens/         # LoginScreen, LoadingScreen, LoadErrorScreen (initial load failed → Retry)
       settings/        # Settings hub: SettingsHub.tsx (shell), sections.tsx (SETTINGS_SECTIONS
                        #   registry: group/id/label/permission/Panel, canOpenSettings), PanelToolbar.tsx,
@@ -303,14 +339,16 @@ frontend/
                        #   in KanbanCardModal and, after the form, in AssignmentModal),
                        #   DateRangeField/ (DateRangeField + DateField on one react-day-picker
                        #   calendar panel, DatePickerPopover, dateRangeLogic click rules),
+                       #   ErrorBoundary/ (Notice + Retry; wraps the lazy Dashboards view),
                        #   useSubmitGuard.ts (double-submit guard)
       layout/          # MainLayout, Header/ (density tiers + HeaderOverflowMenu, SyncStatus
                        #   "Offline" badge, WhatIfToggle + Apply-failure banner, UserMenu, …),
-                       #   Sidebar/ (Navigation, AdminSection, QuickStats), ResourcePanel/
+                       #   Sidebar/ (Navigation — Dashboards entry with its dashboards list —,
+                       #   AdminSection, QuickStats), ResourcePanel/
     contexts/          # WebSocketContext (WS → debounced refetch), wsSlices.ts (entity →
                        #   slice map), TimelineScrollContext, ReorderContext (row reordering),
                        #   KanbanDragContext (card drag, optimistic move)
-    stores/            # 10 Zustand stores + index.ts (resetAllStores, expireSession) — see
+    stores/            # 11 Zustand stores + index.ts (resetAllStores, expireSession) — see
                        #   Frontend Architecture
     types/models.ts    # All frontend entity types (snake_case, YYYY-MM-DD dates)
     types/permissions.ts # PERMISSION_KEYS / PermissionKey, APPROVABLE_KEYS, PM_BUNDLE, ADMIN_ROLE_KEY
@@ -324,7 +362,7 @@ frontend/
                        #   projectFilters,
                        #   kanbanCards, mentions, equipmentOverlap, subphaseUtils, persistFailure,
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
-                       #   roles, pendingBookings (+ assignmentLock), myAssignments, relativeTime, themeColors, colorSwatches, projectLevels,
+                       #   roles, pendingBookings (+ assignmentLock), myAssignments, metrics, viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
                        #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel /
                        #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals)
                        #   (criticalPath/diffProjects/dependencies/completionStatus live in
@@ -352,7 +390,8 @@ scripts/
   screenshots/         # Playwright screenshot pipeline (capture.py, capture_collab.py,
                        #   capture_admin.py, README.md) — data comes from app.scripts.seed_demo
 tests/                 # Backend pytest suite (mock-based, no live DB): conftest.py (fixtures),
-                       #   support.py (mock Result builders), shard_plugin.py (--shard=K/N)
+                       #   support.py (mock Result builders), shard_plugin.py (--shard=K/N),
+                       #   sqlite_support.py (an AsyncSession facade over in-memory SQLite: dashboards tests)
 public/                # Built frontend served by FastAPI (deploy-react.sh copies dist/ here)
 .devcontainer/         # Codespaces: multi-tenant dev env, demo seed, uvicorn autostart
 .github/               # FUNDING.yml + workflows/ (backend.yml, frontend.yml, docker.yml,
@@ -443,6 +482,8 @@ Four workflows in `.github/workflows/`. `backend.yml`, `frontend.yml` and `docke
 | `version-check.yml` | PRs to `main` only: `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs the PR's **base commit** (not the live `main`, so a race with a merge cannot false-fail) **and** `CHANGELOG.md` has a matching `## [<version>]` heading; its paths-filter runs in git mode like the other three |
 
 The README coverage badges are shields.io endpoint badges reading `backend.json` / `frontend.json` from the orphan **`coverage`** data branch. Only the two `Coverage Badges` jobs write it (push to `main`, `contents: write`, one shared `coverage-badges` concurrency group, `[skip ci]` commits, each job touching only its own file) — never commit to it by hand.
+
+There is no GHCR-pulls badge because `docker.yml` only builds the image, it publishes nothing, and no GitHub Sponsors badge by choice (`.github/FUNDING.yml` still powers the repo's Sponsor button).
 
 Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/build.sh` on push. There are no issue or PR templates in `.github/` (only `FUNDING.yml`).
 
