@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Comments on bookings**: the dialog of a staff booking has a **Comments** section with @-mentions. A booking on a phase or subphase shares the comment thread of its Kanban card; project-level bookings have their own project thread. The site Excel export's **Card comments** sheet also lists the project threads.
 - Every people picker (project manager, booking, Kanban assignee, absence, team members) has a search box that opens focused and filters as you type.
 - Settings → SSO: a Test configuration button checks the entered Microsoft Entra values (directory, client ID, secret, redirect URI) before they are saved.
+- Assigning staff or equipment, or requesting an assignment, can include an optional comment: it is added to the booking's comment thread, reaches the approver with a request, and is kept as a note on equipment bookings (also in the site Excel export's **Equipment assignments** sheet).
 
 ### Changed
 - Tag groups became dropdown project fields: existing groups are converted automatically on upgrade (a single-select group becomes a dropdown, any other group a multi-select dropdown); their tags become the field's items with the same colours, order and site and team limits, and projects keep what they had selected.
@@ -37,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - A newly posted comment no longer shows *(edited)*.
 - The project manager can be cleared again from the project dialog.
+- Booking equipment from a phase or subphase row now works (it used to fail with a not-found error).
 
 ### Security
 - Updated `vite` to 7.3.7 to close GHSA-587h-7wmj-h5pm, GHSA-r825-w8mm-5pxw, GHSA-698v-4r3x-3vcv, GHSA-rq7h-c2jc-7f22 and GHSA-9jrq-w75r-8gcw (development server only; the shipped application was not affected).

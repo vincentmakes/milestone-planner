@@ -102,7 +102,7 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Phase assignments** | Staff assigned at the phase level (with allocation %, **Start** / **End** — the booking's own dates, or the phase's — and **Linked**: yes when the booking follows the phase dates) |
 | **Subphase assignments** | Staff assigned at the subphase level (same Start / End / Linked columns). The three assignment sheets carry an **Approval status** (approved or pending) and a **Pending change** column |
 | **Approval requests** | Own-booking requests of the site's projects: requester, action, target, requested and previous values, status, decision and reason |
-| **Equipment assignments** | Equipment booked against projects/phases/subphases |
+| **Equipment assignments** | Equipment booked on projects, with each booking's **Note** |
 | **Custom columns** | Custom column definitions for this site (name, type, scope, options) |
 | **Custom column values** | Custom column values for every project/phase/subphase |
 | **Bank holidays** | Public and custom holidays on the site (with year) |

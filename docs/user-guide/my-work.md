@@ -18,9 +18,9 @@ Each tab shows how many items it holds: requests to decide, current and upcoming
 
 ## My Approvals
 
-Each request reads like a sentence — *Diana Davis wants to join Analytics of Bioprocess Scale-Up at 50%*, *… wants to change their booking: allocation 40% → 60%*, *… wants to leave …* — with its card (which opens the Kanban card) and how long ago it was sent.
+Each request reads like a sentence — *Diana Davis wants to join Analytics of Bioprocess Scale-Up at 50%*, *… wants to change their booking: allocation 40% → 60%*, *… wants to leave …* — with its card (which opens the Kanban card) and how long ago it was sent. When the requester wrote a **message for the approver**, it is shown in quotes under the request, with any `@`-mentions as names; the notification you received carries its beginning.
 
-- **Approve** applies the booking at once: a new booking stops being *pending* and counts towards the person's workload, a change takes the requested values, a removal deletes the booking
+- **Approve** applies the booking at once: a new booking stops being *pending* and counts towards the person's workload, a change takes the requested values, a removal deletes the booking. Approving a new booking also adds the requester's message to the booking's [comment thread](#comments-on-a-booking) as their comment — when their role may comment — and notifies the people it mentions (never you)
 - **Reject** opens a small dialog for an optional **reason**, which the requester sees under **My Requests**
 
 If the booking can no longer apply — the card was deleted, the person was already booked there, someone changed the booking in the meantime — approving closes the request as *Expired* and says why, instead of applying it.
@@ -53,6 +53,8 @@ The assignment dialog of a booking carries a **Comments** section:
 
 Type `@` to [mention someone](kanban-board.md#mentioning-someone): they are notified, and so are the people booked on the card (or, for a project thread, on the whole project). Posting a comment never saves or closes the booking. Commenting needs the **comment on cards** permission (every built-in role); reading a thread only needs to see the project, so it works with the Kanban board turned off too.
 
+A comment written when the booking was made — in the assignment dialog, or a request's message once approved — opens the thread like any other comment.
+
 A project thread is read from the dialog of a project-level booking. Someone you mention there who is not booked on the whole project gets the notification, which opens the project on the Gantt chart, but has no dialog to read the thread from.
 
 ## My Requests
@@ -67,6 +69,8 @@ Every request you sent appears here with its outcome:
 | **Withdrawn** | You (or an administrator) cancelled it |
 | **Replaced by a newer request** | You changed your request before anyone decided; the newer one counts |
 | **Expired** | It could no longer apply — the reason is shown, for example *the booking was changed since the request was made* |
+
+A request you sent with a message shows it as **Your message**, apart from the approver's reason.
 
 Pending and decided requests are under **Open** and **Done** respectively. Your pending bookings also show where they belong — as dashed rows in the [Gantt chart](staff-management.md#booking-yourself-when-approval-is-required) and on the Kanban card.
 

@@ -48,8 +48,8 @@ The right side shows a horizontal timeline with booking bars:
 ### Method 1: Drag & Drop
 
 1. Grab an equipment item by the drag handle in the Equipment panel
-2. Drag it onto a project or phase bar on the Gantt timeline
-3. A five-day booking is created where you drop it — click it afterwards to adjust the dates
+2. Drag it onto a project, phase or subphase bar on the Gantt timeline
+3. A five-day booking is created where you drop it — click it afterwards to adjust the dates. Equipment is always booked on the **project**: dropped on a phase or subphase, the booking takes the dropped days and shows on the project's row
 
 ### Method 2: Context Menu
 
@@ -63,7 +63,8 @@ The right side shows a horizontal timeline with booking bars:
 
 - Select the **equipment item** from the dropdown: it opens with a search box that finds an item by its name or its type ([how the pickers work](gantt-charts.md#picking-a-person))
 - Set **start and end dates** for the booking
-- Click **Save** to confirm
+- Add an optional **Note (optional)** — up to 2 000 characters, for example what to prepare. It is kept with the booking: shown when you edit it, in the project manager's notification of a new booking, and in the [site export](import-export.md). Empty the field and save to remove it; changing only the note notifies nobody
+- Click **Save** to confirm. Opened from a phase or subphase, the equipment is booked on its project
 
 ## Filtering by Type
 
