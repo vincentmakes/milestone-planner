@@ -55,12 +55,13 @@ from app.services import approvals, change_notifications
 from app.services.approvals import ACTION_CREATE, ACTION_REMOVE, booking_dict, booking_values
 from app.services.booking_segments import effective_dates
 from app.services.card_access import require_card_status_write
+from app.services.card_comments import build_comment_notifications, new_comment
+from app.services.card_comments import validate_mention_ids as _validate_mention_ids
 from app.services.card_status import STATUS_LABELS, apply_status
-from app.services.mentions import parse_mention_ids, strip_mention_tokens
+from app.services.mentions import comment_preview
 from app.services.notifications import (
     build_notifications,
     card_assignee_ids,
-    dedupe_by_recipient,
     notification_payload,
 )
 from app.services.permissions import ADMIN_ROLE_KEY, permission_required_detail
@@ -162,22 +163,6 @@ def _comment_response(comment: CardComment, author_name: str | None) -> dict:
         "created_at": comment.created_at,
         "updated_at": comment.updated_at,
     }
-
-
-async def _validate_mention_ids(db: AsyncSession, body: str) -> list[int]:
-    """Mentioned user ids parsed from the body, filtered to real users.
-
-    Targeting is derived from the body rather than a client-supplied list: the
-    body is the durable record, so the mentions a reader sees rendered are
-    exactly the ones that were notified, and that stays true across edits and
-    exports.
-    """
-    ids = parse_mention_ids(body)
-    if not ids:
-        return []
-    valid = await db.execute(select(User.id).where(User.id.in_(set(ids))))
-    found = set(valid.scalars().all())
-    return [uid for uid in ids if uid in found]
 
 
 async def _push_notifications(request: Request, rows: list) -> None:
@@ -682,52 +667,29 @@ async def create_card_comment(
     await ensure_project_visible(request, db, user, project_id)
 
     mentioned = await _validate_mention_ids(db, data.body)
-    # Strip before truncating, or a preview can end mid-token as "@[Alice And".
-    preview = strip_mention_tokens(data.body)[:200]
-
-    # One instant for both stamps: separate column defaults would read two
-    # clocks, and ``is_edited`` (updated_at > created_at) would flag every new
-    # comment as edited.
-    now = utcnow_naive()
-    comment = CardComment(
+    comment = new_comment(
         entity_type=entity_type,
         entity_id=entity_id,
         project_id=project_id,
         author_id=user.id,
         body=data.body,
-        created_at=now,
-        updated_at=now,
+        mentioned=mentioned,
     )
-    comment.set_mentions(mentioned)
     db.add(comment)
 
     author_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Someone"
     assignees = await card_assignee_ids(db, entity_type, entity_id)
 
-    # A user who is both assigned and mentioned gets the mention only.
-    rows = dedupe_by_recipient(
-        [
-            build_notifications(
-                recipient_ids=mentioned,
-                notification_type="mention",
-                actor_id=user.id,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                project_id=project_id,
-                title=f"{author_name} mentioned you on {card_name}",
-                body=preview,
-            ),
-            build_notifications(
-                recipient_ids=assignees,
-                notification_type="comment",
-                actor_id=user.id,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                project_id=project_id,
-                title=f"{author_name} commented on {card_name}",
-                body=preview,
-            ),
-        ]
+    rows = build_comment_notifications(
+        mentioned=mentioned,
+        assignees=assignees,
+        actor_id=user.id,
+        actor_name=author_name,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        project_id=project_id,
+        card_name=card_name,
+        preview=comment_preview(data.body),
     )
     db.add_all(rows)
 
@@ -787,7 +749,7 @@ async def update_card_comment(
         entity_id=comment.entity_id,
         project_id=comment.project_id,
         title=f"{author_name} mentioned you in a comment",
-        body=strip_mention_tokens(data.body)[:200],
+        body=comment_preview(data.body),
     )
     db.add_all(rows)
 

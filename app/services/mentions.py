@@ -48,3 +48,17 @@ def strip_mention_tokens(body: str) -> str:
     if not body:
         return body
     return MENTION_TOKEN_RE.sub(lambda m: f"@{m.group(1)}", body)
+
+
+# Notification previews of a comment body (the comment route, a booking's
+# comment, an approval request's note) are this long at most.
+PREVIEW_MAX = 200
+
+
+def comment_preview(body: str) -> str:
+    """Plain-text notification preview of a comment body: tokens stripped, then truncated.
+
+    Stripping first is the point: ``@[Alice Anderson](7)`` cut at the limit
+    would leave ``@[Alice And`` in the notification.
+    """
+    return strip_mention_tokens(body)[:PREVIEW_MAX] if body else body

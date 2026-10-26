@@ -7,7 +7,12 @@ frontend writes them and the backend reads them to decide who gets notified.
 
 import pytest
 
-from app.services.mentions import parse_mention_ids, strip_mention_tokens
+from app.services.mentions import (
+    PREVIEW_MAX,
+    comment_preview,
+    parse_mention_ids,
+    strip_mention_tokens,
+)
 
 
 @pytest.mark.parametrize(
@@ -67,3 +72,18 @@ def test_a_long_name_is_bounded():
     body = f"@[{'n' * 200}](7)"
     assert parse_mention_ids(body) == []
     assert strip_mention_tokens(body) == body
+
+
+def test_comment_preview_strips_then_truncates():
+    body = "x" * 190 + " @[Alice Anderson](7) tail"
+
+    preview = comment_preview(body)
+
+    assert preview == ("x" * 190 + " @Alice Anderson tail")[:PREVIEW_MAX]
+    assert len(preview) == PREVIEW_MAX == 200
+    assert "@[" not in preview
+
+
+@pytest.mark.parametrize("body", ["", None])
+def test_comment_preview_of_nothing_is_unchanged(body):
+    assert comment_preview(body) == body
