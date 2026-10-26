@@ -1,5 +1,8 @@
 # Database & Migrations
 
+!!! note "Complete reference"
+    This page covers what an administrator needs to run and upgrade the databases. The complete table-by-table and migration-by-migration reference is [Database schema and migrations](../developer-guide/database-schema.md).
+
 ## Database Architecture
 
 Milestone uses PostgreSQL 15+ with two database tiers:

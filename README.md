@@ -99,7 +99,7 @@ Full documentation is published at **[docs-milestone.verdet.me](https://docs-mil
 |----------|-------------|
 | [User Guide](https://docs-milestone.verdet.me/user-guide/getting-started/) | Day-to-day usage: Gantt charts, staff, equipment, vacations |
 | [Admin Guide](https://docs-milestone.verdet.me/admin-guide/overview/) | Installation, multi-tenant management, SSO configuration |
-| [Developer Guide](https://docs-milestone.verdet.me/developer-guide/architecture/) | Architecture, local development, API reference |
+| [Developer Guide](https://docs-milestone.verdet.me/developer-guide/architecture/) | Architecture, local development, API reference, codebase reference |
 | [API Documentation](http://localhost:8485/api/docs) | Swagger UI (when running) |
 | [Changelog](CHANGELOG.md) | Release history (SemVer) |
 

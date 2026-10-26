@@ -24,7 +24,7 @@
 |---------|-------------|
 | [User Guide](user-guide/getting-started.md) | Day-to-day usage: Gantt charts, staff, equipment, vacations |
 | [Admin Guide](admin-guide/overview.md) | Installation, multi-tenant management, SSO, database operations |
-| [Developer Guide](developer-guide/architecture.md) | Architecture, local development, API reference |
+| [Developer Guide](developer-guide/architecture.md) | Architecture, local development, API reference, codebase reference |
 
 ## Try It Out
 
