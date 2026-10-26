@@ -87,23 +87,26 @@ afterEach(() => {
 });
 
 describe('ProjectModal teams', () => {
-  it('places Teams after every project field and right before Tags', () => {
+  it('orders the project fields, then Confirmed, Teams and Tags, with Archived last', () => {
     useAppStore.setState({
       projectFields: [
         makeProjectField({ id: 1, name: 'Budget', field_type: 'number', sort_order: 0 }),
         makeProjectField({ id: 2, name: 'Reference', field_type: 'text', sort_order: 1 }),
       ],
     });
-    act(() => useUIStore.getState().openProjectModal());
+    act(() => useUIStore.getState().openProjectModal(project));
     render(<ProjectModal />);
-    const follows = (a: Element, b: Element) =>
-      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    const lastField = screen.getByLabelText('Reference');
-    const teams = teamsGroup()!;
-    const tags = screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER);
-    expect(follows(screen.getByLabelText('Budget'), lastField)).toBe(true);
-    expect(follows(lastField, teams)).toBe(true);
-    expect(follows(teams, tags)).toBe(true);
+    const sequence = [
+      screen.getByLabelText('Budget'),
+      screen.getByLabelText('Reference'),
+      screen.getByRole('switch', { name: 'Confirmed' }),
+      teamsGroup()!,
+      screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER),
+      screen.getByRole('switch', { name: 'Archived' }),
+    ];
+    sequence.slice(1).forEach((element, i) => {
+      expect(sequence[i].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
   });
 
   it('hides the teams field on a site without teams', () => {

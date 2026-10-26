@@ -533,7 +533,15 @@ export function ProjectModal() {
           disabled={isSubmitting}
         />
 
-        {/* Teams sit after every project field and right before Tags. */}
+        <div className={styles.formGroup}>
+          <ToggleSwitch
+            checked={confirmed}
+            onChange={setConfirmed}
+            label={builtInFieldLabel(instanceSettings, 'confirmed')}
+          />
+        </div>
+
+        {/* After the project fields: Confirmed, then Teams, right before Tags. */}
         {projectTeams.length > 0 && (
           <div className={styles.formGroup}>
             <span className={styles.label}>Teams</span>
@@ -578,20 +586,11 @@ export function ProjectModal() {
           </div>
         )}
         
-        <div className={styles.formRow}>
+        {isEditing && (
           <div className={styles.formGroup}>
-            <ToggleSwitch
-              checked={confirmed}
-              onChange={setConfirmed}
-              label={builtInFieldLabel(instanceSettings, 'confirmed')}
-            />
+            <ToggleSwitch checked={archived} onChange={setArchived} label="Archived" />
           </div>
-          {isEditing && (
-            <div className={styles.formGroup}>
-              <ToggleSwitch checked={archived} onChange={setArchived} label="Archived" />
-            </div>
-          )}
-        </div>
+        )}
       </form>
     </Modal>
   );
