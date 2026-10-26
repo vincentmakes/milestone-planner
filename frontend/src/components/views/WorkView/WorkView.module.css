@@ -177,6 +177,10 @@
   overflow-wrap: anywhere;
 }
 
+.itemNoteLabel {
+  font-weight: var(--font-weight-medium);
+}
+
 .cardName {
   color: var(--text-secondary);
 }

@@ -2,18 +2,21 @@
  * My Work's request entries.
  *
  * ApprovalRequestRow — a request I may decide (My Approvals): the action
- * sentence, its card and age, the requester's note, and the shared
+ * sentence, its card and age, the requester's note (mentions as pills), and the shared
  * ApprovalActions (Approve at once, Reject with an optional reason; one
  * submit guard, `loading` while the write runs). `onDecided` drops it here
  * and reloads the projects (the booking row flips or disappears).
  *
  * MyRequestRow — one of my own requests (My Requests): the sentence, its
- * outcome, the decider's note, and Cancel while it is pending.
+ * outcome, my own message ("Your message"), the decider's note, and Cancel
+ * while it is pending.
  */
 
 import { Button } from '@/components/common/Button';
 import { ApprovalActions } from '@/components/common/ApprovalActions';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
+import { MentionText } from '@/components/common/MentionTextarea';
+import { useAppStore } from '@/stores/appStore';
 import { relativeTime } from '@/utils/relativeTime';
 import { CardLink } from './CardLink';
 import { describeRequest, requestOutcome } from './requestText';
@@ -41,6 +44,7 @@ interface ApprovalRequestRowProps {
 }
 
 export function ApprovalRequestRow({ request, onDecided, onError }: ApprovalRequestRowProps) {
+  const meUserId = useAppStore((s) => s.currentUser?.id);
   return (
     <li className={styles.item}>
       <div className={styles.itemMain}>
@@ -49,7 +53,11 @@ export function ApprovalRequestRow({ request, onDecided, onError }: ApprovalRequ
           <RequestCard request={request} />
           {request.created_at && <span>{relativeTime(request.created_at)}</span>}
         </span>
-        {request.note && <span className={styles.itemNote}>“{request.note}”</span>}
+        {request.note && (
+          <span className={styles.itemNote}>
+            “<MentionText body={request.note} meUserId={meUserId} />”
+          </span>
+        )}
       </div>
       <ApprovalActions
         requestId={request.id}
@@ -69,6 +77,7 @@ interface MyRequestRowProps {
 export function MyRequestRow({ request, onCancel }: MyRequestRowProps) {
   const { isSubmitting, guard } = useSubmitGuard();
   const pending = request.status === 'pending';
+  const meUserId = useAppStore((s) => s.currentUser?.id);
   return (
     <li className={styles.item}>
       <div className={styles.itemMain}>
@@ -80,6 +89,12 @@ export function MyRequestRow({ request, onCancel }: MyRequestRowProps) {
           <RequestCard request={request} />
           {request.created_at && <span>{relativeTime(request.created_at)}</span>}
         </span>
+        {request.note && (
+          <span className={styles.itemNote}>
+            <span className={styles.itemNoteLabel}>Your message: </span>
+            <MentionText body={request.note} meUserId={meUserId} />
+          </span>
+        )}
         {request.decision_note && <span className={styles.itemNote}>“{request.decision_note}”</span>}
       </div>
       {pending && (
