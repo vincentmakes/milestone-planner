@@ -12,7 +12,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { createProject, updateProject } from '@/api/endpoints/projects';
-import { makeTeam } from '@/test/factories';
+import { makeProjectField, makeTeam } from '@/test/factories';
 import { tagFilterKey } from '@/utils/tags';
 import type { Project, Site, Tag } from '@/types';
 
@@ -87,6 +87,25 @@ afterEach(() => {
 });
 
 describe('ProjectModal teams', () => {
+  it('places Teams after every project field and right before Tags', () => {
+    useAppStore.setState({
+      projectFields: [
+        makeProjectField({ id: 1, name: 'Budget', field_type: 'number', sort_order: 0 }),
+        makeProjectField({ id: 2, name: 'Reference', field_type: 'text', sort_order: 1 }),
+      ],
+    });
+    act(() => useUIStore.getState().openProjectModal());
+    render(<ProjectModal />);
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const lastField = screen.getByLabelText('Reference');
+    const teams = teamsGroup()!;
+    const tags = screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER);
+    expect(follows(screen.getByLabelText('Budget'), lastField)).toBe(true);
+    expect(follows(lastField, teams)).toBe(true);
+    expect(follows(teams, tags)).toBe(true);
+  });
+
   it('hides the teams field on a site without teams', () => {
     useAppStore.setState({ teams: [zurichLab] });
     act(() => useUIStore.getState().openProjectModal());

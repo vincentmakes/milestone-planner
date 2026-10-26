@@ -525,6 +525,15 @@ export function ProjectModal() {
           </div>
         )}
         
+        <ProjectFieldInputs
+          fields={projectFields}
+          optionsByField={optionsByField}
+          drafts={fieldDrafts}
+          onChange={(fieldId, draft) => setFieldDrafts((prev) => ({ ...prev, [fieldId]: draft }))}
+          disabled={isSubmitting}
+        />
+
+        {/* Teams sit after every project field and right before Tags. */}
         {projectTeams.length > 0 && (
           <div className={styles.formGroup}>
             <span className={styles.label}>Teams</span>
@@ -537,14 +546,6 @@ export function ProjectModal() {
             />
           </div>
         )}
-
-        <ProjectFieldInputs
-          fields={projectFields}
-          optionsByField={optionsByField}
-          drafts={fieldDrafts}
-          onChange={(fieldId, draft) => setFieldDrafts((prev) => ({ ...prev, [fieldId]: draft }))}
-          disabled={isSubmitting}
-        />
 
         <div className={styles.formGroup}>
           <label className={styles.label}>Tags</label>
