@@ -173,14 +173,14 @@ Block periods mark equipment as unavailable for booking. See [Equipment Booking 
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/t/{slug}/api/projects/{id}/staff` | user (PM/own-assignment) | Assign staff at project level |
+| `POST` | `/t/{slug}/api/projects/{id}/staff` | user (PM/own-assignment) | Assign staff at project level (optional `comment`, see below) |
 | `PUT` / `DELETE` | `/t/{slug}/api/assignments/{id}` | user (PM/own-assignment) | Update / remove project-level assignment |
-| `POST` | `/t/{slug}/api/phases/{id}/staff` | user (PM/own-assignment) | Assign staff at phase level |
+| `POST` | `/t/{slug}/api/phases/{id}/staff` | user (PM/own-assignment) | Assign staff at phase level (optional `comment`) |
 | `PUT` / `DELETE` | `/t/{slug}/api/phase-staff/{id}` | user (PM/own-assignment) | Update / remove phase-level assignment |
-| `POST` | `/t/{slug}/api/subphases/{id}/staff` | user (PM/own-assignment) | Assign staff at subphase level |
+| `POST` | `/t/{slug}/api/subphases/{id}/staff` | user (PM/own-assignment) | Assign staff at subphase level (optional `comment`) |
 | `PUT` / `DELETE` | `/t/{slug}/api/subphase-staff/{id}` | user (PM/own-assignment) | Update / remove subphase-level assignment |
-| `POST` | `/t/{slug}/api/projects/{id}/equipment` | user (PM) (`equipment_bookings.manage`) | Book equipment on a project |
-| `PUT` / `DELETE` | `/t/{slug}/api/equipment-assignments/{id}` | user (PM) (`equipment_bookings.manage`) | Update / remove equipment booking |
+| `POST` | `/t/{slug}/api/projects/{id}/equipment` | user (PM) (`equipment_bookings.manage`) | Book equipment on a project — `{equipment_id, start_date, end_date, note?}`. Equipment is always booked on the project, also from a phase or subphase row (there is no phase / subphase equipment route) |
+| `PUT` / `DELETE` | `/t/{slug}/api/equipment-assignments/{id}` | user (PM) (`equipment_bookings.manage`) | Update / remove equipment booking — PUT `{equipment_id?, start_date?, end_date?, note?}` |
 
 The *own-assignment* rule lets a user add, change and remove the assignments that book **their own** time (`staff_id` equal to their id) — self-assignment — without being able to touch anyone else's, as far as their role's `assignments.self_*` keys allow. For phase- and subphase-level writes the project is derived from the loaded phase/subphase; a `project_id` in the body is ignored.
 
@@ -189,6 +189,10 @@ The *own-assignment* rule lets a user add, change and remove the assignments tha
 - a create inserts the row with `approval_status: "pending"` (excluded from availability, card moves and assignee notifications) and files the request;
 - an update or removal leaves the row as it is and files the request with the `requested` (and `previous`) values;
 - deleting one's own pending create cancels it and answers `200` `{success: true, cancelled: true, request_id, id}`; updating it amends the request.
+
+**A comment with the booking.** The three staff `POST`s take an optional `comment` (up to 4 000 characters, mentions written `@[Name](id)`; blank = none). Written directly, it is added to the booking's comment thread — the card's for a phase or subphase booking, the project's for a project-level one — as the caller's comment, and needs `kanban.comment` (`403`, nothing written, otherwise). The mentioned people and the thread's assignees are notified (`mention` / `comment`); the booked person and the project's manager instead see its beginning in their change notification. With a `202` it becomes the request's `note`: the approvers see it, and approving a create adds it to the thread as the requester's comment when they may comment (`kanban.comment`). The responses are unchanged.
+
+**A note on an equipment booking.** `note` (up to 2 000 characters, blank = none) on the equipment `POST` and `PUT`; on `PUT`, leaving it out keeps it and `null` or blank clears it. Equipment booking responses, `GET /equipment/{id}/assignments` and `equipmentAssignments` in `GET /projects/{id}` carry `note`; the project manager's notification of a new booking ends with it. Changing only the note notifies nobody.
 
 Related rules: the `POST`s (and the Kanban assignee `POST`) return `404` for an unknown person and `400` `This person is not bookable as a resource` when the person's `is_resource` is false — checked before any `202`, so no request is filed; their existing rows can still be updated and removed. The `POST`s return `409` when the person is already booked on the target (a pending booking counts; at project level only with the same dates; on a phase or subphase only for explicit overlapping dates — a dateless one is placed, see [Booking segments](#booking-segments)); an editor's `PUT`/`DELETE` on someone else's pending create returns `409` (*approve or reject it instead*); an editor's direct write on a row with an open request closes that request as `expired` (`overtaken`). Assignment rows carry `approval_status`, and in `GET /projects/{id}` an `approval` object (`{request_id, action, requester_id, requested, previous, created_at, can_decide}` or `null`).
 
@@ -563,7 +567,7 @@ Own-booking requests are filed by the assignment and Kanban routes (`202`, see [
 |--------|----------|------|-------------|
 | `GET` | `/t/{slug}/api/approval-requests?scope=&status=&limit=` | user | `scope=mine` (default: the caller's requests), `to_decide` (pending requests the caller may decide) or `all` (every request at the visible sites; needs `approvals.view_all`, `403` otherwise); newest first |
 | `GET` | `/t/{slug}/api/approval-requests/{id}` | user | One request — for its requester, an eligible approver or an `approvals.view_all` holder; `404` for anyone else |
-| `POST` | `/t/{slug}/api/approval-requests/{id}/approve` | eligible approver | Apply the booking — body `{note?}` |
+| `POST` | `/t/{slug}/api/approval-requests/{id}/approve` | eligible approver | Apply the booking — body `{note?}` (the decision note). A create request's own `note` is then added to the booking's comment thread as the requester's comment (when they hold `kanban.comment`) |
 | `POST` | `/t/{slug}/api/approval-requests/{id}/reject` | eligible approver | Reject — body `{note?}` (the reason the requester sees) |
 | `POST` | `/t/{slug}/api/approval-requests/{id}/cancel` | requester or admin | Withdraw a pending request |
 

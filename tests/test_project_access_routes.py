@@ -753,6 +753,7 @@ def _booking(equipment_id: int = 3, project_site_id: int = 1):
         equipment_id=equipment_id,
         start_date=date(2025, 1, 1),
         end_date=date(2025, 1, 5),
+        note=None,
         created_at=datetime(2025, 1, 1, 12, 0, 0),
     )
 

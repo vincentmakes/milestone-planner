@@ -771,6 +771,7 @@ async def get_project(
             "equipment_name": r[1],
             "equipment_type": r[2],
             "id": r[0].id,
+            "note": r[0].note,
             "project_id": r[0].project_id,
             "start_date": r[0].start_date,
         }

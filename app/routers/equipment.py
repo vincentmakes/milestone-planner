@@ -510,6 +510,7 @@ async def get_equipment_assignments(
             equipment_id=a.equipment_id,
             start_date=a.start_date,
             end_date=a.end_date,
+            note=a.note,
             created_at=a.created_at,
         )
         for a in assignments
@@ -577,6 +578,10 @@ async def update_equipment_assignment(
         assignment.end_date = data.end_date
     if data.start_date is not None or data.end_date is not None:
         ensure_date_order(assignment.start_date, assignment.end_date)
+    # Left out keeps the note, null or blank clears it. A note-only edit
+    # tells nobody: only equipment and date changes notify the PM.
+    if "note" in data.model_fields_set:
+        assignment.note = data.note
     body = change_notifications.equipment_change_body(
         old_name=old_name,
         new_name=new_name,
@@ -624,6 +629,7 @@ async def update_equipment_assignment(
         equipment_id=assignment.equipment_id,
         start_date=assignment.start_date,
         end_date=assignment.end_date,
+        note=assignment.note,
         created_at=assignment.created_at,
     )
 

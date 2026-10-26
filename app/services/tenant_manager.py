@@ -28,6 +28,7 @@ from app.services.tenant_provisioner import (
     COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     COMPANY_EVENTS_SITE_FK_SQL,
     COMPANY_EVENTS_SITE_NULLABLE_SQL,
+    EQUIPMENT_ASSIGNMENTS_NOTE_SQL,
     EQUIPMENT_SITE_FK_NEEDS_FIX_SQL,
     EQUIPMENT_SITE_FK_SQL,
     EQUIPMENT_SITES_BACKFILL_SQL,
@@ -201,6 +202,17 @@ class TenantConnectionManager:
             await conn.commit()
         except Exception as e:
             logger.warning("Auto-migration (booking segments) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # equipment_assignments.note, the optional note of an equipment booking
+        # (add_equipment_assignment_note.sql, 2.0.0). The DO block is its own
+        # gate (a no-op once the column exists), so this runs on every pool
+        # creation.
+        try:
+            await conn.execute(text(EQUIPMENT_ASSIGNMENTS_NOTE_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (equipment booking note) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Tags / project_tags tables (added in the project-tags feature).

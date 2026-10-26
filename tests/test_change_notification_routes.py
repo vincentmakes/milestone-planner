@@ -376,7 +376,10 @@ async def test_assigning_someone_to_a_card_keeps_their_assigned_notification(
 async def test_removing_someone_from_a_card(authed_client, mock_db_session, change_intents):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [scalar(_card()), scalars_result([card_row(allocation=30)])]
+    mock_db_session.execute.side_effect = [
+        scalar(_card()),
+        scalars_result([card_row(allocation=30)]),
+    ]
 
     response = await client.delete(f"/api/kanban/cards/phase/11/assignees/{ANN}")
 
@@ -427,6 +430,7 @@ async def test_an_equipment_put_without_change_notifies_nobody(
         equipment_id=3,
         start_date=date(2026, 2, 1),
         end_date=date(2026, 2, 5),
+        note=None,
         created_at=datetime(2026, 1, 1, 12, 0, 0),
     )
     reloaded = MagicMock()

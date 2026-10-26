@@ -132,6 +132,7 @@ same reason; use `run_migration.py` instead.
 | `add_booking_segments` | Tenant | Adds optional own dates to phase and subphase bookings (1.17.0, also applied automatically on startup) — see below |
 | `add_project_fields` | Tenant | Project fields and their values; converts the tag groups into dropdown fields and drops `tag_groups` and `tags.group_id` (2.0.0, also applied automatically on startup; requires `add_teams`) — see below |
 | `add_project_comments` | Tenant | Lets a project carry its own comment thread: the `card_comments` entity-type CHECK gains `project` (2.0.0, also applied automatically on startup) — see below |
+| `add_equipment_assignment_note` | Tenant | Adds `equipment_assignments.note`, the optional note of an equipment booking (2.0.0, also applied automatically on startup) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -240,6 +241,14 @@ python migrations/run_migration.py add_project_fields
 
 ```bash
 python migrations/run_migration.py add_project_comments
+```
+
+### Equipment Booking Notes (2.0.0)
+
+`add_equipment_assignment_note` adds `equipment_assignments.note` (`TEXT`, nullable): the optional note written when equipment is booked or a booking is edited, shown in the equipment booking dialog, in the project manager's notification of a new booking and in the site export's Equipment assignments sheet. Existing bookings have no note. The column is added only when it is missing, so a second run changes nothing. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
+
+```bash
+python migrations/run_migration.py add_equipment_assignment_note
 ```
 
 !!! note "Pre-release databases"

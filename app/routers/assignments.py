@@ -98,6 +98,7 @@ from app.schemas.base import (
     serialize_date_as_datetime_js,
     serialize_datetime_js,
 )
+from app.schemas.equipment import EQUIPMENT_NOTE_MAX
 from app.services import approvals, card_comments, change_notifications
 from app.services.approvals import (
     ACTION_CREATE,
@@ -240,11 +241,12 @@ class SubphaseStaffAssignmentUpdate(SegmentDates):
 
 
 class EquipmentAssignmentCreate(DateRangeOrdered):
-    """Request to assign equipment to a project."""
+    """Request to assign equipment to a project (``note``: optional, blank = none)."""
 
     equipment_id: int
     start_date: date
     end_date: date
+    note: OptionalText = Field(None, max_length=EQUIPMENT_NOTE_MAX)
 
 
 # ---------------------------------------------------------
@@ -1270,13 +1272,16 @@ async def create_equipment_assignment(
         kind="create",
         project_id=project_id,
         equipment_name=equipment.name,
-        body=f"from {data.start_date} to {data.end_date}",
+        body=change_notifications.with_note(
+            f"from {data.start_date} to {data.end_date}", data.note
+        ),
     )
     assignment = EquipmentAssignment(
         project_id=project_id,
         equipment_id=data.equipment_id,
         start_date=data.start_date,
         end_date=data.end_date,
+        note=data.note,
     )
     db.add(assignment)
     await db.commit()

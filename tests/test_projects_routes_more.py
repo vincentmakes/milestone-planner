@@ -264,6 +264,7 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
                         equipment_id=3,
                         start_date=date(2026, 1, 7),
                         end_date=date(2026, 1, 8),
+                        note="Bring the column",
                         created_at=STAMP,
                     ),
                     "HPLC",
@@ -295,6 +296,7 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
     assert [(a["id"], a["staff_role"]) for a in body["staffAssignments"]] == [(32, "Chemist")]
     (equipment,) = body["equipmentAssignments"]
     assert (equipment["equipment_name"], equipment["equipment_type"]) == ("HPLC", "Analytical")
+    assert equipment["note"] == "Bring the column"
     assert body["tags"][0]["name"] == "Priority"
     # The 8th query: the project's pending approval requests (none here, so
     # no policy lookup); then the two project-field queries.

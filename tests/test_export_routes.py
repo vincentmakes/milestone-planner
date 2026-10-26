@@ -606,6 +606,7 @@ def _site_rows() -> dict:
                 equipment_id=30,
                 start_date=date(2026, 1, 6),
                 end_date=date(2026, 1, 7),
+                note="Bring the column",
                 created_at=STAMP,
             ),
             ns(
@@ -613,6 +614,7 @@ def _site_rows() -> dict:
                 equipment_id=88,  # not linked to this site
                 start_date=date(2026, 1, 6),
                 end_date=date(2026, 1, 7),
+                note=None,
                 created_at=STAMP,
             ),
         ],
@@ -1082,6 +1084,12 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     assert requests[2][12:14] == ['{"allocation": 70}', '{"allocation": 50}']
     equipment_bookings = _sheet(wb, "Equipment assignments")
     assert [(r[0], r[4]) for r in equipment_bookings] == [(401, "HPLC"), (402, None)]
+    assert [c.value for c in wb["Equipment assignments"][1]][-3:] == [
+        "End date",
+        "Note",
+        "Created at",
+    ]
+    assert [r[7] for r in equipment_bookings] == ["Bring the column", None]
 
     assert _sheet(wb, "Custom columns")[0][3:5] == ['["Low", "High"]', "global"]
     values = _sheet(wb, "Custom column values")

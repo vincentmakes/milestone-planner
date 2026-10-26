@@ -512,6 +512,11 @@ BANK_HOLIDAYS_UPGRADE_SQL = _add_column_if_missing(
     "            ALTER TABLE bank_holidays ALTER COLUMN year SET NOT NULL;",
 )
 
+# equipment_assignments.note (2.0.0): the optional note of an equipment
+# booking. Shared by migrations/add_equipment_assignment_note.sql and the
+# tenant auto-migration (tenant_manager._run_auto_migrations).
+EQUIPMENT_ASSIGNMENTS_NOTE_SQL = _add_column_if_missing("equipment_assignments", "note", "TEXT")
+
 # company_events.color (event colour picker).
 COMPANY_EVENTS_COLOR_COLUMN_SQL = _add_column_if_missing("company_events", "color", "VARCHAR(20)")
 
@@ -1650,8 +1655,14 @@ def get_tenant_schema_sql() -> str:
       equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
       start_date DATE NOT NULL,
       end_date DATE NOT NULL,
+      note TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Upgrade of an equipment_assignments table that predates booking notes.
+    """
+        + EQUIPMENT_ASSIGNMENTS_NOTE_SQL
+        + """
 
     -- Staff notes (pinned to a site/date; matches the Note model's staff_notes table)
     CREATE TABLE IF NOT EXISTS staff_notes (

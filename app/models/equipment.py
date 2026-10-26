@@ -146,7 +146,9 @@ class EquipmentAssignment(Base):
     )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    # Note: 'notes' column not in Node.js schema for equipment_assignments
+    # Optional free text written with the booking (2.0.0): shown in the
+    # booking dialog, the PM's notification and the site export.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships

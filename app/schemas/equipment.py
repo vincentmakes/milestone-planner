@@ -6,7 +6,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS
+from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS, OptionalText
 from app.schemas.team import TeamIds
 
 
@@ -94,6 +94,10 @@ class EquipmentUpdate(BaseModel):
         return self
 
 
+# The optional note of an equipment booking.
+EQUIPMENT_NOTE_MAX = 2000
+
+
 class EquipmentAssignmentResponse(BaseModel):
     """Response model for equipment assignments."""
 
@@ -104,6 +108,7 @@ class EquipmentAssignmentResponse(BaseModel):
     equipment_id: int
     start_date: DateAsDateTimeJS
     end_date: DateAsDateTimeJS
+    note: str | None = None
     created_at: DateTimeJS
 
     class Config:
@@ -116,14 +121,19 @@ class EquipmentAssignmentCreate(DateRangeOrdered):
     equipment_id: int
     start_date: date
     end_date: date
+    note: OptionalText = Field(None, max_length=EQUIPMENT_NOTE_MAX)
 
 
 class EquipmentAssignmentUpdate(DateRangeOrdered):
-    """Request model for updating equipment assignment."""
+    """
+    Request model for updating equipment assignment. ``note`` left out keeps
+    the booking's; given as ``null`` or blank it clears it.
+    """
 
     equipment_id: int | None = None
     start_date: date | None = None
     end_date: date | None = None
+    note: OptionalText = Field(None, max_length=EQUIPMENT_NOTE_MAX)
 
 
 class EquipmentBlockResponse(BaseModel):

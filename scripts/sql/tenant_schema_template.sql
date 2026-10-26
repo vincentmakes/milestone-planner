@@ -293,6 +293,7 @@ CREATE TABLE equipment_assignments (
     equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
+    note TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

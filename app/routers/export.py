@@ -1385,6 +1385,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     else "",
                     _iso(ea.start_date),
                     _iso(ea.end_date),
+                    ea.note,
                     _iso(ea.created_at),
                 ]
             )
@@ -1398,6 +1399,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Equipment name",
             "Start date",
             "End date",
+            "Note",
             "Created at",
         ],
         equipment_assignment_data,

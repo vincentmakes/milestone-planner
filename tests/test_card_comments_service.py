@@ -5,7 +5,7 @@ two booking paths that post a comment (a direct staff booking with a
 """
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -176,3 +176,24 @@ def test_module_reexported_by_the_comment_route():
     from app.routers import kanban
 
     assert kanban._validate_mention_ids is card_comments.validate_mention_ids
+
+
+async def test_publish_staged_without_a_comment_does_nothing():
+    with patch.object(card_comments, "broadcast_change", AsyncMock()) as broadcast:
+        await card_comments.publish_staged(MagicMock(), SimpleNamespace(id=ACTOR), None)
+    broadcast.assert_not_awaited()
+
+
+async def test_publish_staged_survives_a_failed_push(caplog):
+    _db, staged = await _stage("@[Ann](8)", mentioned=[ANN], assignees=[])
+
+    with (
+        patch.object(card_comments, "broadcast_change", AsyncMock()) as broadcast,
+        patch.object(
+            card_comments, "send_notification", AsyncMock(side_effect=RuntimeError("down"))
+        ),
+    ):
+        await card_comments.publish_staged(MagicMock(), SimpleNamespace(id=ACTOR), staged)
+
+    assert broadcast.await_args.kwargs["entity_type"] == "card_comment"
+    assert "Notification push failed for user 8" in caplog.text

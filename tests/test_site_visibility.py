@@ -1258,6 +1258,7 @@ def _booking(booking_id: int, site_id: int) -> SimpleNamespace:
         equipment_id=7,
         start_date=date(2026, 1, 5),
         end_date=date(2026, 1, 9),
+        note=None,
         created_at=STAMP,
     )
 

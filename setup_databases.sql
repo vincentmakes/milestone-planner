@@ -407,6 +407,7 @@ CREATE TABLE IF NOT EXISTS equipment_assignments (
     equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
+    note TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
@@ -866,6 +867,10 @@ CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_
 
 -- Ensure color column exists on pre-existing company_events tables (upgrades)
 ALTER TABLE IF EXISTS company_events ADD COLUMN IF NOT EXISTS color VARCHAR(20);
+
+-- The optional note of an equipment booking on pre-existing databases
+-- (upgrades; add_equipment_assignment_note.sql, 2.0.0)
+ALTER TABLE IF EXISTS equipment_assignments ADD COLUMN IF NOT EXISTS note TEXT;
 
 -- Site closures on pre-existing company_events tables (upgrades)
 ALTER TABLE IF EXISTS company_events

@@ -77,7 +77,7 @@ class EquipmentAssignmentInProject(BaseModel):
     project_id: int
     start_date: DateAsDateTimeJS
     end_date: DateAsDateTimeJS
-    notes: str | None = None
+    note: str | None = None
     created_at: DateTimeJS
     equipment_name: str | None = None
     equipment_type: str | None = None
