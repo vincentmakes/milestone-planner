@@ -23,9 +23,11 @@ the change notification only. The caller passes the staged recipients to
 ``change_notifications.deliver`` as ``already_notified``.
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,8 +35,16 @@ from app.models.card_comment import CardComment
 from app.models.notification import Notification
 from app.models.user import User
 from app.services.mentions import comment_preview, parse_mention_ids
-from app.services.notifications import build_notifications, card_assignee_ids, dedupe_by_recipient
+from app.services.notifications import (
+    build_notifications,
+    card_assignee_ids,
+    dedupe_by_recipient,
+    notification_payload,
+)
 from app.utils import utcnow_naive
+from app.websocket.broadcast import broadcast_change, send_notification
+
+logger = logging.getLogger(__name__)
 
 
 def booking_thread(level: str, project_id: int, target_id: int) -> tuple[str, int]:
@@ -193,3 +203,28 @@ async def stage_booking_comment(
     )
     db.add_all(rows)
     return StagedComment(comment, rows)
+
+
+async def publish_staged(http: Request, actor: Any, staged: StagedComment | None) -> None:
+    """
+    After the commit: broadcast the new comment (``change:card_comment``, as
+    the comment route does) and push its notifications. A failed push never
+    fails the request.
+    """
+    if staged is None:
+        return
+    comment = staged.comment
+    await broadcast_change(
+        request=http,
+        user=actor,
+        entity_type="card_comment",
+        entity_id=comment.id,
+        project_id=comment.project_id,
+        action="create",
+        summary="commented on a booking",
+    )
+    for row in staged.notifications:
+        try:
+            await send_notification(http, row.user_id, notification_payload(row))
+        except Exception as e:  # never fail the request because a push failed
+            logger.warning("Notification push failed for user %s: %s", row.user_id, e)

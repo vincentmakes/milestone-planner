@@ -13,7 +13,8 @@ to queue on ``mock_db_session.execute.side_effect``::
 
 ``fake_websocket()`` gives a Starlette-shaped WebSocket double for the
 ``app/websocket`` layer; ``ApprovalFakeDB`` (answers keyed by what a query
-selects -- ``"card_lock"`` then ``"placement"`` for ``approvals.plan_placement``) and its builders (``approval_request``,
+selects -- ``"card_lock"`` then ``"placement"`` for ``approvals.plan_placement``,
+``"author"`` / ``"mentioned"`` for a request note posted on approve) and its builders (``approval_request``,
 ``pending_phase_row``, ``approvable_db``, ...) a statement-dispatching session
 for app/services/approvals.py. Prefer these over redefining the helpers per file
 (tests/test_domain_routes_misc.py keeps its own private copies).
@@ -190,7 +191,15 @@ class ApprovalFakeDB:
         if entity is ApprovalPolicy:
             return "policy"
         if entity is User:
-            return "approvers" if name == "id" else "requester"
+            if name == "id":
+                return "approvers"
+            if name == "mentioned_id":
+                # card_comments.validate_mention_ids (a request note posted on approve).
+                return "mentioned"
+            if name == "role":
+                # approvals._post_request_note: the requester as the note's author.
+                return "author"
+            return "requester"
         if entity is UserSite:
             return "member"
         if entity is RolePermission:

@@ -75,13 +75,14 @@ async def _finish(
 ) -> JSONResponse | dict:
     await approvals.publish(request, user, result.effects)
     # An approval applied: the project's manager (the requester already has
-    # approval_decided). Reject, cancel and an expiry carry no change intents.
+    # approval_decided, the people mentioned in a posted request note their
+    # mention). Reject, cancel and an expiry carry no change intents.
     await change_notifications.deliver(
         db,
         request,
         user.id,
         result.effects.change_intents,
-        already_notified={result.request.requester_id},
+        already_notified={result.request.requester_id} | result.effects.notified_ids,
     )
     if result.conflict is not None:
         return JSONResponse(status_code=409, content=result.conflict)

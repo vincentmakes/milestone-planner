@@ -44,8 +44,15 @@ when the booking can no longer be applied; an auto-placed create is
 the gap is applied then -- the full-span booking is left alone until the
 decision.
 
+A create request may carry a ``note`` (the ``comment`` of the staff create
+routes): the approvers' ``approval_requested`` shows its preview, and on
+approval it is posted to the booking's thread as the requester's comment --
+only while the requester holds ``kanban.comment`` (``_post_request_note``);
+otherwise, and on reject / cancel / expiry, it stays on the request.
+
 Every transition broadcasts ``change:approval_request`` (approve / reject also
-``change:staff_assignment``), notifies the requester or the approvers, and
+``change:staff_assignment``, an approve that posts a note
+``change:card_comment``), notifies the requester or the approvers, and
 pushes ``approval:changed`` to the requester and the eligible approvers
 (``publish``, after the commit).
 """
@@ -55,6 +62,7 @@ import logging
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException, Request, status
@@ -68,6 +76,7 @@ from app.models.assignment import (
     ProjectAssignment,
     SubphaseStaffAssignment,
 )
+from app.models.card_comment import CardComment
 from app.models.notification import Notification
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.rbac import ApprovalPolicy, ApprovalRequest, Role, RolePermission
@@ -80,6 +89,13 @@ from app.services.booking_segments import (
     place_booking,
     segments_overlap,
 )
+from app.services.card_comments import (
+    author_name,
+    booking_thread,
+    new_comment,
+    validate_mention_ids,
+)
+from app.services.mentions import comment_preview
 from app.services.notifications import build_notifications, notification_payload
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
@@ -824,13 +840,18 @@ class ApprovalEffects:
 
     ``change_intents``: the change notifications (an approval applied by
     someone else tells the project's manager), delivered by the router after
-    ``publish`` (``change_notifications.deliver``).
+    ``publish`` (``change_notifications.deliver``). ``comments``: the request
+    notes posted to their booking's thread on approval (broadcast as
+    ``change:card_comment``); ``notified_ids``: the people their mention
+    notifications reach, whom ``deliver`` then skips (one notification each).
     """
 
     notifications: list[Notification] = field(default_factory=list)
     events: list[RequestEvent] = field(default_factory=list)
     assignment_changes: list[AssignmentChange] = field(default_factory=list)
     change_intents: list["ChangeIntent"] = field(default_factory=list)
+    comments: list[CardComment] = field(default_factory=list)
+    notified_ids: set[int] = field(default_factory=set)
 
 
 async def publish(http: Request, actor: Any, effects: ApprovalEffects) -> None:
@@ -858,6 +879,16 @@ async def publish(http: Request, actor: Any, effects: ApprovalEffects) -> None:
             project_id=event.project_id,
             action=event.action,
             summary=event.summary,
+        )
+    for comment in effects.comments:
+        await broadcast_change(
+            request=http,
+            user=actor,
+            entity_type="card_comment",
+            entity_id=comment.id,
+            project_id=comment.project_id,
+            action="create",
+            summary="request note added to the thread",
         )
     for row in effects.notifications:
         try:
@@ -1151,6 +1182,7 @@ async def _submit_create(
             entity_id=request.id,
             project_id=project_id,
             title=title,
+            body=comment_preview(note) if note else None,
         )
     )
     db.add_all(effects.notifications)
@@ -1300,6 +1332,7 @@ async def _submit_change(
         entity_id=request.id,
         project_id=row.project_id,
         title=title,
+        body=comment_preview(note) if note else None,
     )
     db.add_all(effects.notifications)
     await db.commit()
@@ -1811,6 +1844,61 @@ async def _revalidate(
     return None, row, None
 
 
+async def _post_request_note(
+    db: AsyncSession, approver: Any, request: ApprovalRequest, target: str, effects: ApprovalEffects
+) -> None:
+    """
+    An approved create's ``note`` becomes the requester's comment on the
+    booking's thread (the card's, or the project thread), in the approval's
+    transaction -- only while the requester holds ``kanban.comment``; without
+    it the note stays on the request. Mentions are derived from the note as
+    they are now; the mentioned users get ``mention`` from the requester, the
+    approver never (they just read the note). No ``comment`` notifications:
+    the approval itself already tells the people concerned.
+    """
+    note = request.note
+    if not note or not note.strip():
+        return
+    author = (
+        await db.execute(
+            select(User.role, User.first_name, User.last_name).where(
+                User.id == request.requester_id
+            )
+        )
+    ).first()
+    if author is None:  # pragma: no cover - _revalidate expired the request already
+        return
+    permissions = await load_permission_set(db, author[0])
+    if not permissions.has("kanban.comment"):
+        return
+    mentioned = await validate_mention_ids(db, note)
+    entity_type, entity_id = booking_thread(request.level, request.project_id, request.target_id)
+    comment = new_comment(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        project_id=request.project_id,
+        author_id=request.requester_id,
+        body=note,
+        mentioned=mentioned,
+    )
+    db.add(comment)
+    name = author_name(SimpleNamespace(first_name=author[1], last_name=author[2]))
+    rows = build_notifications(
+        recipient_ids=[uid for uid in mentioned if uid != approver.id],
+        notification_type="mention",
+        actor_id=request.requester_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        project_id=request.project_id,
+        title=f"{name} mentioned you on {target}",
+        body=comment_preview(note),
+    )
+    db.add_all(rows)
+    effects.notifications.extend(rows)
+    effects.notified_ids.update(row.user_id for row in rows)
+    effects.comments.append(comment)
+
+
 def _date_pair(values: dict[str, Any]) -> tuple[Any, Any]:
     return values.get("start_date"), values.get("end_date")
 
@@ -1912,6 +2000,7 @@ async def approve(
         row.approval_status = "approved"
         row.approval_request_id = None
         change_action = "create"
+        await _post_request_note(db, user, request, target, effects)
     elif request.action == ACTION_UPDATE:
         _write_values(row, request.level, parse_values(request.requested) or {})
         row.approval_request_id = None

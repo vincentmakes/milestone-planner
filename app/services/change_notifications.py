@@ -78,6 +78,7 @@ from app.services.approvals import (
     display_name,
     load_context,
 )
+from app.services.mentions import comment_preview
 from app.services.notifications import notification_payload
 from app.utils import utcnow_naive
 from app.websocket.broadcast import send_notification
@@ -170,6 +171,14 @@ def _intent(
     )
 
 
+def with_note(body: str | None, note: str | None) -> str | None:
+    """A change's body followed by the preview of the comment or note written with it."""
+    if not note:
+        return body
+    preview = comment_preview(note)
+    return f"{body} — {preview}" if body else preview
+
+
 def _booking_entity(level: str, project_id: int, target_id: int) -> tuple[str, int]:
     return ("project", project_id) if level == "project" else (level, target_id)
 
@@ -186,11 +195,14 @@ def booking_intents(
     previous: dict[str, Any] | None = None,
     target_name: str | None = None,
     person_name: str | None = None,
+    note: str | None = None,
 ) -> list[ChangeIntent]:
     """
     A staff booking created, changed or removed directly (approved rows only):
     the person and the PM. ``values`` / ``previous`` are ``booking_dict``s; an
-    update to the current values is no change (nothing).
+    update to the current values is no change (nothing). ``note``: the
+    comment posted with a create -- its preview follows the change in both
+    bodies (neither person gets the comment's own notification).
     """
     if kind == "update" and values == previous:
         return []
@@ -211,6 +223,7 @@ def booking_intents(
         body = f"Was {describe_change(ACTION_CREATE, previous, None)}"
         mine = f"{who} removed you from {target}"
         theirs = f"{who} removed {'themself' if own else person} from {target}"
+    body = with_note(body, note)
     entity = _booking_entity(level, project_id, target_id)
     return [
         _intent(

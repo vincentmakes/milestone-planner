@@ -63,13 +63,22 @@ Equipment bookings need ``equipment_bookings.manage`` (also in the PM bundle).
 A direct write tells the booked person and the project manager (never the
 actor) through ``change_notifications.deliver`` after the commit; the 202
 approval path and a no-op update tell nobody.
+
+The three staff creates take an optional ``comment`` (<= 4000 chars, blank =
+none). Written directly, it is posted to the booking's thread (the card's;
+the project thread for a project-level booking) as the actor's comment, in
+the booking's transaction, and needs ``kanban.comment`` (403 before any
+write); the mentioned users and the thread's assignees are notified, except
+the booked person and the PM, whose change notification carries the
+comment's preview. In approval mode it is the request's ``note``
+(``approvals.submit_request``), posted to the thread when it is approved.
 """
 
 from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,10 +94,11 @@ from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
 from app.schemas.base import (
     DateRangeOrdered,
+    OptionalText,
     serialize_date_as_datetime_js,
     serialize_datetime_js,
 )
-from app.services import approvals, change_notifications
+from app.services import approvals, card_comments, change_notifications
 from app.services.approvals import (
     ACTION_CREATE,
     ACTION_REMOVE,
@@ -97,6 +107,8 @@ from app.services.approvals import (
     booking_values,
 )
 from app.services.booking_segments import effective_dates
+from app.services.card_comments import StagedComment
+from app.services.permissions import permission_required_detail
 from app.services.project_access import (
     project_id_for_phase,
     project_id_for_subphase,
@@ -129,8 +141,25 @@ router = APIRouter(tags=["assignments"])
 # (project / phase / subphase, create and update) and on Kanban assignees.
 Allocation = Annotated[int, Field(ge=1, le=100)]
 
+# The commenting key: a direct booking's ``comment`` is posted to its thread.
+COMMENT_KEY = "kanban.comment"
+# Same limit as a comment (CardCommentCreate.body).
+COMMENT_MAX = 4000
 
-class ProjectStaffAssignmentCreate(DateRangeOrdered):
+
+class BookingComment(BaseModel):
+    """
+    The optional ``comment`` of a staff booking create (blank = none). Written
+    directly, it is posted to the booking's thread -- the card's, or the
+    project thread for a project-level booking -- and needs
+    ``kanban.comment`` (403 before any write); in approval mode it is the
+    request's ``note`` to the approvers, posted to the thread on approval.
+    """
+
+    comment: OptionalText = Field(None, max_length=COMMENT_MAX)
+
+
+class ProjectStaffAssignmentCreate(BookingComment, DateRangeOrdered):
     """Request to assign staff to a project."""
 
     staff_id: int
@@ -173,7 +202,7 @@ class SegmentDates(DateRangeOrdered):
         return "start_date" in self.model_fields_set
 
 
-class PhaseStaffAssignmentCreate(SegmentDates):
+class PhaseStaffAssignmentCreate(BookingComment, SegmentDates):
     """Request to assign staff to a phase.
 
     `project_id` is accepted for wire compatibility but ignored: the server
@@ -192,7 +221,7 @@ class PhaseStaffAssignmentUpdate(SegmentDates):
     allocation: Allocation | None = None
 
 
-class SubphaseStaffAssignmentCreate(SegmentDates):
+class SubphaseStaffAssignmentCreate(BookingComment, SegmentDates):
     """Request to assign staff to a subphase.
 
     `project_id` is accepted for wire compatibility but ignored: the server
@@ -216,6 +245,47 @@ class EquipmentAssignmentCreate(DateRangeOrdered):
     equipment_id: int
     start_date: date
     end_date: date
+
+
+# ---------------------------------------------------------
+# A booking's comment (direct creates)
+# ---------------------------------------------------------
+
+
+def _require_comment_key(user: Any, comment: str | None) -> None:
+    """A direct create with a comment posts to the thread: ``kanban.comment``
+    (403, checked before any write)."""
+    if comment is not None and not user.permissions.has(COMMENT_KEY):
+        raise HTTPException(status_code=403, detail=permission_required_detail(COMMENT_KEY))
+
+
+async def _stage_comment(
+    db: AsyncSession,
+    user: Any,
+    *,
+    level: str,
+    project_id: int,
+    target_id: int,
+    staff_id: int,
+    comment: str | None,
+) -> StagedComment | None:
+    """The booking's comment and its notifications, in the booking's transaction."""
+    if comment is None:
+        return None
+    context = await approvals.load_context(
+        db, project_id=project_id, level=level, target_id=target_id
+    )
+    return await card_comments.stage_booking_comment(
+        db,
+        user,
+        level=level,
+        project_id=project_id,
+        target_id=target_id,
+        booked_id=staff_id,
+        pm_id=context.pm_id if context else None,
+        target_name=context.target_name if context else "the project",
+        body=comment,
+    )
 
 
 # ---------------------------------------------------------
@@ -318,7 +388,9 @@ async def create_project_staff_assignment(
             project_id=project_id,
             target_id=project_id,
             values=booking_dict(data.allocation, data.start_date, data.end_date),
+            note=data.comment,
         )
+    _require_comment_key(user, data.comment)
 
     intents = change_notifications.booking_intents(
         user,
@@ -328,6 +400,7 @@ async def create_project_staff_assignment(
         target_id=project_id,
         staff_id=data.staff_id,
         values=booking_dict(data.allocation, data.start_date, data.end_date),
+        note=data.comment,
     )
     assignment = ProjectAssignment(
         project_id=project_id,
@@ -337,6 +410,15 @@ async def create_project_staff_assignment(
         end_date=data.end_date,
     )
     db.add(assignment)
+    staged = await _stage_comment(
+        db,
+        user,
+        level="project",
+        project_id=project_id,
+        target_id=project_id,
+        staff_id=data.staff_id,
+        comment=data.comment,
+    )
     await db.commit()
     await db.refresh(assignment)
 
@@ -349,7 +431,14 @@ async def create_project_staff_assignment(
         project_id=project_id,
         action="create",
     )
-    await change_notifications.deliver(db, request, user.id, intents)
+    await card_comments.publish_staged(request, user, staged)
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        intents,
+        already_notified=staged.recipient_ids if staged else (),
+    )
 
     return {"id": assignment.id, "success": True}
 
@@ -632,7 +721,9 @@ async def create_phase_staff_assignment(
             project_id=project_id,
             target_id=phase_id,
             values=values,
+            note=data.comment,
         )
+    _require_comment_key(user, data.comment)
 
     effects = approvals.ApprovalEffects()
     shrink_intents = await approvals.apply_shrink(
@@ -646,6 +737,7 @@ async def create_phase_staff_assignment(
         target_id=phase_id,
         staff_id=data.staff_id,
         values=values,
+        note=data.comment,
     )
     assignment = PhaseStaffAssignment(
         phase_id=phase_id,
@@ -656,6 +748,15 @@ async def create_phase_staff_assignment(
         end_date=plan.end_date,
     )
     db.add(assignment)
+    staged = await _stage_comment(
+        db,
+        user,
+        level="phase",
+        project_id=project_id,
+        target_id=phase_id,
+        staff_id=data.staff_id,
+        comment=data.comment,
+    )
     await db.commit()
     await db.refresh(assignment)
 
@@ -685,7 +786,14 @@ async def create_phase_staff_assignment(
     )
     # The shortened row's update change (and a request it overtook).
     await approvals.publish(request, user, effects)
-    await change_notifications.deliver(db, request, user.id, intents + shrink_intents)
+    await card_comments.publish_staged(request, user, staged)
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        intents + shrink_intents,
+        already_notified=staged.recipient_ids if staged else (),
+    )
 
     return {
         "id": row[0].id,
@@ -891,7 +999,9 @@ async def create_subphase_staff_assignment(
             project_id=project_id,
             target_id=subphase_id,
             values=values,
+            note=data.comment,
         )
+    _require_comment_key(user, data.comment)
 
     effects = approvals.ApprovalEffects()
     shrink_intents = await approvals.apply_shrink(
@@ -905,6 +1015,7 @@ async def create_subphase_staff_assignment(
         target_id=subphase_id,
         staff_id=data.staff_id,
         values=values,
+        note=data.comment,
     )
     assignment = SubphaseStaffAssignment(
         subphase_id=subphase_id,
@@ -915,6 +1026,15 @@ async def create_subphase_staff_assignment(
         end_date=plan.end_date,
     )
     db.add(assignment)
+    staged = await _stage_comment(
+        db,
+        user,
+        level="subphase",
+        project_id=project_id,
+        target_id=subphase_id,
+        staff_id=data.staff_id,
+        comment=data.comment,
+    )
     await db.commit()
     await db.refresh(assignment)
 
@@ -944,7 +1064,14 @@ async def create_subphase_staff_assignment(
     )
     # The shortened row's update change (and a request it overtook).
     await approvals.publish(request, user, effects)
-    await change_notifications.deliver(db, request, user.id, intents + shrink_intents)
+    await card_comments.publish_staged(request, user, staged)
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        intents + shrink_intents,
+        already_notified=staged.recipient_ids if staged else (),
+    )
 
     return {
         "id": row[0].id,
