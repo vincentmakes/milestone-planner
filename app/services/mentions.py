@@ -55,7 +55,7 @@ def strip_mention_tokens(body: str) -> str:
 PREVIEW_MAX = 200
 
 
-def comment_preview(body: str) -> str:
+def comment_preview(body: str | None) -> str | None:
     """Plain-text notification preview of a comment body: tokens stripped, then truncated.
 
     Stripping first is the point: ``@[Alice Anderson](7)`` cut at the limit

@@ -225,6 +225,36 @@ describe('AssignmentModal: the comment of a new staff booking', () => {
     expect(screen.queryByText(/comment thread/)).not.toBeInTheDocument();
   });
 
+  it('names the field with a real label and words the placeholder for who gets notified', async () => {
+    seedEditor();
+    openStaffCreate();
+    const { unmount } = render(<AssignmentModal mode="staff" />);
+    await settle();
+    const direct = screen.getByLabelText('Comment (optional)');
+    expect(direct.tagName).toBe('TEXTAREA');
+    expect(direct).toHaveAttribute('placeholder', 'Type @ to notify someone.');
+    unmount();
+
+    seedRequester();
+    openStaffCreate();
+    const second = render(<AssignmentModal mode="staff" />);
+    await settle();
+    expect(screen.getByLabelText('Message for the approver (optional)')).toHaveAttribute(
+      'placeholder',
+      'Type @ to mention someone; they are notified once the request is approved.'
+    );
+    second.unmount();
+
+    seedRequester(false);
+    openStaffCreate();
+    render(<AssignmentModal mode="staff" />);
+    await settle();
+    expect(screen.getByLabelText('Message for the approver (optional)')).toHaveAttribute(
+      'placeholder',
+      'Why you need this booking.'
+    );
+  });
+
   it('shows no comment field when editing a booking', async () => {
     seedEditor();
     useUIStore.getState().setEditingStaffAssignment({

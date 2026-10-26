@@ -20,7 +20,7 @@
  * (create and edit; an edit always sends it, `""` clears it).
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
@@ -299,7 +299,15 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     targetItem?.staffAssignments ?? NO_PARTICIPANTS,
     currentUser?.id
   );
+  const commentFieldId = useId();
   const commentLabel = isRequest ? 'Message for the approver (optional)' : 'Comment (optional)';
+  // A request's @-mentions notify nobody until it is approved, and only if the
+  // requester may comment (the note is then added to the thread).
+  const commentPlaceholder = !isRequest
+    ? 'Type @ to notify someone.'
+    : canComment
+      ? 'Type @ to mention someone; they are notified once the request is approved.'
+      : 'Why you need this booking.';
   const commentHint = !canComment
     ? null
     : isRequest
@@ -692,10 +700,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         {/* A new staff booking's comment: inside the form, Enter adds a line */}
         {showCommentField && (
           <div className={styles.formGroup}>
-            <span className={styles.fieldLabel} aria-hidden="true">
+            <label htmlFor={commentFieldId} className={styles.fieldLabel}>
               {commentLabel}
-            </span>
+            </label>
             <MentionTextarea
+              id={commentFieldId}
               value={commentDraft}
               anchors={commentAnchors}
               onChange={(text, next) => {
@@ -705,9 +714,8 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
               candidates={commentCandidates}
               rows={3}
               disabled={isSubmitting}
-              aria-label={commentLabel}
               targetGroupLabel={assignmentLevel === 'project' ? 'On this project' : 'On this card'}
-              placeholder="Type @ to notify someone."
+              placeholder={commentPlaceholder}
             />
             {commentHint && <span className={styles.fieldHint}>{commentHint}</span>}
           </div>

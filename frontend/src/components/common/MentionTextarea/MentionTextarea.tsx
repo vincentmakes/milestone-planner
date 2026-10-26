@@ -41,6 +41,8 @@ interface MentionTextareaProps {
   placeholder?: string;
   disabled?: boolean;
   'aria-label'?: string;
+  /** id of the textarea, so a visible `<label htmlFor>` can name and focus it */
+  id?: string;
   /** Heading of the people on the thread's target ("On this project" on a project thread) */
   targetGroupLabel?: string;
 }
@@ -77,6 +79,7 @@ export function MentionTextarea({
   placeholder,
   disabled,
   'aria-label': ariaLabel,
+  id,
   targetGroupLabel = 'On this card',
 }: MentionTextareaProps) {
   const listId = useId();
@@ -323,6 +326,7 @@ export function MentionTextarea({
 
       <textarea
         ref={textareaRef}
+        id={id}
         className={styles.textarea}
         value={value}
         rows={rows}
