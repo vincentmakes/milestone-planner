@@ -129,6 +129,27 @@ describe('AssignmentModal picker', () => {
     expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({ staff_id: staffId, allocation: capacity, project_id: 1 });
   });
 
+  it('keeps the preset person listed and shown when they work at another site', async () => {
+    seed({ id: 42, role: 'user' });
+    useAppStore.setState((state) => ({
+      staff: [...state.staff, { id: 9, name: 'Dan Day', site_id: 2, active: true, max_capacity: 50 }] as never,
+    }));
+    useUIStore.setState({ editingStaffAssignment: null });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1, staffId: 9 });
+    render(<AssignmentModal mode="staff" />);
+
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member * Dan Day');
+    expect(pickerOptions(/^Staff Member/).map(optionLabel)).toEqual([
+      'Select staff member',
+      'Alice Anderson',
+      'Bob Brown',
+      'Dan Day',
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({ staff_id: 9, allocation: 50 });
+  });
+
   it("preselects an editor opened for themselves at their own capacity (the menu's \"Assign me…\")", () => {
     seed({ id: 4, role: 'superuser' });
     // Bob's staff row carries no capacity: the user record's is used.

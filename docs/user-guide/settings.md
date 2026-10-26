@@ -485,7 +485,7 @@ Deactivating, deleting or demoting a user, or resetting their password, signs th
 The **Bookable as a resource** switch (under **Resource** in the user form) decides who can be planned, independently of the role:
 
 - **On** — the person is listed in the [Staff view and panel](staff-management.md#staff-list-panel) of their sites and can be booked on projects, phases, subphases and Kanban cards, by others or by themself
-- **Off** — the person is not listed and cannot receive new bookings: booking them is refused with *This person is not bookable as a resource*, and their own **Assign me** and **Join** entries are hidden. Their existing bookings stay as they are and can still be changed or removed. A pending request of theirs to be booked somewhere can no longer be approved — it closes as expired; their requests to change or remove an existing booking can still be decided
+- **Off** — the person is not listed and cannot receive new bookings: booking them is refused with *This person is not bookable as a resource*, and their own **Assign me…** and **Join** entries are hidden. Their existing bookings stay as they are and can still be changed or removed. A pending request of theirs to be booked somewhere can no longer be approved — it closes as expired; their requests to change or remove an existing booking can still be decided
 
 New administrator accounts start with the switch **off** (an administrator who also works on projects can simply turn it on); every other new account starts with it **on**. While you create an account the switch follows the role you pick until you change it yourself. Upgrading changes nobody: existing administrators are not bookable, everyone else is. The user list shows a **Not bookable** badge next to people with the switch off.
 
@@ -500,7 +500,7 @@ What each role may do is set in [Settings → Roles](#roles-permissions). With t
 | View projects & timeline | Yes | Yes | Yes |
 | Create and delete projects (at their sites) | Yes | Yes | No |
 | Edit a project, its phases, subphases and Kanban cards | Yes | Yes | Project manager of that project |
-| Manage staff assignments | Yes | Yes | Project manager of that project; anyone for their own time ("Assign me"), with [approval](#approvals) where the role needs it |
+| Manage staff assignments | Yes | Yes | Project manager of that project; anyone for their own time ("Assign me…"), with [approval](#approvals) where the role needs it |
 | Manage equipment assignments | Yes | Yes | Project manager of that project |
 | Enter What-If mode (from the Gantt chart) | Yes | Yes | No |
 | Manage bank holidays & company events (own sites) | Yes | Yes | No |

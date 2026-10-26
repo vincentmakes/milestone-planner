@@ -80,6 +80,15 @@ import { Icon, PinIcon } from '@/components/common/Icon';
 // Stable empty list: a fresh [] per render would recompute the mention candidates.
 const NO_PARTICIPANTS: readonly never[] = [];
 
+/** The info line of a new card booking for someone already on the card: the server places it. */
+function secondBookingMessage(mine: boolean, level: string): string {
+  return (
+    `${mine ? 'You are' : 'This person is'} already booked on this ${level}. ` +
+    `The new booking is placed automatically: the second half of a booking that covers the whole ${level}, ` +
+    'or its largest free stretch. Turn off the switch to pick its dates.'
+  );
+}
+
 interface AssignmentModalProps {
   mode: 'staff' | 'equipment';
 }
@@ -169,26 +178,28 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   );
 
   // Resources of the current site, narrowed by the header team filter; the
-  // edited booking's resource stays listed so an edit never drops it — even
-  // a booking at another site (opened from My Work).
+  // edited booking's resource -- or the person the dialog was opened for --
+  // stays listed so the picker never drops them, even at another site
+  // (opened from My Work) or outside the team filter.
   const editingStaffId = editingStaffAssignment?.staff_id;
+  const keptStaffId = editingStaffId ?? presetStaffId;
   const editingEquipmentId = editingEquipmentAssignment?.equipment_id;
   const siteResources = useMemo(() => {
     if (!currentSite) return [];
     if (isStaff) {
       const listed = staff.filter(
-        (s) => s.site_id === currentSite.id && (staffMatches(s) || s.id === editingStaffId)
+        (s) => s.site_id === currentSite.id && (staffMatches(s) || s.id === keptStaffId)
       );
-      const edited =
-        editingStaffId !== undefined && !listed.some((s) => s.id === editingStaffId)
-          ? staff.find((s) => s.id === editingStaffId)
+      const kept =
+        keptStaffId !== undefined && !listed.some((s) => s.id === keptStaffId)
+          ? staff.find((s) => s.id === keptStaffId)
           : undefined;
-      return edited ? [...listed, edited] : listed;
+      return kept ? [...listed, kept] : listed;
     }
     return equipment.filter(
       (e) => e.site_id === currentSite.id && (equipmentMatches(e) || e.id === editingEquipmentId)
     );
-  }, [isStaff, staff, equipment, currentSite, staffMatches, equipmentMatches, editingStaffId, editingEquipmentId]);
+  }, [isStaff, staff, equipment, currentSite, staffMatches, equipmentMatches, keptStaffId, editingEquipmentId]);
 
   // Get selected staff's max capacity (default to 100 if not set) - staff mode only
   const selectedStaffMaxCapacity = useMemo(() => {
@@ -696,7 +707,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
             <p className={styles.infoLine}>
               <Icon icon={PinIcon} size={14} />
               {secondBooking
-                ? `${isSelf(currentUser, Number(resourceId)) ? 'You are' : 'This person is'} already booked on this ${assignmentLevelLabel.toLowerCase()}. The new booking is placed automatically: the second half of a booking that covers the whole ${assignmentLevelLabel.toLowerCase()}, or its largest free stretch. Turn off the switch to pick its dates.`
+                ? secondBookingMessage(isSelf(currentUser, Number(resourceId)), assignmentLevelLabel.toLowerCase())
                 : `This assignment uses the ${assignmentLevelLabel.toLowerCase()}'s dates automatically.`}
             </p>
           </div>

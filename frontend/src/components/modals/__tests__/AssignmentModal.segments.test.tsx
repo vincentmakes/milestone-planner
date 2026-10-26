@@ -146,8 +146,12 @@ describe('AssignmentModal: new phase booking', () => {
   it('books someone already on the phase again without dates, and shows a refused placement in place', async () => {
     const CARD_FULL = "This person's bookings already cover the whole card — shorten one of them first";
     vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error(CARD_FULL));
-    // Bob (4) already holds a linked booking on the phase: the dialog still
-    // offers him, says the server places the second one (or here refuses it).
+    // Bob (4) already holds a linked booking on the phase, still awaiting
+    // approval (a pending row counts): the dialog still offers him, says the
+    // server places the second one (or here refuses it).
+    const project = buildProject();
+    project.phases[0].staffAssignments[0].approval_status = 'pending';
+    useAppStore.setState({ projects: [project] });
     openNew();
     expect(screen.getByText(`This person is ${SECOND_BOOKING}`)).toBeInTheDocument();
     expect(screen.queryByText(/uses the phase's dates automatically/)).not.toBeInTheDocument();
