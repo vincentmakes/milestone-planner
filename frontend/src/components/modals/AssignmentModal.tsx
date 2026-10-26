@@ -18,6 +18,12 @@
  * for the approver, always offered, and added to the thread once approved
  * when the user may comment. Equipment bookings carry an optional note
  * (create and edit; an edit always sends it, `""` clears it).
+ *
+ * The Gantt menu's "Assign me…" / "Request to assign me…" (and their
+ * "again…" forms) open this dialog with `modalContext.staffId` = the user:
+ * untouched, it sends what the old one-click item did — the user at their
+ * max capacity, the project's dates, or no dates on a phase / subphase (the
+ * server links a first booking and places a second one).
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
@@ -128,6 +134,8 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const projectId = editingAssignment?.project_id || modalContext.projectId;
   const phaseId = editingAssignment?.phase_id || modalContext.phaseId;
   const subphaseId = editingAssignment?.subphase_id || modalContext.subphaseId;
+  // A new staff booking opened for someone ("Assign me…"): preselected.
+  const presetStaffId = isStaff && !editingAssignment ? modalContext.staffId : undefined;
 
   // Whoever manages others' bookings on the project (the key, or managing
   // the project) assigns anyone. Everyone else may only book their own time:
@@ -211,7 +219,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   // colleague's edit would wipe what the user has typed. The key changes when
   // the dialog is reopened on another assignment or target.
   const initializedForRef = useRef<string | null>(null);
-  const initKey = `${mode}:${editingAssignment?.id ?? 'new'}:${projectId ?? ''}:${phaseId ?? ''}:${subphaseId ?? ''}`;
+  const initKey = `${mode}:${editingAssignment?.id ?? 'new'}:${projectId ?? ''}:${phaseId ?? ''}:${subphaseId ?? ''}:${presetStaffId ?? ''}`;
   useEffect(() => {
     if (!isOpen) {
       initializedForRef.current = null;
@@ -238,6 +246,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         // Non-editors can only assign themselves, at their own capacity.
         setResourceId(String(currentUser.id));
         setAllocation(snapToStep(ownMaxCapacity));
+      } else if (isStaff && presetStaffId !== undefined) {
+        // An editor opened for someone (the menu's "Assign me…" when the
+        // role manages others' bookings but not the project): that person
+        // at their capacity.
+        const preset = staff.find((s) => s.id === presetStaffId);
+        const presetCapacity = isSelf(currentUser, presetStaffId)
+          ? ownMaxCapacity
+          : preset?.max_capacity ?? 100;
+        setResourceId(String(presetStaffId));
+        setAllocation(snapToStep(presetCapacity));
       } else {
         setResourceId('');
         setAllocation(100);
@@ -251,7 +269,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     setCommentDraft('');
     setCommentAnchors([]);
     setError(null);
-  }, [isOpen, initKey, editingAssignment, editingStaffAssignment, editingEquipmentAssignment, isStaff, targetItem, selfOnly, currentUser, ownMaxCapacity]);
+  }, [isOpen, initKey, editingAssignment, editingStaffAssignment, editingEquipmentAssignment, isStaff, targetItem, selfOnly, currentUser, ownMaxCapacity, presetStaffId, staff]);
 
   // Handle resource selection - for staff, auto-set allocation to their max capacity
   const handleResourceChange = useCallback((newResourceId: string) => {
@@ -287,6 +305,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const ownCardDates = isStaff && isPhaseOrSubphase && !followCard;
   const cardStart = isPhaseOrSubphase && targetItem?.start_date ? toDateOnly(targetItem.start_date) : undefined;
   const cardEnd = isPhaseOrSubphase && targetItem?.end_date ? toDateOnly(targetItem.end_date) : undefined;
+  // A new card booking for someone already booked on the card (pending ones
+  // count): sent without dates, the server places it instead of linking it.
+  const secondBooking =
+    isStaff && !isEditing && isPhaseOrSubphase && resourceId !== '' &&
+    (targetItem?.staffAssignments ?? []).some((a) => String(a.staff_id) === resourceId);
 
   // The comment of a new staff booking: a request's message for the approver
   // (always offered), or a direct booking's first word in its thread (only
@@ -672,7 +695,9 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           <div className={styles.infoBox}>
             <p className={styles.infoLine}>
               <Icon icon={PinIcon} size={14} />
-              This assignment uses the {assignmentLevelLabel.toLowerCase()}&apos;s dates automatically.
+              {secondBooking
+                ? `${isSelf(currentUser, Number(resourceId)) ? 'You are' : 'This person is'} already booked on this ${assignmentLevelLabel.toLowerCase()}. The new booking is placed automatically: the second half of a booking that covers the whole ${assignmentLevelLabel.toLowerCase()}, or its largest free stretch. Turn off the switch to pick its dates.`
+                : `This assignment uses the ${assignmentLevelLabel.toLowerCase()}'s dates automatically.`}
             </p>
           </div>
         )}

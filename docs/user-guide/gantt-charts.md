@@ -209,7 +209,7 @@ Click the **phase name** in the badge to scroll the timeline to the booking: to 
 
 A person can hold **several bookings on the same phase**, as long as their dates do not overlap (adjacent days are fine). Booking someone for days that overlap one of their bookings on that phase is refused with *This person is already booked on this card for overlapping dates*.
 
-Booking someone **again** without choosing dates — **Assign Staff** with *Follow the phase dates* on, **Assign me again**, a drag from the resource panel or the Kanban card dialog — places the new booking for you:
+Booking someone **again** without choosing dates — **Assign Staff** with *Follow the phase dates* on, **Assign me again…** with the switch left on, a drag from the resource panel or the Kanban card dialog — places the new booking for you:
 
 - If their one booking covers the **whole phase**, it is split in half: the existing booking keeps the first half (the longer one when the phase has an odd number of days) and the new booking gets the second half. Both get their own dates.
 - If their bookings leave **free days**, the new booking takes the **largest free stretch** (the earliest one on a tie).
@@ -392,13 +392,13 @@ Right-click on any item for context-appropriate actions:
 
 | Target | Actions |
 |--------|---------|
-| Project | Edit, Delete, Add Phase, Assign Staff, Assign me, Assign Equipment, View Details |
-| Phase | Edit, Delete, Add Subphase, Assign Staff, Assign me, Assign Equipment |
-| Subphase | Edit, Delete, Add Subphase, Assign Staff, Assign me, Assign Equipment |
+| Project | Edit, Delete, Add Phase, Assign Staff, Assign me…, Assign Equipment, View Details |
+| Phase | Edit, Delete, Add Subphase, Assign Staff, Assign me…, Assign Equipment |
+| Subphase | Edit, Delete, Add Subphase, Assign Staff, Assign me…, Assign Equipment |
 | Staff Assignment | Edit Assignment, Remove Assignment |
 | Equipment Assignment | Edit Assignment, Remove Assignment |
 
-Actions you are not allowed to perform on that project are shown disabled. **Assign me** only appears for people who can't edit the project: it books your own time on the item at your maximum capacity (see [Adding Yourself to a Project](staff-management.md#adding-yourself-to-a-project)). Once you are booked on a phase or subphase it reads **Assign me again** and [places a second booking](#bookings-on-phases-and-subphases); on a project it reads **Assigned to me**, and while a request of yours on the item awaits approval, **Assignment requested** (both greyed out). On your own staff assignment, **Edit Assignment** and **Remove Assignment** are available to you on any project. **Edit Assignment** is greyed out while the booking awaits approval or carries an open change request; the same booking opened from [My Work](my-work.md#my-assignments) shows its dialog read-only, with the reason. The dialog of a staff booking also holds its [comment thread](my-work.md#comments-on-a-booking) — the card's thread for a phase or subphase, the project's for a project-level booking.
+Actions you are not allowed to perform on that project are shown disabled. **Assign me…** only appears for people who can't edit the project: it opens the assignment dialog with you and your maximum capacity preset, so you can change the allocation and the dates and add a comment — or, when your booking [needs approval](staff-management.md#booking-yourself-when-approval-is-required), a message for the approver (**Request to assign me…**) — before booking (see [Adding Yourself to a Project](staff-management.md#adding-yourself-to-a-project)). Once you are booked on a phase or subphase it reads **Assign me again…** and the dialog [places a second booking](#bookings-on-phases-and-subphases) unless you pick its dates; on a project it reads **Assigned to me**, and while a request of yours on the item awaits approval, **Assignment requested** (both greyed out). On your own staff assignment, **Edit Assignment** and **Remove Assignment** are available to you on any project. **Edit Assignment** is greyed out while the booking awaits approval or carries an open change request; the same booking opened from [My Work](my-work.md#my-assignments) shows its dialog read-only, with the reason. The dialog of a staff booking also holds its [comment thread](my-work.md#comments-on-a-booking) — the card's thread for a phase or subphase, the project's for a project-level booking.
 
 ## Archived Projects
 

@@ -121,8 +121,9 @@ describe('project menu', () => {
     render(<ContextMenuContainer />);
     expect(item('Edit Project')).not.toBeDisabled();
     expect(item('Delete Project')).toBeDisabled();
-    // editors get the dialog, not "Assign me"
-    expect(screen.queryByRole('button', { name: 'Assign me' })).not.toBeInTheDocument();
+    // editors get the dialog, not "Assign me…"
+    expect(item('Assign Staff')).toBeEnabled();
+    expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
   });
 
   it('blocks the create entries in What-If mode', () => {
@@ -136,31 +137,35 @@ describe('project menu', () => {
     expect(item('Edit Project')).not.toBeDisabled();
   });
 
-  it('lets a plain user assign themselves, with today as dates on an undated project', async () => {
+  it('"Assign me…" opens the assignment dialog on the project for me, and books nothing itself', () => {
     seed(makeUser({ id: 5, role: 'user', max_capacity: 100 }));
     useUIStore.getState().showContextMenu('project', 1, 0, 0);
     render(<ContextMenuContainer />);
     expect(item('Edit Project')).toBeDisabled();
-    fireEvent.click(item('Assign me'));
-    await waitFor(() => expect(refreshProjects).toHaveBeenCalled());
-    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    // the staff row's capacity wins over the user record
-    expect(body).toMatchObject({ staff_id: 5, allocation: 60, project_id: 1, phase_id: undefined });
-    expect(body.start_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(body.start_date).toBe(body.end_date);
+    fireEvent.click(item('Assign me…'));
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ projectId: 1, staffId: 5 });
+    expect(useUIStore.getState().contextMenu.visible).toBe(false);
+    expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 
-  it('logs a failed self-assignment and reports it in the flash notice', async () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error('409'));
+  it('"Assign me…" opens the dialog on a phase with the phase context', () => {
     seed(makeUser({ id: 5, role: 'user' }));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
-    fireEvent.click(item('Assign me'));
-    await waitFor(() => expect(err).toHaveBeenCalledWith('Failed to self-assign:', expect.any(Error)));
-    expect(useUIStore.getState().flashNotice?.message).toBe('Could not assign you: 409');
-    expect(refreshProjects).not.toHaveBeenCalled();
-    err.mockRestore();
+    fireEvent.click(item('Assign me…'));
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ phaseId: 10, projectId: 1, staffId: 5 });
+    expect(createStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it('keeps "Assign me…" disabled in What-If mode, like "Assign Staff"', () => {
+    useWhatIfStore.setState({ whatIfMode: true });
+    seed(makeUser({ id: 5, role: 'user' }));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assign me…')).toBeDisabled();
+    expect(item('Assign me…').title).toMatch(/Adding items/);
   });
 
   it('hides "Assign me" from a user who is not bookable as a resource', () => {
@@ -171,35 +176,17 @@ describe('project menu', () => {
     expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
   });
 
-  it('offers "Assign me again" once booked on a phase, and books a dateless second booking', async () => {
+  it('offers "Assign me again…" once booked on a phase, and opens the dialog for the second booking', () => {
     seed(makeUser({ id: 4, role: 'user', max_capacity: 100 }));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
-    expect(item('Assign me again')).toBeEnabled();
+    expect(item('Assign me again…')).toBeEnabled();
     expect(screen.queryByRole('menuitem', { name: 'Assigned to me' })).not.toBeInTheDocument();
-    fireEvent.click(item('Assign me again'));
-    await waitFor(() => expect(refreshProjects).toHaveBeenCalled());
-    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    // no dates: the server places it (halves the booking or fills a gap)
-    expect(body).toMatchObject({ staff_id: 4, project_id: 1, phase_id: 10 });
-    expect(body).not.toHaveProperty('start_date');
-  });
-
-  it('reports the server refusing a second booking on a full card', async () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(createStaffAssignment).mockRejectedValueOnce(
-      new Error("This person's bookings already cover the whole card — shorten one of them first")
-    );
-    seed(makeUser({ id: 4, role: 'user' }));
-    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
-    render(<ContextMenuContainer />);
-    fireEvent.click(item('Assign me again'));
-    await waitFor(() =>
-      expect(useUIStore.getState().flashNotice?.message).toBe(
-        "Could not assign you: This person's bookings already cover the whole card — shorten one of them first"
-      )
-    );
-    err.mockRestore();
+    fireEvent.click(item('Assign me again…'));
+    // the dialog sends it without dates: the server places it
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ phaseId: 10, projectId: 1, staffId: 4 });
+    expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 
   it('keeps "Assigned to me" disabled on a one-day phase already booked (no room for a second)', () => {
@@ -213,7 +200,7 @@ describe('project menu', () => {
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
     expect(item('Assigned to me')).toBeDisabled();
-    expect(screen.queryByRole('menuitem', { name: 'Assign me again' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Assign me again…' })).not.toBeInTheDocument();
   });
 
   it('keeps "Assigned to me" disabled on a project already booked (project bookings carry dates)', () => {

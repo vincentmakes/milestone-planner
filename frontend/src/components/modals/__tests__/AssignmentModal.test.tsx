@@ -112,6 +112,35 @@ describe('AssignmentModal picker', () => {
     expect(screen.queryByDisplayValue('You')).not.toBeInTheDocument();
   });
 
+  it.each([
+    [7, 'Alice Anderson', 60],
+    // no capacity on the staff row: a full 100 %
+    [4, 'Bob Brown', 100],
+  ])('preselects the person it was opened for (%i), at their capacity, for an editor', async (staffId, name, capacity) => {
+    seed({ id: 42, role: 'user' });
+    useUIStore.setState({ editingStaffAssignment: null });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1, staffId });
+    render(<AssignmentModal mode="staff" />);
+
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName(`Staff Member * ${name}`);
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', `${capacity}%`);
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({ staff_id: staffId, allocation: capacity, project_id: 1 });
+  });
+
+  it("preselects an editor opened for themselves at their own capacity (the menu's \"Assign me…\")", () => {
+    seed({ id: 4, role: 'superuser' });
+    // Bob's staff row carries no capacity: the user record's is used.
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'superuser', max_capacity: 80 }) });
+    useUIStore.setState({ editingStaffAssignment: null });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1, staffId: 4 });
+    render(<AssignmentModal mode="staff" />);
+
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member * Bob Brown');
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', '80%');
+  });
+
   it('sets the allocation to the capacity on a real change only, and books the pick', async () => {
     seed({ id: 99, role: 'superuser' });
     openForProject();

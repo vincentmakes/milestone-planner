@@ -3,7 +3,9 @@
  * dates" (on = linked, the default for a new booking) or own dates picked
  * inside the card (days outside it disabled). Creates send dates only for an
  * unlinked booking; edits send own dates, or null dates to follow the card
- * again; a refusal shows in place.
+ * again; a refusal shows in place. Someone already on the card gets a second
+ * booking the server places: the dialog says so, and sends no dates unless the
+ * switch is turned off — also when the Gantt's "Assign me again…" opened it.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -58,6 +60,7 @@ beforeEach(() => {
     staff: [
       { id: 7, name: 'Alice Anderson', site_id: 1, active: true },
       { id: 4, name: 'Bob Brown', site_id: 1, active: true },
+      { id: 8, name: 'Carol Chen', site_id: 1, active: true },
     ] as never,
     currentUser: makeUser({ id: 1, role: 'admin' }),
   });
@@ -66,10 +69,13 @@ beforeEach(() => {
 
 const follow = () => screen.getByRole('switch', { name: 'Follow the phase dates' });
 
-function openNew(context: { phaseId?: number; subphaseId?: number } = { phaseId: 3 }) {
+const SECOND_BOOKING =
+  'already booked on this phase. The new booking is placed automatically: the second half of a booking that covers the whole phase, or its largest free stretch. Turn off the switch to pick its dates.';
+
+function openNew(context: { phaseId?: number; subphaseId?: number } = { phaseId: 3 }, who = 'Bob Brown') {
   useUIStore.getState().openModal('staffAssignment', { projectId: 1, ...context });
   render(<AssignmentModal mode="staff" />);
-  pickOption(/^Staff Member/, 'Bob Brown');
+  pickOption(/^Staff Member/, who);
 }
 
 function openEdit(row: StaffAssignment) {
@@ -80,16 +86,17 @@ function openEdit(row: StaffAssignment) {
 
 describe('AssignmentModal: new phase booking', () => {
   it('follows the phase by default and sends no dates', async () => {
-    openNew();
+    openNew(undefined, 'Carol Chen');
     expect(follow()).toBeChecked();
     expect(screen.getByText(/uses the phase's dates automatically/)).toBeInTheDocument();
+    expect(screen.queryByText(/already booked on this phase/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Start Date *')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
 
     await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
     const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    expect(body).toMatchObject({ staff_id: 4, phase_id: 3, project_id: 1 });
+    expect(body).toMatchObject({ staff_id: 8, phase_id: 3, project_id: 1 });
     expect(body).not.toHaveProperty('start_date');
     expect(body).not.toHaveProperty('end_date');
   });
@@ -140,8 +147,10 @@ describe('AssignmentModal: new phase booking', () => {
     const CARD_FULL = "This person's bookings already cover the whole card — shorten one of them first";
     vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error(CARD_FULL));
     // Bob (4) already holds a linked booking on the phase: the dialog still
-    // offers him, and the server places (or here refuses) the second one.
+    // offers him, says the server places the second one (or here refuses it).
     openNew();
+    expect(screen.getByText(`This person is ${SECOND_BOOKING}`)).toBeInTheDocument();
+    expect(screen.queryByText(/uses the phase's dates automatically/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(CARD_FULL);
@@ -156,6 +165,50 @@ describe('AssignmentModal: new phase booking', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Follow the subphase dates' }));
     expect(dateValue('Start Date *')).toBe('2026-09-07');
     expect(dateValue('End Date *')).toBe('2026-09-11');
+  });
+});
+
+describe('AssignmentModal: my own second booking ("Assign me again…")', () => {
+  // Bob (4) books his own time and already holds a booking on the phase.
+  function openMine() {
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user', max_capacity: 70 }) });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1, phaseId: 3, staffId: 4 });
+    render(<AssignmentModal mode="staff" />);
+  }
+
+  it('is fixed to me, says the booking is placed, and sends no dates untouched', async () => {
+    openMine();
+    expect(screen.getByLabelText('Staff Member')).toHaveValue('You');
+    expect(screen.getByText(`You are ${SECOND_BOOKING}`)).toBeInTheDocument();
+    expect(follow()).toBeChecked();
+    expect(screen.queryByLabelText('Start Date *')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign me' }));
+
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    expect(body).toEqual({ staff_id: 4, allocation: 70, project_id: 1, phase_id: 3, subphase_id: undefined });
+    await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
+  });
+
+  it('sends both dates with the switch off, and shows a refused placement with the dialog still open', async () => {
+    const OVERLAP = 'This person is already booked on this card for overlapping dates';
+    vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error(OVERLAP));
+    openMine();
+    fireEvent.click(follow());
+    expect(screen.queryByText(`You are ${SECOND_BOOKING}`)).not.toBeInTheDocument();
+    expect(dateValue('Start Date *')).toBe('2026-09-07');
+    expect(dateValue('End Date *')).toBe('2026-09-18');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign me' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(OVERLAP);
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({
+      staff_id: 4,
+      start_date: '2026-09-07',
+      end_date: '2026-09-18',
+    });
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
   });
 });
 

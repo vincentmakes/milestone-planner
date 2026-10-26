@@ -1,15 +1,18 @@
 /**
  * Own bookings and their approval requests in the Gantt context menus:
- * "Assign me" becomes "Request to assign me" in approval mode and disappears
- * without assignments.self_create; a 202 refreshes and says "Sent for
+ * "Assign me…" becomes "Request to assign me…" in approval mode and
+ * disappears without assignments.self_create; it opens the assignment dialog
+ * (message for the approver, allocation), whose 202 says "Sent for
  * approval"; the requester cancels a request from the row, a decider
  * approves or rejects it (reason in a dialog, never a prompt; disabled in
  * What-If); an own removal is hidden without assignments.self_remove and,
  * in approval mode, says it will be sent for approval and marks the row.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ContextMenuContainer } from '../ContextMenuContainer';
+import { AssignmentModal } from '@/components/modals/AssignmentModal';
+import { createStaffAssignment as createFromDialog, loadAllProjects } from '@/api/endpoints/projects';
 import { resetAllStores, useAppStore, useUIStore, useWhatIfStore } from '@/stores';
 import { createStaffAssignment, deleteStaffAssignment } from '@/api';
 import { approvalsApi } from '@/api/endpoints/approvals';
@@ -29,6 +32,24 @@ vi.mock('@/api', () => ({
   deleteStaffAssignment: vi.fn().mockResolvedValue({}),
   deleteEquipmentAssignment: vi.fn().mockResolvedValue({}),
   createStaffAssignment: vi.fn().mockResolvedValue({}),
+}));
+
+// The assignment dialog's own API (the menu's comes from '@/api').
+vi.mock('@/api/endpoints/projects', () => ({
+  createStaffAssignment: vi.fn().mockResolvedValue({}),
+  updateStaffAssignment: vi.fn().mockResolvedValue({}),
+  deleteStaffAssignment: vi.fn().mockResolvedValue({}),
+  createEquipmentAssignment: vi.fn().mockResolvedValue({}),
+  updateEquipmentAssignment: vi.fn().mockResolvedValue({}),
+  deleteEquipmentAssignment: vi.fn().mockResolvedValue({}),
+  loadAllProjects: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('@/api/endpoints/kanban', () => ({
+  getMentionableUsers: vi.fn().mockResolvedValue([]),
+  getComments: vi.fn().mockResolvedValue([]),
+  createComment: vi.fn(),
+  deleteComment: vi.fn(),
 }));
 
 vi.mock('@/api/endpoints/approvals', async (importOriginal) => ({
@@ -89,14 +110,56 @@ beforeEach(() => {
 });
 
 describe('"Assign me" and approval', () => {
-  it('reads "Request to assign me" in approval mode and flashes "Sent for approval" on a 202', async () => {
+  it('reads "Request to assign me…" in approval mode and opens the dialog for me instead of booking', () => {
     seed(selfUser('approval', 'assignments.self_create'), []);
-    vi.mocked(createStaffAssignment).mockResolvedValueOnce({ success: true, pending: true, request_id: 31, id: 9 });
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
-    fireEvent.click(item('Request to assign me'));
-    await waitFor(() => expect(refreshProjects).toHaveBeenCalled());
-    expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'Sent for approval', tone: 'info' });
+    fireEvent.click(item('Request to assign me…'));
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ phaseId: 10, projectId: 1, staffId: 4 });
+    expect(createStaffAssignment).not.toHaveBeenCalled();
+    expect(refreshProjects).not.toHaveBeenCalled();
+  });
+
+  it('lets a requester add a message and change the allocation before the request is sent', async () => {
+    // The user's scenario: right-click → "Request to assign me…" → message → %.
+    seed(selfUser('approval', 'assignments.self_create'), []);
+    vi.mocked(createFromDialog).mockResolvedValueOnce({ success: true, pending: true, request_id: 31, id: 9 });
+    vi.mocked(loadAllProjects).mockResolvedValueOnce(useAppStore.getState().projects);
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(
+      <>
+        <ContextMenuContainer />
+        <AssignmentModal mode="staff" />
+      </>
+    );
+    fireEvent.click(item('Request to assign me…'));
+
+    expect(await screen.findByLabelText('Staff Member')).toHaveValue('You');
+    const slider = screen.getByRole('slider');
+    // preset at my capacity (the staff row's 80 %), as the one-click booked
+    expect(slider).toHaveAttribute('aria-valuetext', '80%');
+    fireEvent.change(slider, { target: { value: '50' } });
+    fireEvent.keyUp(slider);
+    const message = screen.getByRole('textbox', { name: 'Message for the approver (optional)' });
+    fireEvent.change(message, { target: { value: 'Need the bioreactor week', selectionStart: 24 } });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Request to assign me' }));
+
+    await waitFor(() => expect(createFromDialog).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(createFromDialog).mock.calls[0][0]).toEqual({
+      staff_id: 4,
+      allocation: 50,
+      comment: 'Need the bioreactor week',
+      project_id: 1,
+      phase_id: 10,
+      subphase_id: undefined,
+    });
+    await waitFor(() =>
+      expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'Sent for approval', tone: 'info' })
+    );
+    expect(useUIStore.getState().activeModal).toBeNull();
+    expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 
   it('is hidden when the role holds no assignments.self_create', () => {
@@ -104,19 +167,6 @@ describe('"Assign me" and approval', () => {
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
     expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
-  });
-
-  it('reports a failed self-assignment in the flash notice', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    seed(makeUser({ id: 4, role: 'user' }), []);
-    vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error('Already assigned'));
-    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
-    render(<ContextMenuContainer />);
-    fireEvent.click(item('Assign me'));
-    await waitFor(() =>
-      expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'Could not assign you: Already assigned', tone: 'error' })
-    );
-    expect(refreshProjects).not.toHaveBeenCalled();
   });
 
   it('shows "Assignment requested" while my booking awaits approval', () => {
@@ -138,11 +188,14 @@ describe('"Assign me" and approval', () => {
     expect(item('Assignment requested')).toBeDisabled();
   });
 
-  it('reads "Request to assign me again" in approval mode once booked', () => {
+  it('reads "Request to assign me again…" in approval mode once booked, and opens the dialog', () => {
     seed(selfUser('approval', 'assignments.self_create'));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
-    expect(item('Request to assign me again')).toBeEnabled();
+    expect(item('Request to assign me again…')).toBeEnabled();
+    fireEvent.click(item('Request to assign me again…'));
+    expect(useUIStore.getState().modalContext).toEqual({ phaseId: 10, projectId: 1, staffId: 4 });
+    expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 });
 

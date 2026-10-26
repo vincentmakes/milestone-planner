@@ -3,7 +3,7 @@
  *
  * SubphaseRow opens the menu with the top-level phase id even for nested
  * rows, so a lookup limited to the phase's direct children left a depth-2
- * subphase without a target: "Assign me" was disabled and "Edit Subphase"
+ * subphase without a target: "Assign me…" was disabled and "Edit Subphase"
  * did nothing.
  */
 
@@ -102,32 +102,25 @@ beforeEach(() => {
 });
 
 describe('ContextMenuContainer subphase target', () => {
-  it('enables "Assign me" on a depth-2 subphase for a plain user', () => {
+  it('enables "Assign me…" on a depth-2 subphase for a plain user', () => {
     render(<ContextMenuContainer />);
 
     expect(screen.getByRole('menuitem', { name: /assign me/i })).toBeEnabled();
   });
 
-  it('books the nested subphase as a linked booking (no dates: it follows the subphase)', async () => {
+  it('opens the assignment dialog on the nested subphase for me, and books nothing itself', () => {
     render(<ContextMenuContainer />);
 
-    fireEvent.click(screen.getByRole('menuitem', { name: /assign me/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Assign me…' }));
 
-    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalledTimes(1));
-    expect(createStaffAssignment).toHaveBeenCalledWith(
-      expect.objectContaining({
-        staff_id: 7,
-        allocation: 80,
-        project_id: 1,
-        subphase_id: 30,
-      })
-    );
-    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    expect(body).not.toHaveProperty('start_date');
-    expect(body).not.toHaveProperty('end_date');
+    // The same context as "Assign Staff" on a subphase, plus me: untouched,
+    // the dialog sends a linked booking (no dates: it follows the subphase).
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ subphaseId: 30, phaseId: 10, projectId: 1, staffId: 7 });
+    expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 
-  it('offers "Assign me again" once the user is booked on the nested subphase', () => {
+  it('offers "Assign me again…" once the user is booked on the nested subphase', () => {
     const booked = makeSubphase({
       ...nested,
       staffAssignments: [{ id: 5, staff_id: 7 } as unknown as Subphase['staffAssignments'][number]],
@@ -140,7 +133,7 @@ describe('ContextMenuContainer subphase target', () => {
 
     render(<ContextMenuContainer />);
 
-    expect(screen.getByRole('menuitem', { name: 'Assign me again' })).toBeEnabled();
+    expect(screen.getByRole('menuitem', { name: 'Assign me again…' })).toBeEnabled();
   });
 });
 

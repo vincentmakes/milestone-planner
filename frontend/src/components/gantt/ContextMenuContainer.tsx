@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { ContextMenu, type ContextMenuItem } from '@/components/common';
-import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment, createStaffAssignment } from '@/api';
+import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment } from '@/api';
 import { can, canBookEquipment, canBookSelf, canEditProject, canEditAssignment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
 import { approvalsApi, isPendingResponse } from '@/api/endpoints/approvals';
 import { ApiError } from '@/api/client';
@@ -17,7 +17,6 @@ import { RejectRequestDialog } from '@/components/common/ApprovalActions';
 import { isPendingAssignment } from '@/utils/kanbanCards';
 import { assignmentLock, flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
 import { findSubphaseById } from '@/utils/subphaseUtils';
-import { formatDateISO } from '@/utils/date';
 import {
   findStaffAssignment,
   removeEquipmentAssignmentLocally,
@@ -65,7 +64,6 @@ export function ContextMenuContainer() {
   const setEditingEquipmentAssignment = useUIStore((s) => s.setEditingEquipmentAssignment);
 
   const projects = useAppStore((s) => s.projects);
-  const staff = useAppStore((s) => s.staff);
   const currentUser = useAppStore((s) => s.currentUser);
   // Items that CREATE something are disabled in What-If mode: the new object
   // would only appear after Apply. Edits and deletes stay available.
@@ -92,14 +90,6 @@ export function ContextMenuContainer() {
   const canBook = canBookEquipment(currentUser, menuProject);
   // Deleting a project needs projects.delete, never in the manager bundle.
   const canDeleteProject = can(currentUser, 'projects.delete');
-
-  // "Assign me" books the current user's own time at their max capacity, the
-  // same default the assignment modal and resource drag use.
-  const ownDefaultAllocation = useMemo(() => {
-    if (!currentUser) return 100;
-    const row = staff.find((s) => s.id === currentUser.id);
-    return row?.max_capacity ?? currentUser.max_capacity ?? 100;
-  }, [staff, currentUser]);
 
   // Find the target project/phase/subphase
   const findTarget = useCallback(() => {
@@ -131,9 +121,12 @@ export function ContextMenuContainer() {
 
     if (!type || !targetId) return [];
 
-    // "Assign me" for people who cannot manage the project: a self-assignment
-    // on the project, phase or subphase the menu was opened on. Hidden for
-    // editors (they have the full "Assign Staff" dialog).
+    // "Assign me…" for people who cannot manage the project: opens the
+    // assignment dialog on the project, phase or subphase the menu was opened
+    // on, with them and their max capacity preset, so they can change the
+    // allocation, the dates and add a comment (or, as a request, a message for
+    // the approver) before booking. Untouched, the dialog sends what the old
+    // one-click item did. Hidden for editors (they have "Assign Staff").
     const assignMeItem = (): ContextMenuItem[] => {
       // Hidden when the role may not book its own time at all, or when the
       // user is not bookable as a resource (the server would answer 400).
@@ -142,56 +135,40 @@ export function ContextMenuContainer() {
       const mine = (item?.staffAssignments ?? []).filter((a) => a.staff_id === currentUser.id);
       const pending = mine.some(isPendingAssignment);
       // A project booking carries its own dates, so one per person; on a
-      // phase / subphase the server places a dateless second booking (it
-      // halves a full-span one or fills the largest free gap, or refuses).
-      // A one-day card has no room for a second one: the server always
-      // refuses, so the item stays "Assigned to me".
+      // phase / subphase the dialog sends a dateless second booking that the
+      // server places (it halves a full-span one or fills the largest free
+      // gap, or refuses). A one-day card has no room for a second one: the
+      // server always refuses, so the item stays "Assigned to me".
       const oneDay = !!item?.start_date && item.start_date === item.end_date;
       const again = mine.length > 0 && !pending && type !== 'project' && !oneDay;
       const blocked = mine.length > 0 && !again;
-      // In approval mode the server files a request instead (202).
+      // In approval mode the dialog files a request instead (202).
       const asRequest = needsApproval(currentUser, 'assignments.self_create');
       const label = pending
         ? 'Assignment requested'
         : mine.length > 0
           ? again
             ? asRequest
-              ? 'Request to assign me again'
-              : 'Assign me again'
+              ? 'Request to assign me again…'
+              : 'Assign me again…'
             : 'Assigned to me'
           : asRequest
-            ? 'Request to assign me'
-            : 'Assign me';
+            ? 'Request to assign me…'
+            : 'Assign me…';
+      // The same context as "Assign Staff" at this level, plus me.
+      const context =
+        type === 'project'
+          ? { projectId: targetId }
+          : type === 'phase'
+            ? { phaseId: targetId, projectId }
+            : { subphaseId: targetId, phaseId, projectId };
       return [
         {
           label,
           icon: <Icon icon={PersonIcon} size={14} />,
-          onClick: async () => {
+          onClick: () => {
             if (!item) return;
-            // A project may have no dates yet; the assignment still needs some.
-            const today = formatDateISO(new Date());
-            try {
-              // On a phase / subphase the booking is sent without dates: the
-              // server books it linked when it is the person's first on the
-              // card and places it (largest free gap, or the half of a
-              // full-span booking) on "Assign me again"; a project booking
-              // takes the project's days.
-              const res = await createStaffAssignment({
-                staff_id: currentUser.id,
-                allocation: ownDefaultAllocation,
-                ...(type === 'project'
-                  ? { start_date: item.start_date || today, end_date: item.end_date || today }
-                  : {}),
-                project_id: type === 'project' ? targetId : projectId,
-                phase_id: type === 'phase' ? targetId : undefined,
-                subphase_id: type === 'subphase' ? targetId : undefined,
-              });
-              await refreshProjects();
-              if (isPendingResponse(res)) flashSentForApproval();
-            } catch (err) {
-              console.error('Failed to self-assign:', err);
-              flashError(err, 'Could not assign you: ');
-            }
+            openModal('staffAssignment', { ...context, staffId: currentUser.id });
           },
           disabled: blocked || !item || whatIfMode,
           title: blocked ? undefined : createBlockedReason,
@@ -581,7 +558,7 @@ export function ContextMenuContainer() {
     }
 
     return [];
-  }, [contextMenu, findTarget, canEdit, canBook, whatIfMode, createBlockedReason, decideBlockedReason, canDeleteProject, currentUser, menuProject, ownDefaultAllocation, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
+  }, [contextMenu, findTarget, canEdit, canBook, whatIfMode, createBlockedReason, decideBlockedReason, canDeleteProject, currentUser, menuProject, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
 
   return (
     <>
