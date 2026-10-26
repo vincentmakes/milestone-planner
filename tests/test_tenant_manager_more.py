@@ -257,14 +257,14 @@ async def test_close_all_without_a_cleanup_task(mgr):
 ALL_KNOWN_NAMES = [
     "tags",
     "project_tags",
-    "tag_groups",
     "tag_sites",
-    "group_id",
     "all_sites",
     "sort_order",
     "staff_notes",
     "project_phases",
     "project_subphases",
+    *tp.TEAM_TABLES,
+    *tp.PROJECT_FIELD_TABLES,
 ]
 
 
@@ -292,13 +292,11 @@ class ScriptedConn:
         result.fetchone.return_value = None if legacy else (1,)
         result.fetchall.return_value = [] if legacy else [(n,) for n in ALL_KNOWN_NAMES]
 
-        if "column_name = 'colors_projects'" in sql:
-            result.fetchone.return_value = ("colors_projects",) if legacy else None
-        elif "'staff_notes', 'notes'" in sql and legacy:
+        if "'staff_notes', 'notes'" in sql and legacy:
             result.fetchall.return_value = [("notes",)]
         elif "table_name = 'notes' AND column_name = 'type'" in sql:
             result.fetchone.return_value = (1,) if self.notes_has_type else None
-        elif sql == tp.EQUIPMENT_SITE_FK_NEEDS_FIX_SQL:
+        elif sql in (tp.EQUIPMENT_SITE_FK_NEEDS_FIX_SQL, tp.RBAC_NEEDS_MIGRATION_SQL):
             result.scalar.return_value = legacy
         elif sql == tp.COMPANY_EVENT_SITES_BACKFILL_SQL:
             result.rowcount = 3 if legacy else 0
@@ -326,9 +324,8 @@ LEGACY_CHANGES = [
     "CREATE TABLE IF NOT EXISTS tags",
     "CREATE TABLE IF NOT EXISTS project_tags",
     "idx_project_tags_tag",
-    tp.TAG_GROUPS_TABLE_SQL,
+    *tp.TAGS_UPGRADE_STATEMENTS,
     tp.TAG_SITES_TABLE_SQL,
-    *tp.TAG_GROUPS_DROP_COLORS_STATEMENTS,
     "CREATE TABLE IF NOT EXISTS equipment_blocks",
     "idx_equipment_blocks_dates",
     "ALTER TABLE company_events ADD COLUMN IF NOT EXISTS color",
@@ -348,6 +345,11 @@ LEGACY_CHANGES = [
     tp.EQUIPMENT_SITE_FK_SQL,
     "CREATE TABLE IF NOT EXISTS equipment_sites",
     tp.COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
+    *tp.TEAMS_SCHEMA_STATEMENTS,
+    *tp.PROJECT_FIELDS_SCHEMA_STATEMENTS,
+    tp.PROJECT_FIELDS_MIGRATION_SQL,
+    # The notification-types widening runs on every pool creation (own gate).
+    *(s for s in tp.RBAC_SCHEMA_STATEMENTS if s != tp.NOTIFICATIONS_TYPE_CHECK_SQL),
 ]
 
 
@@ -363,8 +365,19 @@ async def test_legacy_tenant_gets_every_step():
     assert "COALESCE(type, 'general')" in conn.log[copy]
     assert copy < conn.log.index("DROP TABLE notes")
     assert "ROLLBACK" not in conn.log
-    # One commit per step (card status: one per table), 17 in all.
-    assert conn.log.count("COMMIT") == 17
+    assert conn.ran(tp.USERS_IS_RESOURCE_SQL)
+    for statement in tp.BOOKING_SEGMENT_COLUMN_STATEMENTS:
+        assert conn.ran(statement)
+    assert conn.ran(tp.PROJECT_COMMENTS_CHECK_SQL)
+    assert conn.ran(tp.EQUIPMENT_ASSIGNMENTS_NOTE_SQL)
+    # Tag groups are never created any more (2.0.0: they are project fields);
+    # the project-fields step runs its schema before the conversion.
+    assert not conn.ran("CREATE TABLE IF NOT EXISTS tag_groups")
+    assert conn.log.index(tp.PROJECT_FIELDS_MIGRATION_SQL) > max(
+        conn.log.index(s) for s in tp.PROJECT_FIELDS_SCHEMA_STATEMENTS
+    )
+    # One commit per step (card status: one per table), 24 in all.
+    assert conn.log.count("COMMIT") == 24
 
 
 @pytest.mark.asyncio
@@ -389,8 +402,21 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     assert conn.ran(tp.COMPANY_EVENTS_SITE_NULLABLE_SQL)
     assert conn.ran(tp.COMPANY_EVENTS_SITE_FK_SQL)
     assert conn.ran(tp.EQUIPMENT_SITES_BACKFILL_SQL)
+    assert conn.ran(tp.NOTIFICATIONS_TYPE_CHECK_SQL)
+    # users.is_resource and the booking segments: their DO blocks are their
+    # own gates, so they always run.
+    assert conn.ran(tp.USERS_IS_RESOURCE_SQL)
+    for statement in tp.BOOKING_SEGMENT_COLUMN_STATEMENTS:
+        assert conn.ran(statement)
+    # The project-comments widening and the equipment booking note are their
+    # own gates too.
+    assert conn.ran(tp.PROJECT_COMMENTS_CHECK_SQL)
+    assert conn.ran(tp.EQUIPMENT_ASSIGNMENTS_NOTE_SQL)
     assert "ROLLBACK" not in conn.log
-    assert conn.log.count("COMMIT") == 2  # only the two always-run back-fill steps
+    # Only the two always-run back-fill steps, the users.is_resource step, the
+    # booking-segments step, the equipment-note step, the project-comments
+    # step and the notification-types step.
+    assert conn.log.count("COMMIT") == 7
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,11 @@ import * as sites from '../sites';
 import * as staff from '../staff';
 import * as users from '../users';
 import * as vacations from '../vacations';
-import { tagsApi, tagGroupsApi } from '../tags';
+import { tagsApi } from '../tags';
+import { projectFieldsApi } from '../projectFields';
+import { teamsApi } from '../teams';
+import { rolesApi } from '../roles';
+import { approvalsApi } from '../approvals';
 import { skillsApi } from '../skills';
 import { absenceTypesApi } from '../absenceTypes';
 import { getAppVersion } from '../health';
@@ -129,6 +133,8 @@ describe('equipment and staff endpoints', () => {
   runCases([
     ['getEquipment (site)', () => equipment.getEquipment(), 'GET', '/api/equipment'],
     ['getEquipment (all sites)', () => equipment.getEquipment(true), 'GET', '/api/equipment?includeAllSites=true'],
+    ['getAllEquipment', () => equipment.getAllEquipment(), 'GET', '/api/equipment/all'],
+    ['getEquipmentTypes', () => equipment.getEquipmentTypes(), 'GET', '/api/equipment-types'],
     ['getEquipmentItem', () => equipment.getEquipmentItem(2), 'GET', '/api/equipment/2'],
     ['createEquipment', () => equipment.createEquipment({ name: 'E', type: 'T', site_id: 1 } as never), 'POST', '/api/equipment', { name: 'E', type: 'T', site_id: 1 }],
     ['updateEquipment', () => equipment.updateEquipment(2, { name: 'F' }), 'PUT', '/api/equipment/2', { name: 'F' }],
@@ -152,6 +158,8 @@ describe('kanban endpoints', () => {
     ['assignCard with allocation', () => kanban.assignCard('phase', 3, 4, 60), 'POST', '/api/kanban/cards/phase/3/assignees', { staff_id: 4, allocation: 60 }],
     ['unassignCard', () => kanban.unassignCard('phase', 3, 4), 'DELETE', '/api/kanban/cards/phase/3/assignees/4'],
     ['getComments', () => kanban.getComments('subphase', 8), 'GET', '/api/kanban/cards/subphase/8/comments'],
+    ['getComments of a project', () => kanban.getComments('project', 3), 'GET', '/api/kanban/cards/project/3/comments'],
+    ['createComment on a project', () => kanban.createComment('project', 3, 'hi'), 'POST', '/api/kanban/cards/project/3/comments', { body: 'hi', mentioned_user_ids: [] }],
     ['createComment without mentions', () => kanban.createComment('phase', 8, 'hi'), 'POST', '/api/kanban/cards/phase/8/comments', { body: 'hi', mentioned_user_ids: [] }],
     ['createComment with mentions', () => kanban.createComment('phase', 8, '@bob', [4]), 'POST', '/api/kanban/cards/phase/8/comments', { body: '@bob', mentioned_user_ids: [4] }],
     ['updateComment', () => kanban.updateComment(7, 'edit'), 'PUT', '/api/kanban/comments/7', { body: 'edit' }],
@@ -217,14 +225,53 @@ describe('settings endpoints', () => {
     await expect(settings.getInstanceTitle()).resolves.toBe('R&D Planning');
   });
 
-  it('getInstanceSettings maps empty values to undefined', async () => {
-    fns.GET.mockResolvedValue({ instance_title: 'T', instance_name: '', show_weekends: 'true', other: 'x' });
+  it('getInstanceSettings copies the known keys, empty display values as undefined', async () => {
+    fns.GET.mockResolvedValue({
+      instance_title: 'T',
+      instance_name: '',
+      show_weekends: 'true',
+      header_logo_dark: 'data:image/png;base64,x',
+      other: 'x',
+      gantt_default_panel: 'staff',
+      staff_panel_default_skills: '[1,2]',
+      equipment_panel_default_types: '["HPLC"]',
+      kanban_enabled: 'false',
+      nager_enabled: 'false',
+      new_project_preselect_phases: 'false',
+      project_field_labels: '{"customer":"Client"}',
+      project_fields_hidden: '["volume"]',
+    });
     await expect(settings.getInstanceSettings()).resolves.toEqual({
       instance_title: 'T',
       instance_name: undefined,
       show_weekends: 'true',
+      gantt_default_panel: 'staff',
+      staff_panel_default_skills: '[1,2]',
+      equipment_panel_default_types: '["HPLC"]',
+      kanban_enabled: 'false',
+      nager_enabled: 'false',
+      new_project_preselect_phases: 'false',
+      project_field_labels: '{"customer":"Client"}',
+      project_fields_hidden: '["volume"]',
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
+  });
+
+  it('getInstanceSettings fills the admin defaults the response lacks, like the backend', async () => {
+    fns.GET.mockResolvedValue({ instance_title: 'T', kanban_enabled: '' });
+    const loaded = await settings.getInstanceSettings();
+    expect(loaded).toMatchObject(settings.INSTANCE_SETTING_DEFAULTS);
+    expect(settings.INSTANCE_SETTING_DEFAULTS).toEqual({
+      gantt_default_panel: 'none',
+      staff_panel_default_skills: '[]',
+      equipment_panel_default_types: '[]',
+      kanban_enabled: 'true',
+      nager_enabled: 'true',
+      new_project_preselect_phases: 'true',
+      project_field_labels: '{}',
+      project_fields_hidden: '[]',
+    });
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(11);
   });
 });
 
@@ -292,11 +339,6 @@ describe('tags, skills and absence-type endpoints', () => {
     ['tags update', () => tagsApi.update(1, { color: '#fff' }), 'PUT', '/api/tags/1', { color: '#fff' }],
     ['tags delete', () => tagsApi.delete(1), 'DELETE', '/api/tags/1'],
     ['tags reorder', () => tagsApi.reorder([2, 1]), 'PUT', '/api/tags/reorder', { tag_order: [2, 1] }],
-    ['tag groups getAll', () => tagGroupsApi.getAll(), 'GET', '/api/tag-groups'],
-    ['tag groups create', () => tagGroupsApi.create({ name: 'G' }), 'POST', '/api/tag-groups', { name: 'G' }],
-    ['tag groups update', () => tagGroupsApi.update(1, { single_select: true }), 'PUT', '/api/tag-groups/1', { single_select: true }],
-    ['tag groups delete', () => tagGroupsApi.delete(1), 'DELETE', '/api/tag-groups/1'],
-    ['tag groups reorder', () => tagGroupsApi.reorder([1]), 'PUT', '/api/tag-groups/reorder', { group_order: [1] }],
     ['skills getAll', () => skillsApi.getAll(), 'GET', '/api/skills'],
     ['skills get', () => skillsApi.get(2), 'GET', '/api/skills/2'],
     ['skills create', () => skillsApi.create({ name: 'HPLC' }), 'POST', '/api/skills', { name: 'HPLC' }],
@@ -311,6 +353,100 @@ describe('tags, skills and absence-type endpoints', () => {
     ['absence types update', () => absenceTypesApi.update(1, { is_active: false }), 'PUT', '/api/absence-types/1', { is_active: false }],
     ['absence types remove', () => absenceTypesApi.remove(1), 'DELETE', '/api/absence-types/1'],
     ['absence types reorder', () => absenceTypesApi.reorder([1]), 'PUT', '/api/absence-types/reorder', { type_order: [1] }],
+  ]);
+});
+
+describe('project field endpoints', () => {
+  runCases([
+    ['fields getAll', () => projectFieldsApi.getAll(), 'GET', '/api/project-fields'],
+    [
+      'fields create',
+      () => projectFieldsApi.create({ name: 'Budget', field_type: 'number' }),
+      'POST',
+      '/api/project-fields',
+      { name: 'Budget', field_type: 'number' },
+    ],
+    ['fields update', () => projectFieldsApi.update(3, { name: 'Area' }), 'PUT', '/api/project-fields/3', { name: 'Area' }],
+    ['fields remove', () => projectFieldsApi.remove(3), 'DELETE', '/api/project-fields/3'],
+    ['fields reorder', () => projectFieldsApi.reorder([3, 1]), 'PUT', '/api/project-fields/reorder', { field_order: [3, 1] }],
+    ['fields usage', () => projectFieldsApi.usage(3), 'GET', '/api/project-fields/3/usage'],
+    [
+      'items create',
+      () => projectFieldsApi.createOption(3, { name: 'QA', color: '#10b981', all_sites: true }),
+      'POST',
+      '/api/project-fields/3/options',
+      { name: 'QA', color: '#10b981', all_sites: true },
+    ],
+    [
+      'items update',
+      () => projectFieldsApi.updateOption(51, { all_sites: false, site_ids: [2], team_ids: [] }),
+      'PUT',
+      '/api/project-fields/options/51',
+      { all_sites: false, site_ids: [2], team_ids: [] },
+    ],
+    ['items remove', () => projectFieldsApi.removeOption(51), 'DELETE', '/api/project-fields/options/51'],
+    [
+      'items reorder',
+      () => projectFieldsApi.reorderOptions(3, [52, 51]),
+      'PUT',
+      '/api/project-fields/3/options/reorder',
+      { option_order: [52, 51] },
+    ],
+  ]);
+});
+
+describe('team endpoints', () => {
+  runCases([
+    ['teams getAll', () => teamsApi.getAll(), 'GET', '/api/teams'],
+    ['teams getAll for a site', () => teamsApi.getAll(2), 'GET', '/api/teams?siteId=2'],
+    ['teams get', () => teamsApi.get(3), 'GET', '/api/teams/3'],
+    [
+      'teams create',
+      () => teamsApi.create({ site_id: 2, name: 'Analytics', member_ids: [4] }),
+      'POST',
+      '/api/teams',
+      { site_id: 2, name: 'Analytics', member_ids: [4] },
+    ],
+    ['teams update', () => teamsApi.update(3, { name: 'QC' }), 'PUT', '/api/teams/3', { name: 'QC' }],
+    ['teams delete', () => teamsApi.delete(3), 'DELETE', '/api/teams/3'],
+  ]);
+});
+
+describe('role and approval policy endpoints', () => {
+  runCases([
+    ['permissions catalogue', () => rolesApi.getPermissions(), 'GET', '/api/permissions'],
+    ['roles getAll', () => rolesApi.getAll(), 'GET', '/api/roles'],
+    [
+      'roles create',
+      () => rolesApi.create({ key: 'team_lead', name: 'Team lead', permissions: { 'teams.manage': 'allow' } }),
+      'POST',
+      '/api/roles',
+      { key: 'team_lead', name: 'Team lead', permissions: { 'teams.manage': 'allow' } },
+    ],
+    ['roles update', () => rolesApi.update(4, { name: 'Lead' }), 'PUT', '/api/roles/4', { name: 'Lead' }],
+    ['roles delete', () => rolesApi.delete(4), 'DELETE', '/api/roles/4'],
+    ['approval policies', () => rolesApi.getApprovalPolicies(), 'GET', '/api/approval-policies'],
+    [
+      'approval policy update',
+      () => rolesApi.updateApprovalPolicy('assignments.self_create', { pm_approves: false, role_ids: [2] }),
+      'PUT',
+      '/api/approval-policies/assignments.self_create',
+      { pm_approves: false, role_ids: [2] },
+    ],
+  ]);
+});
+
+describe('approval request endpoints', () => {
+  runCases([
+    ['approvals getMine', () => approvalsApi.getMine(), 'GET', '/api/approval-requests?scope=mine'],
+    ['approvals getMine pending only', () => approvalsApi.getMine('pending'), 'GET', '/api/approval-requests?scope=mine&status=pending'],
+    ['approvals getToDecide', () => approvalsApi.getToDecide(), 'GET', '/api/approval-requests?scope=to_decide'],
+    ['approvals get', () => approvalsApi.get(7), 'GET', '/api/approval-requests/7'],
+    ['approvals approve', () => approvalsApi.approve(7), 'POST', '/api/approval-requests/7/approve', {}],
+    ['approvals approve with a note', () => approvalsApi.approve(7, 'ok'), 'POST', '/api/approval-requests/7/approve', { note: 'ok' }],
+    ['approvals reject', () => approvalsApi.reject(7), 'POST', '/api/approval-requests/7/reject', {}],
+    ['approvals reject with a reason', () => approvalsApi.reject(7, 'Too busy'), 'POST', '/api/approval-requests/7/reject', { note: 'Too busy' }],
+    ['approvals cancel', () => approvalsApi.cancel(7), 'POST', '/api/approval-requests/7/cancel', {}],
   ]);
 });
 

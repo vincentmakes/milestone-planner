@@ -7,9 +7,20 @@
 import { memo, useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useUndoStore } from '@/stores/undoStore';
+import { updateStaffAssignment } from '@/api/endpoints/projects';
+import { isPendingResponse } from '@/api/endpoints/approvals';
+import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
+import { patchStaffAssignmentLocally } from '@/utils/localProjectTree';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
+import { toDateOnly } from '@/utils/date';
 import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
-import { canEditProject, canEditAssignment } from '@/utils/permissions';
+import { PendingBadge } from '@/components/common/PendingBadge';
+import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
+import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
+import type { AssignmentApproval, StaffAssignment, UpdateStaffAssignmentRequest } from '@/types';
+import { CardBadge } from './CardBadgeView';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -29,6 +40,21 @@ interface AssignmentRowProps {
   phaseColor?: string;
   startDate?: string;
   endDate?: string;
+  /** Staff rows: 'pending' = a booking awaiting approval (shown dashed) */
+  approvalStatus?: StaffAssignment['approval_status'];
+  /** Staff rows: the open approval request (create, change or removal) */
+  approval?: AssignmentApproval | null;
+  /** Phase / subphase staff rows: follows the card (true, the default) or has its own dates */
+  linked?: boolean;
+  /** Phase / subphase staff rows: the card's dates (an unlink starts from them) */
+  cardStartDate?: string;
+  cardEndDate?: string;
+  /**
+   * Phase / subphase staff rows: relinking this unlinked booking would overlap
+   * another booking of the person on the card (the server answers 409), so
+   * the pin is disabled with an explanation.
+   */
+  relinkWouldOverlap?: boolean;
 }
 
 export const AssignmentRow = memo(function AssignmentRow({
@@ -48,6 +74,12 @@ export const AssignmentRow = memo(function AssignmentRow({
   phaseColor,
   startDate,
   endDate,
+  approvalStatus,
+  approval,
+  linked = true,
+  cardStartDate,
+  cardEndDate,
+  relinkWouldOverlap = false,
 }: AssignmentRowProps) {
   const showContextMenu = useUIStore((s) => s.showContextMenu);
   const currentUser = useAppStore((s) => s.currentUser);
@@ -57,17 +89,36 @@ export const AssignmentRow = memo(function AssignmentRow({
   const hasEquipmentConflict =
     type === 'equipment' && equipmentId !== undefined && overlapMap.get(equipmentId)?.hasOverlap === true;
 
-  // Equipment bookings follow the project's editors; a staff booking may also
-  // be changed by the person whose time it books.
+  // Equipment bookings need equipment_bookings.manage (or managing the
+  // project); a staff booking may also be changed by the person it books.
   const canEdit = type === 'equipment'
-    ? canEditProject(currentUser, { pm_id: pmId })
+    ? canBookEquipment(currentUser, { pm_id: pmId })
     : canEditAssignment(currentUser, { pm_id: pmId }, staffId);
+  // A decider of the open request opens the menu too (Approve / Reject).
+  const canOpenMenu = canEdit || (type !== 'equipment' && approval?.can_decide === true);
+
+  // Own bookings awaiting approval (staff rows only).
+  const isStaffRow = type !== 'equipment';
+  const pending = isStaffRow && isPendingAssignment({ approval_status: approvalStatus });
+  const requested =
+    isStaffRow && approval && allocation !== undefined
+      ? requestedAllocation({ allocation, approval } as StaffAssignment)
+      : null;
+  const allocationText =
+    allocation === undefined ? null : requested !== null ? `${allocation}% → ${requested}%` : `${allocation}%`;
+  const rowClass = [styles.row, canOpenMenu ? styles.editable : '', pending ? styles.pending : '']
+    .filter(Boolean)
+    .join(' ');
+  const badge =
+    isStaffRow && (pending || approval) ? (
+      <PendingBadge assignment={{ approval_status: approvalStatus, approval }} projectId={projectId} />
+    ) : null;
   
   const paddingLeft = depth * 16 + 28; // Extra offset for no expand button
 
   // Handle right-click context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    if (!canEdit) return;
+    if (!canOpenMenu) return;
     
     e.preventDefault();
     e.stopPropagation();
@@ -90,37 +141,103 @@ export const AssignmentRow = memo(function AssignmentRow({
         allocation,
         startDate,
         endDate,
+        ...(type === 'phase-staff' || type === 'subphase-staff' ? { linked } : {}),
       }
     );
-  }, [canEdit, showContextMenu, type, assignmentId, projectId, phaseId, subphaseId, staffId, equipmentId, name, allocation, startDate, endDate]);
+  }, [canOpenMenu, showContextMenu, type, assignmentId, projectId, phaseId, subphaseId, staffId, equipmentId, name, allocation, startDate, endDate, linked]);
 
-  // Phase/subphase staff has special styling - shows 📌 and phase type badge
+  // The pin: a card booking follows its card (PinIcon) or has its own dates
+  // (PinOffIcon). Whoever may change the booking toggles it; a pending
+  // booking, or one with my own request open, is locked like in the context
+  // menu (the pin stays, disabled). CardBadge stops the click from bubbling.
+  const isRequester = Boolean(approval && currentUser && approval.requester_id === currentUser.id);
+  const canTogglePin = canEdit && !pending && !isRequester && Boolean(cardStartDate && cardEndDate);
+  // Relinking is refused while another booking of the person overlaps the
+  // card's dates (server 409); unlinking is never blocked by it. Only told to
+  // someone who could otherwise toggle -- a locked pin keeps its own title.
+  const relinkBlocked = canTogglePin && !linked && relinkWouldOverlap;
+  const handlePinClick = useCallback(async () => {
+    if (!cardStartDate || !cardEndDate) return;
+    const level = type === 'subphase-staff' ? 'subphase' : 'phase';
+    const cardStart = toDateOnly(cardStartDate);
+    const cardEnd = toDateOnly(cardEndDate);
+    // Unlink: own dates, starting as the card's. Relink: null dates.
+    const body: UpdateStaffAssignmentRequest = linked
+      ? { start_date: cardStart, end_date: cardEnd }
+      : { start_date: null, end_date: null };
+    const before = { linked, start_date: startDate ?? cardStart, end_date: endDate ?? cardEnd };
+    useUndoStore.getState().saveState(useAppStore.getState().projects, 'booking dates');
+    patchStaffAssignmentLocally(projectId, assignmentId, level, {
+      linked: !linked,
+      start_date: cardStart,
+      end_date: cardEnd,
+    });
+    try {
+      const res = await updateStaffAssignment(assignmentId, body, level);
+      if (isPendingResponse(res)) {
+        // Sent for approval: the booking keeps its dates until someone decides.
+        patchStaffAssignmentLocally(projectId, assignmentId, level, before);
+        const me = useAppStore.getState().currentUser;
+        if (me) markRequestPendingLocally(projectId, assignmentId, level, me.id, 'assignments.self_update', res, body);
+        flashSentForApproval();
+      }
+    } catch (err) {
+      useUIStore.getState().showFlash(err instanceof Error ? err.message : 'Could not change the booking');
+      await recoverFromPersistFailure('Booking', err);
+    }
+  }, [type, linked, cardStartDate, cardEndDate, startDate, endDate, projectId, assignmentId]);
+
+  // The name: scroll the timeline to the booking -- its own start when it has
+  // own dates, the card's start while it follows the card.
+  const scrollStart = linked ? cardStartDate ?? startDate : startDate ?? cardStartDate;
+  const handleNameClick = useCallback(() => {
+    if (scrollStart) useUIStore.getState().triggerScrollToDate(toDateOnly(scrollStart));
+  }, [scrollStart]);
+
+  // Phase/subphase staff: the card badge (pin + card name) instead of a type badge
   if (type === 'phase-staff' || type === 'subphase-staff') {
+    const cardWord = type === 'subphase-staff' ? 'subphase' : 'phase';
+    const pin = {
+      linked,
+      onToggle: handlePinClick,
+      disabled: !canTogglePin || relinkBlocked,
+      title: relinkBlocked
+        ? `Can't follow the ${cardWord} dates while another booking of this person overlaps them`
+        : canTogglePin
+          ? linked
+            ? `Follows the ${cardWord} dates — click to give it its own dates`
+            : `Own dates — click to follow the ${cardWord} dates again`
+          : linked
+            ? `Follows the ${cardWord} dates`
+            : 'Own dates',
+      label: `Own dates for ${name}`,
+    };
     return (
       <div 
-        className={`${styles.row} ${canEdit ? styles.editable : ''}`} 
+        className={rowClass} 
         style={{ paddingLeft }}
         onContextMenu={handleContextMenu}
       >
-        {/* Phase type badge with pin icon */}
-        <span 
-          className={styles.typeBadge}
-          style={{ 
-            backgroundColor: phaseColor ? `${phaseColor}33` : 'rgba(139, 92, 246, 0.2)',
-            color: phaseColor || 'var(--accent-purple)' 
-          }}
-        >
-          📌 {phaseType || (type === 'subphase-staff' ? 'Subphase' : 'Phase')}
-        </span>
+        {/* The card badge: the pin (link / unlink) and the card name (scroll to the booking) */}
+        <CardBadge
+          phaseType={phaseType}
+          phaseColor={phaseColor}
+          level={cardWord}
+          pin={pin}
+          onNameClick={handleNameClick}
+          nameTitle="Scroll to this booking"
+        />
 
         {/* Staff name */}
         <span className={styles.name} title={name}>
           {name}
         </span>
 
+        {badge}
+
         {/* Allocation */}
-        {allocation !== undefined && (
-          <span className={styles.allocation}>{allocation}%</span>
+        {allocationText !== null && (
+          <span className={styles.allocation}>{allocationText}</span>
         )}
       </div>
     );
@@ -128,7 +245,7 @@ export const AssignmentRow = memo(function AssignmentRow({
 
   return (
     <div 
-      className={`${styles.row} ${canEdit ? styles.editable : ''}`} 
+      className={rowClass} 
       style={{ paddingLeft }}
       onContextMenu={handleContextMenu}
     >
@@ -152,9 +269,11 @@ export const AssignmentRow = memo(function AssignmentRow({
         />
       )}
 
+      {badge}
+
       {/* Allocation */}
-      {type === 'staff' && allocation !== undefined && (
-        <span className={styles.allocation}>{allocation}%</span>
+      {type === 'staff' && allocationText !== null && (
+        <span className={styles.allocation}>{allocationText}</span>
       )}
     </div>
   );

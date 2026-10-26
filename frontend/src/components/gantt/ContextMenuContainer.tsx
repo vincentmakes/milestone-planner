@@ -3,17 +3,22 @@
  * Renders context menus based on uiStore state
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { ContextMenu, type ContextMenuItem } from '@/components/common';
-import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment, createStaffAssignment } from '@/api';
-import { isPrivileged, canEditProject, canEditAssignment } from '@/utils/permissions';
+import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment } from '@/api';
+import { can, canBookEquipment, canBookSelf, canEditProject, canEditAssignment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
+import { approvalsApi, isPendingResponse } from '@/api/endpoints/approvals';
+import { ApiError } from '@/api/client';
+import { RejectRequestDialog } from '@/components/common/ApprovalActions';
+import { isPendingAssignment } from '@/utils/kanbanCards';
+import { assignmentLock, flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
 import { findSubphaseById } from '@/utils/subphaseUtils';
-import { formatDateISO } from '@/utils/date';
 import {
+  findStaffAssignment,
   removeEquipmentAssignmentLocally,
   removePhaseLocally,
   removeProjectLocally,
@@ -24,12 +29,19 @@ import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import type { Project, Phase, Subphase } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
+import { Icon, EditIcon, PlusIcon, TrashIcon, CheckIcon, CloseIcon, PersonIcon, BriefcaseIcon } from '@/components/common/Icon';
 
 /**
  * Run a delete from the context menu. A failed delete must not be an
  * unhandled rejection: follow the persist-failure protocol (reload the
  * projects, clear the undo history) and tell the user.
  */
+/** Report a failure from a menu action, which has no form to show it in. */
+function flashError(err: unknown, prefix = ''): void {
+  const message = err instanceof Error ? err.message : 'unknown error';
+  useUIStore.getState().showFlash(`${prefix}${message}`);
+}
+
 async function runDelete(what: string, action: () => Promise<void>): Promise<void> {
   try {
     await action();
@@ -52,12 +64,15 @@ export function ContextMenuContainer() {
   const setEditingEquipmentAssignment = useUIStore((s) => s.setEditingEquipmentAssignment);
 
   const projects = useAppStore((s) => s.projects);
-  const staff = useAppStore((s) => s.staff);
   const currentUser = useAppStore((s) => s.currentUser);
   // Items that CREATE something are disabled in What-If mode: the new object
   // would only appear after Apply. Edits and deletes stay available.
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   const createBlockedReason = whatIfMode ? whatIfUnavailableMessage('Adding items') : undefined;
+  // Decisions on approval requests are real writes outside the sandbox.
+  const decideBlockedReason = whatIfMode ? whatIfUnavailableMessage('Approval decisions') : undefined;
+  // The request whose rejection reason is being asked for (shared Modal, never a prompt).
+  const [rejecting, setRejecting] = useState<{ requestId: number; name: string } | null>(null);
   // Deletes only change projects. A full loadAllData() would also re-resolve
   // the current site, and switch away from the one the user is looking at.
   const { refreshProjects } = useDataLoader();
@@ -69,18 +84,12 @@ export function ContextMenuContainer() {
     return projects.find((p) => p.id === id);
   }, [projects, contextMenu.type, contextMenu.targetId, contextMenu.projectId]);
 
-  // Per-project rights: admins, superusers and the project's manager.
+  // Per-project rights: projects.edit_any, or the project's manager.
   const canEdit = canEditProject(currentUser, menuProject);
-  // Deleting a project stays with admins and superusers, even for its manager.
-  const canDeleteProject = isPrivileged(currentUser);
-
-  // "Assign me" books the current user's own time at their max capacity, the
-  // same default the assignment modal and resource drag use.
-  const ownDefaultAllocation = useMemo(() => {
-    if (!currentUser) return 100;
-    const row = staff.find((s) => s.id === currentUser.id);
-    return row?.max_capacity ?? currentUser.max_capacity ?? 100;
-  }, [staff, currentUser]);
+  // Equipment bookings: equipment_bookings.manage, or managing the project.
+  const canBook = canBookEquipment(currentUser, menuProject);
+  // Deleting a project needs projects.delete, never in the manager bundle.
+  const canDeleteProject = can(currentUser, 'projects.delete');
 
   // Find the target project/phase/subphase
   const findTarget = useCallback(() => {
@@ -112,40 +121,57 @@ export function ContextMenuContainer() {
 
     if (!type || !targetId) return [];
 
-    // "Assign me" for people who cannot manage the project: a self-assignment
-    // on the project, phase or subphase the menu was opened on. Hidden for
-    // editors (they have the full "Assign Staff" dialog) and once assigned.
+    // "Assign me…" for people who cannot manage the project: opens the
+    // assignment dialog on the project, phase or subphase the menu was opened
+    // on, with them and their max capacity preset, so they can change the
+    // allocation, the dates and add a comment (or, as a request, a message for
+    // the approver) before booking. Untouched, the dialog sends what the old
+    // one-click item did. Hidden for editors (they have "Assign Staff").
     const assignMeItem = (): ContextMenuItem[] => {
-      if (canEdit || !currentUser) return [];
+      // Hidden when the role may not book its own time at all, or when the
+      // user is not bookable as a resource (the server would answer 400).
+      if (canEdit || !currentUser || !canBookSelf(currentUser, currentUser.id)) return [];
       const item = target as Project | Phase | Subphase | undefined;
-      const alreadyAssigned = (item?.staffAssignments ?? []).some(
-        (a) => a.staff_id === currentUser.id
-      );
+      const mine = (item?.staffAssignments ?? []).filter((a) => a.staff_id === currentUser.id);
+      const pending = mine.some(isPendingAssignment);
+      // A project booking carries its own dates, so one per person; on a
+      // phase / subphase the dialog sends a dateless second booking that the
+      // server places (it halves a full-span one or fills the largest free
+      // gap, or refuses). A one-day card has no room for a second one: the
+      // server always refuses, so the item stays "Assigned to me".
+      const oneDay = !!item?.start_date && item.start_date === item.end_date;
+      const again = mine.length > 0 && !pending && type !== 'project' && !oneDay;
+      const blocked = mine.length > 0 && !again;
+      // In approval mode the dialog files a request instead (202).
+      const asRequest = needsApproval(currentUser, 'assignments.self_create');
+      const label = pending
+        ? 'Assignment requested'
+        : mine.length > 0
+          ? again
+            ? asRequest
+              ? 'Request to assign me again…'
+              : 'Assign me again…'
+            : 'Assigned to me'
+          : asRequest
+            ? 'Request to assign me…'
+            : 'Assign me…';
+      // The same context as "Assign Staff" at this level, plus me.
+      const context =
+        type === 'project'
+          ? { projectId: targetId }
+          : type === 'phase'
+            ? { phaseId: targetId, projectId }
+            : { subphaseId: targetId, phaseId, projectId };
       return [
         {
-          label: alreadyAssigned ? 'Assigned to me' : 'Assign me',
-          icon: <PersonIcon />,
-          onClick: async () => {
+          label,
+          icon: <Icon icon={PersonIcon} size={14} />,
+          onClick: () => {
             if (!item) return;
-            // A project may have no dates yet; the assignment still needs some.
-            const today = formatDateISO(new Date());
-            try {
-              await createStaffAssignment({
-                staff_id: currentUser.id,
-                allocation: ownDefaultAllocation,
-                start_date: item.start_date || today,
-                end_date: item.end_date || today,
-                project_id: type === 'project' ? targetId : projectId,
-                phase_id: type === 'phase' ? targetId : undefined,
-                subphase_id: type === 'subphase' ? targetId : undefined,
-              });
-              refreshProjects();
-            } catch (err) {
-              console.error('Failed to self-assign:', err);
-            }
+            openModal('staffAssignment', { ...context, staffId: currentUser.id });
           },
-          disabled: alreadyAssigned || !item || whatIfMode,
-          title: alreadyAssigned ? undefined : createBlockedReason,
+          disabled: blocked || !item || whatIfMode,
+          title: blocked ? undefined : createBlockedReason,
         },
       ];
     };
@@ -156,7 +182,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Project',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             if (project) openProjectModal(project);
           },
@@ -164,7 +190,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Add Phase',
-          icon: <AddIcon />,
+          icon: <Icon icon={PlusIcon} size={14} />,
           onClick: () => {
             openPhaseModal(undefined, targetId);
           },
@@ -173,7 +199,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Assign Staff',
-          icon: <PersonIcon />,
+          icon: <Icon icon={PersonIcon} size={14} />,
           onClick: () => {
             openModal('staffAssignment', { projectId: targetId });
           },
@@ -183,17 +209,17 @@ export function ContextMenuContainer() {
         ...assignMeItem(),
         {
           label: 'Assign Equipment',
-          icon: <EquipmentIcon />,
+          icon: <Icon icon={BriefcaseIcon} size={14} />,
           onClick: () => {
             openModal('equipmentAssignment', { projectId: targetId });
           },
-          disabled: !canEdit || whatIfMode,
+          disabled: !canBook || whatIfMode,
           title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Project',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -222,7 +248,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Phase',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             if (phase && projectId) openPhaseModal(phase, projectId);
           },
@@ -230,7 +256,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Add Subphase',
-          icon: <AddIcon />,
+          icon: <Icon icon={PlusIcon} size={14} />,
           onClick: () => {
             openSubphaseModal(undefined, targetId, projectId);
           },
@@ -239,7 +265,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Assign Staff',
-          icon: <PersonIcon />,
+          icon: <Icon icon={PersonIcon} size={14} />,
           onClick: () => {
             openModal('staffAssignment', { phaseId: targetId, projectId });
           },
@@ -249,17 +275,17 @@ export function ContextMenuContainer() {
         ...assignMeItem(),
         {
           label: 'Assign Equipment',
-          icon: <EquipmentIcon />,
+          icon: <Icon icon={BriefcaseIcon} size={14} />,
           onClick: () => {
             openModal('equipmentAssignment', { phaseId: targetId, projectId });
           },
-          disabled: !canEdit || whatIfMode,
+          disabled: !canBook || whatIfMode,
           title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Phase',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -287,7 +313,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Subphase',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             if (subphase && phaseId && projectId) openSubphaseModal(subphase, phaseId, projectId);
           },
@@ -295,7 +321,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Add Child Subphase',
-          icon: <AddIcon />,
+          icon: <Icon icon={PlusIcon} size={14} />,
           onClick: () => {
             // Add subphase as child of this subphase
             // phaseId stays the same, but we pass targetId as parentSubphaseId
@@ -306,7 +332,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Assign Staff',
-          icon: <PersonIcon />,
+          icon: <Icon icon={PersonIcon} size={14} />,
           onClick: () => {
             openModal('staffAssignment', { subphaseId: targetId, phaseId, projectId });
           },
@@ -316,17 +342,17 @@ export function ContextMenuContainer() {
         ...assignMeItem(),
         {
           label: 'Assign Equipment',
-          icon: <EquipmentIcon />,
+          icon: <Icon icon={BriefcaseIcon} size={14} />,
           onClick: () => {
             openModal('equipmentAssignment', { subphaseId: targetId, phaseId, projectId });
           },
-          disabled: !canEdit || whatIfMode,
+          disabled: !canBook || whatIfMode,
           title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Subphase',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -354,13 +380,112 @@ export function ContextMenuContainer() {
       const assignmentName = assignmentData?.name || 'Staff Assignment';
       // Determine assignment level for API routing
       const assignmentLevel = subphaseId ? 'subphase' : (phaseId ? 'phase' : 'project');
-      // Project editors may change anyone's booking; everyone may change their own.
-      const canEditThis = canEditAssignment(currentUser, menuProject, assignmentData?.staffId);
+      const staffId = assignmentData?.staffId;
+      const row = findStaffAssignment(menuProject, assignmentLevel, targetId);
+      const request = row?.approval ?? null;
+      const isRequester = Boolean(request && currentUser && request.requester_id === currentUser.id);
+      // The one lock rule (assignmentLock, shared with the booking dialog and
+      // like KanbanCardModal's): a row with an open request from me offers me
+      // only Cancel request; a pending create is locked for everyone (deciders
+      // approve / reject, the requester cancels); editors keep their controls
+      // on an approved row carrying someone else's change request (their write
+      // expires it server-side). Whoever manages others' bookings changes
+      // anyone's; everyone else their own, when their role holds the matching
+      // own-booking key.
+      const lock = assignmentLock(row ?? { staff_id: staffId }, currentUser, menuProject);
+      const lockedPending = lock === 'request-open' || lock === 'pending-other';
+      const canEditThis = lock === null;
+      const canRemoveThis =
+        canEditAssignment(currentUser, menuProject, staffId, 'assignments.self_remove') && !lockedPending;
+      const isEditor = can(currentUser, 'assignments.manage_others', menuProject);
+      // Denied mode: an own booking the role may not remove shows no Delete.
+      const hideDelete = !isEditor && isSelf(currentUser, staffId) && !canSelf(currentUser, 'assignments.self_remove');
+      const removalNeedsApproval =
+        !isEditor && isSelf(currentUser, staffId) && needsApproval(currentUser, 'assignments.self_remove');
+
+      const refreshAfterDecision = async (action: () => Promise<unknown>) => {
+        try {
+          await action();
+          await refreshProjects();
+        } catch (err) {
+          flashError(err);
+          // A 409: the request was decided or expired meanwhile -- show that.
+          if (err instanceof ApiError && err.status === 409) await refreshProjects();
+        }
+      };
+
+      const requestItems: ContextMenuItem[] = [];
+      if (request?.can_decide) {
+        requestItems.push(
+          {
+            label: 'Approve request',
+            icon: <Icon icon={CheckIcon} size={14} />,
+            onClick: () => refreshAfterDecision(() => approvalsApi.approve(request.request_id)),
+            disabled: whatIfMode,
+            title: decideBlockedReason,
+          },
+          {
+            label: 'Reject request…',
+            icon: <Icon icon={CloseIcon} size={14} />,
+            onClick: () => setRejecting({ requestId: request.request_id, name: assignmentName }),
+            disabled: whatIfMode,
+            title: decideBlockedReason,
+          }
+        );
+      }
+      if (request && isRequester) {
+        requestItems.push({
+          label: 'Cancel request',
+          icon: <Icon icon={CloseIcon} size={14} />,
+          onClick: () => refreshAfterDecision(() => approvalsApi.cancel(request.request_id)),
+          disabled: whatIfMode,
+          title: decideBlockedReason,
+        });
+      }
+      if (requestItems.length > 0) requestItems.push({ label: '', divider: true, onClick: () => {} });
+
+      const deleteItems: ContextMenuItem[] = hideDelete
+        ? []
+        : [
+            { label: '', divider: true, onClick: () => {} },
+            {
+              label: 'Delete Assignment',
+              icon: <Icon icon={TrashIcon} size={14} />,
+              danger: true,
+              onClick: async () => {
+                if (
+                  await confirmAction({
+                    title: 'Remove assignment',
+                    message: removalNeedsApproval
+                      ? `Request to remove ${assignmentName} from this assignment? The removal will be sent for approval.`
+                      : `Remove ${assignmentName} from this assignment?`,
+                    destructive: true,
+                  })
+                ) {
+                  await runDelete('assignment', async () => {
+                    const res = await deleteStaffAssignment(targetId, assignmentLevel);
+                    if (isPendingResponse(res)) {
+                      // Sent for approval: the booking stays until decided.
+                      if (projectId && currentUser) {
+                        markRequestPendingLocally(projectId, targetId, assignmentLevel, currentUser.id, 'assignments.self_remove', res, null);
+                      }
+                      flashSentForApproval();
+                    } else if (projectId) {
+                      removeStaffAssignmentLocally(projectId, targetId, assignmentLevel);
+                    }
+                    refreshProjects();
+                  });
+                }
+              },
+              disabled: !canRemoveThis,
+            },
+          ];
 
       return [
+        ...requestItems,
         {
           label: 'Edit Assignment',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             setEditingStaffAssignment({
               id: targetId,
@@ -370,35 +495,16 @@ export function ContextMenuContainer() {
               staff_id: assignmentData?.staffId || 0,
               staff_name: assignmentData?.name || '',
               allocation: assignmentData?.allocation || 100,
-              start_date: assignmentData?.startDate || '',
-              end_date: assignmentData?.endDate || '',
+              // Effective dates: a card booking's own, or its card's when linked
+              start_date: assignmentData?.startDate || row?.start_date || '',
+              end_date: assignmentData?.endDate || row?.end_date || '',
+              linked: assignmentData?.linked ?? row?.linked,
             });
             openModal('staffAssignment', { projectId, phaseId, subphaseId });
           },
           disabled: !canEditThis,
         },
-        { label: '', divider: true, onClick: () => {} },
-        {
-          label: 'Delete Assignment',
-          icon: <DeleteIcon />,
-          danger: true,
-          onClick: async () => {
-            if (
-              await confirmAction({
-                title: 'Remove assignment',
-                message: `Remove ${assignmentName} from this assignment?`,
-                destructive: true,
-              })
-            ) {
-              await runDelete('assignment', async () => {
-                await deleteStaffAssignment(targetId, assignmentLevel);
-                if (projectId) removeStaffAssignmentLocally(projectId, targetId, assignmentLevel);
-                refreshProjects();
-              });
-            }
-          },
-          disabled: !canEditThis,
-        },
+        ...deleteItems,
       ];
     }
 
@@ -409,7 +515,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Assignment',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             setEditingEquipmentAssignment({
               id: targetId,
@@ -423,12 +529,12 @@ export function ContextMenuContainer() {
             });
             openModal('equipmentAssignment', { projectId, phaseId, subphaseId });
           },
-          disabled: !canEdit,
+          disabled: !canBook,
         },
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Assignment',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -446,58 +552,34 @@ export function ContextMenuContainer() {
               });
             }
           },
-          disabled: !canEdit,
+          disabled: !canBook,
         },
       ];
     }
 
     return [];
-  }, [contextMenu, findTarget, canEdit, whatIfMode, createBlockedReason, canDeleteProject, currentUser, menuProject, ownDefaultAllocation, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
-
-  if (!contextMenu.visible) return null;
+  }, [contextMenu, findTarget, canEdit, canBook, whatIfMode, createBlockedReason, decideBlockedReason, canDeleteProject, currentUser, menuProject, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
 
   return (
-    <ContextMenu
-      x={contextMenu.x}
-      y={contextMenu.y}
-      items={getMenuItems()}
-      onClose={hideContextMenu}
-    />
+    <>
+      {contextMenu.visible && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={getMenuItems()}
+          onClose={hideContextMenu}
+        />
+      )}
+      <RejectRequestDialog
+        isOpen={rejecting !== null}
+        subject={rejecting?.name}
+        onClose={() => setRejecting(null)}
+        onReject={async (note) => {
+          if (!rejecting) return;
+          await approvalsApi.reject(rejecting.requestId, note);
+          await refreshProjects();
+        }}
+      />
+    </>
   );
 }
-
-// Simple icons
-const EditIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-  </svg>
-);
-
-const AddIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="12" y1="5" x2="12" y2="19" />
-    <line x1="5" y1="12" x2="19" y2="12" />
-  </svg>
-);
-
-const DeleteIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-  </svg>
-);
-
-const PersonIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
-
-const EquipmentIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-    <path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
-  </svg>
-);

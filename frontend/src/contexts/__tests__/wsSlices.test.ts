@@ -17,28 +17,41 @@ describe('slicesForEntity', () => {
     ['predefined_phase', ['projects']],
     ['note', []],
     ['card_comment', []],
-    ['settings', ['settings']],
+    ['settings', ['settings', 'currentUser']],
     ['custom_column', ['customColumns']],
     ['custom_column_value', ['customColumns']],
     ['bank_holiday', ['siteCalendar']],
     ['company_event', ['siteCalendar']],
     ['absence_type', ['absenceTypes', 'vacations']],
     ['staff', ['staff', 'projects']],
-    ['user', ['staff', 'currentUser', 'projects']],
+    ['user', ['staff', 'currentUser', 'projects', 'teams', 'roles']],
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
-    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'equipment']],
+    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams']],
     ['skill', ['skills', 'staff']],
     ['tag', ['tags', 'projects']],
-    ['tag_group', ['tags']],
+    // Fields and items: a delete removes project values, so the tree reloads
+    ['project_field', ['projectFields', 'projects']],
+    ['team', ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar']],
+    // RBAC: a role edit changes the signed-in user's permissions (/auth/me)
+    // and the role list of Settings → Roles and the role pickers
+    ['role', ['currentUser', 'roles']],
+    // A policy edit changes the approver names on pending badges and who may
+    // decide; a decision (approval_request) does not touch the policies.
+    // approval_required comes from the role's modes (change:role), not the
+    // policy, so /auth/me is not reloaded.
+    ['approval_policy', ['approvalPolicies', 'approvals']],
+    ['approval_request', ['projects', 'approvals']],
   ])('%s → %j', (entity, slices) => {
     expect(slicesForEntity(entity)).toEqual(slices);
   });
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(13);
+    expect(new Set(ALL_SLICES).size).toBe(18);
+    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'approvalPolicies', 'roles', 'projectFields']));
+    expect(ALL_SLICES).not.toContain('todos');
   });
 
   it('sandboxes only the What-If plan slices', () => {

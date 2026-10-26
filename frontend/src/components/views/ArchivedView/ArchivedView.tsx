@@ -9,11 +9,14 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync } from '@/hooks';
+import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { canEditProject } from '@/utils/permissions';
+import { builtInFieldLabel, isBuiltInFieldHidden } from '@/utils/instanceSettings';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { TimelineRow } from './TimelineRow';
 import styles from './ArchivedView.module.css';
+import { Icon, EditIcon } from '@/components/common/Icon';
 
 export function ArchivedView() {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -24,14 +27,18 @@ export function ArchivedView() {
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
-  const companyEventDates = useAppStore((s) => s.companyEventDates);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Company events narrowed by the header team filter
+  const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  // The Customer field may be renamed or hidden (Settings → Project fields)
+  const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
+  const customerLabel = useAppStore((s) => builtInFieldLabel(s.instanceSettings, 'customer'));
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const openProjectModal = useUIStore((s) => s.openProjectModal);
+  const { projectMatches } = useTeamFilter();
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
@@ -39,9 +46,9 @@ export function ArchivedView() {
   // Get archived projects for current site
   const archivedProjects = useMemo(() => {
     return projects
-      .filter((p) => p.archived && p.site_id === currentSite?.id)
+      .filter((p) => p.archived && p.site_id === currentSite?.id && projectMatches(p))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [projects, currentSite]);
+  }, [projects, currentSite, projectMatches]);
   
   // Generate timeline data
   const cells = useMemo(() =>
@@ -79,9 +86,7 @@ export function ArchivedView() {
               >
                 <div className={styles.projectMain}>
                   {/* Empty expand button placeholder for alignment */}
-                  <div className={styles.expandPlaceholder}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" />
-                  </div>
+                  <div className={styles.expandPlaceholder} aria-hidden="true" />
                   
                   {/* Status indicator */}
                   <div className={`${styles.status} ${project.confirmed ? styles.confirmed : styles.unconfirmed}`} />
@@ -91,8 +96,12 @@ export function ArchivedView() {
                     <div className={styles.projectName}>{project.name}</div>
                     <div className={styles.projectMeta}>
                       <span className={styles.pmName}>{project.pm_name || 'No PM'}</span>
-                      <span> · </span>
-                      <span>{project.customer || 'No customer'}</span>
+                      {!customerHidden && (
+                        <>
+                          <span> · </span>
+                          <span>{project.customer || `No ${customerLabel}`}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   
@@ -106,10 +115,7 @@ export function ArchivedView() {
                       }}
                       title="Edit project"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
+                      <Icon icon={EditIcon} size={14} />
                     </button>
                   )}
                 </div>

@@ -13,6 +13,8 @@ import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
 import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
+import { reloadAfterPendingWrite } from '@/utils/pendingBookings';
+import { isPendingResponse } from '@/api/endpoints/approvals';
 import { getPointerClientX, NON_PASSIVE } from '@/utils/touchEvents';
 import { useUndoStore } from '@/stores/undoStore';
 import { 
@@ -22,10 +24,15 @@ import {
   cloneProject,
   moveChildrenByOffset,
   movePhasesWithProject,
+  fitCardBookings,
+  pixelOfDate,
   resolveDependencyPredecessor,
 } from '@/components/gantt/utils';
-import { canEditProjectById, canEditAssignment } from '@/utils/permissions';
-import type { ViewMode, Subphase, Project } from '@/types';
+import type { PendingUpdate } from '@/components/gantt/utils';
+import { canBookEquipmentById, canEditProjectById, canEditAssignment } from '@/utils/permissions';
+import type { ViewMode, Subphase, Project, StaffAssignmentLevel } from '@/types';
+import { clampToCard, type DateSpan } from '@/utils/bookingSegments';
+import { findStaffAssignment } from '@/utils/localProjectTree';
 import { confirmAction } from '@/utils/confirmDialog';
 
 interface DragData {
@@ -43,6 +50,16 @@ interface DragData {
   isMilestone: boolean;
   // For project drag - track if user confirmed
   confirmed?: boolean;
+  /** Staff bookings: the route family (ids are unique per level only). */
+  level?: StaffAssignmentLevel;
+  /** An unlinked phase / subphase booking stays inside its card's dates. */
+  bounds?: DateSpan;
+}
+
+/** A booking on a phase / subphase, dragged within its card. */
+export interface CardBookingDrag {
+  level: StaffAssignmentLevel;
+  bounds?: DateSpan;
 }
 
 export function useDragAndDrop() {
@@ -62,8 +79,9 @@ export function useDragAndDrop() {
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const currentUser = useAppStore((s) => s.currentUser);
-  // Per-project rights: admins, superusers and the project's manager may move
-  // schedule items; a staff booking may also be moved by the person it books.
+  // Per-project rights: `projects.edit_any`, or managing the project (the PM
+  // bundle), may move schedule items; a staff booking may also be moved by
+  // the person it books.
   const canEditProjectId = useCallback(
     (projectId: number) => canEditProjectById(currentUser, projects, projectId),
     [currentUser, projects]
@@ -71,6 +89,11 @@ export function useDragAndDrop() {
   const canEditStaffAssignment = useCallback(
     (projectId: number, staffId?: number) =>
       canEditAssignment(currentUser, projects.find((p) => p.id === projectId), staffId),
+    [currentUser, projects]
+  );
+  // Equipment bookings: equipment_bookings.manage (or managing the project)
+  const canBookEquipmentId = useCallback(
+    (projectId: number) => canBookEquipmentById(currentUser, projects, projectId),
     [currentUser, projects]
   );
   const { cellWidth, currentView, viewMode } = useViewStore(
@@ -346,6 +369,17 @@ export function useDragAndDrop() {
       const cellIndex = Math.round(newLeft / cellWidth);
       newLeft = cellIndex * cellWidth;
     }
+
+    // An unlinked card booking never leaves its card: stop at the edges.
+    const cells = getTimelineCellsFromDOM();
+    if (data.bounds && cells && cells.length > 0) {
+      const estimatedStart = calculateDateFromPosition(newLeft, cells, cellWidth, viewMode);
+      if (estimatedStart) {
+        const duration = daysBetweenDateStrings(data.originalStartDate, data.originalEndDate);
+        const kept = clampToCard(estimatedStart, addDaysToDateString(estimatedStart, duration), data.bounds);
+        if (kept.start !== estimatedStart) newLeft = pixelOfDate(kept.start, cells, cellWidth, viewMode);
+      }
+    }
     
     // Update element position visually
     if (data.element) {
@@ -354,8 +388,11 @@ export function useDragAndDrop() {
       data.element.style.zIndex = '1000';
     }
     
+    // Bookings have no dependencies: no lag indicator (and no lookup of a
+    // phase/subphase under the booking's id).
+    if (data.type === 'staffAssignment' || data.type === 'equipmentAssignment') return;
+
     // Calculate estimated new start date and show lag indicator
-    const cells = getTimelineCellsFromDOM();
     if (cells && cells.length > 0 && data.element) {
       const estimatedStartDate = calculateDateFromPosition(newLeft, cells, cellWidth, viewMode);
       
@@ -389,6 +426,7 @@ export function useDragAndDrop() {
     newStartDate: string, 
     newEndDate: string
   ) => {
+    let sentForApproval = false;
     try {
       // Find the project
       const projectIndex = projects.findIndex(p => p.id === data.projectId);
@@ -441,7 +479,7 @@ export function useDragAndDrop() {
       const projectCopy = cloneProject(projects[projectIndex]);
       
       // Collect all pending updates (for children that need to be saved)
-      const childUpdates: { type: 'phase' | 'subphase' | 'project' | 'staffAssignment' | 'equipmentAssignment'; id: number; start_date: string; end_date: string }[] = [];
+      const childUpdates: PendingUpdate[] = [];
       
       if (data.type === 'project') {
         // Dragging project - update project dates and move all phases with it
@@ -458,6 +496,9 @@ export function useDragAndDrop() {
         if (phase) {
           phase.start_date = newStartDate;
           phase.end_date = newEndDate;
+          // Its bookings, locally: linked rows follow, unlinked segments move
+          // along (the server fits them itself in the phase PUT)
+          fitCardBookings(phase, data.originalStartDate, data.originalEndDate);
           
           // Move all children (subphases) by the same offset
           if (phase.children?.length && dayOffset !== 0) {
@@ -471,6 +512,7 @@ export function useDragAndDrop() {
             if (child.id === data.id) {
               child.start_date = newStartDate;
               child.end_date = newEndDate;
+              fitCardBookings(child, data.originalStartDate, data.originalEndDate);
               
               // Move nested children by the same offset
               if (child.children?.length && dayOffset !== 0) {
@@ -509,8 +551,9 @@ export function useDragAndDrop() {
           newEndDate
         );
       } else if (data.type === 'staffAssignment') {
-        // Update staff assignment in the project copy
-        const assignment = projectCopy.staffAssignments?.find(a => a.id === data.id);
+        // Update the booking in the project copy, at its own level (ids are
+        // unique per level only)
+        const assignment = findStaffAssignment(projectCopy, data.level ?? 'project', data.id);
         if (assignment) {
           assignment.start_date = newStartDate;
           assignment.end_date = newEndDate;
@@ -552,12 +595,21 @@ export function useDragAndDrop() {
         });
       } else if (data.type === 'staffAssignment') {
         // Staff assignment requires allocation field
-        const assignment = projectCopy.staffAssignments?.find(a => a.id === data.id);
-        await updateStaffAssignment(data.id, {
-          start_date: newStartDate,
-          end_date: newEndDate,
-          allocation: assignment?.allocation ?? 100,
-        });
+        const level = data.level ?? 'project';
+        const assignment = findStaffAssignment(projectCopy, level, data.id);
+        const res = await updateStaffAssignment(
+          data.id,
+          {
+            start_date: newStartDate,
+            end_date: newEndDate,
+            allocation: assignment?.allocation ?? 100,
+          },
+          level
+        );
+        // An own booking whose change needs approval: the server filed a
+        // request (202) and kept the old dates, so the optimistic move cannot
+        // stand -- reload, clear the undo history, tell the user.
+        if (isPendingResponse(res)) sentForApproval = true;
       } else if (data.type === 'equipmentAssignment') {
         await updateEquipmentAssignment(data.id, {
           start_date: newStartDate,
@@ -569,8 +621,12 @@ export function useDragAndDrop() {
       if (pendingUpdates.length > 0) {
         await savePendingUpdates(pendingUpdates);
       }
-      
+
+      if (sentForApproval) await reloadAfterPendingWrite();
     } catch (err) {
+      // A refused booking says why (e.g. an overlap with the person's other
+      // booking on the card, 409) -- the bar snaps back with the reload.
+      if (data.type === 'staffAssignment' && err instanceof Error) useUIStore.getState().showFlash(err.message);
       // Optimistic-write failure protocol: reload + clear the undo stack.
       await recoverFromPersistFailure('Drag', err);
     }
@@ -621,8 +677,9 @@ export function useDragAndDrop() {
       const daysDelta = Math.round(deltaX / cellWidth);
       const newStartDate = addDaysToDateString(data.originalStartDate, daysDelta);
       const newEndDate = data.isMilestone ? newStartDate : addDaysToDateString(data.originalEndDate, daysDelta);
+      const kept = data.bounds ? clampToCard(newStartDate, newEndDate, data.bounds) : { start: newStartDate, end: newEndDate };
       
-      await commitDragUpdate(data, newStartDate, newEndDate);
+      await commitDragUpdate(data, kept.start, kept.end);
       return;
     }
     
@@ -651,8 +708,10 @@ export function useDragAndDrop() {
     
     const startDateStr = formatDateLocal(newStartDateObj);
     const endDateStr = data.isMilestone ? startDateStr : formatDateLocal(newEndDateObj);
+    // An unlinked card booking stays inside its card (the server refuses it otherwise)
+    const kept = data.bounds ? clampToCard(startDateStr, endDateStr, data.bounds) : { start: startDateStr, end: endDateStr };
     
-    await commitDragUpdate(data, startDateStr, endDateStr);
+    await commitDragUpdate(data, kept.start, kept.end);
   }, [cellWidth, viewMode, endDrag, detachDragListeners, getTimelineCellsFromDOM, calculateDateFromPosition, formatDateLocal, commitDragUpdate, hideIndicator]);
 
   // Abandon the drag without saving (touchcancel, unmount): the bar goes
@@ -868,7 +927,8 @@ export function useDragAndDrop() {
     startDate: string,
     endDate: string,
     targetElement?: HTMLElement,
-    staffId?: number
+    staffId?: number,
+    booking?: CardBookingDrag
   ) => {
     if (!canEditStaffAssignment(projectId, staffId)) return;
 
@@ -906,6 +966,8 @@ export function useDragAndDrop() {
       originalStartDate: startDate,
       originalEndDate: endDate,
       isMilestone: false,
+      level: booking?.level ?? 'project',
+      bounds: booking?.bounds,
     };
     
     currentXRef.current = e.clientX;
@@ -929,7 +991,7 @@ export function useDragAndDrop() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
-    if (!canEditProjectId(projectId)) return;
+    if (!canBookEquipmentId(projectId)) return;
 
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
@@ -977,7 +1039,7 @@ export function useDragAndDrop() {
     startDrag('equipmentAssignment', assignmentId);
     
     attachDragListeners();
-  }, [canEditProjectId, currentView, attachDragListeners, startDrag]);
+  }, [canBookEquipmentId, currentView, attachDragListeners, startDrag]);
   
   // Cleanup on unmount only: an unmount mid-drag abandons the drag cleanly.
   useEffect(() => cancelDrag, [cancelDrag]);

@@ -1,0 +1,27 @@
+/* ManageSettingsLink: a text link to a Settings hub section */
+
+.manageLink {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--accent-blue);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.manageLink:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.manageLink:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.manageLink:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}

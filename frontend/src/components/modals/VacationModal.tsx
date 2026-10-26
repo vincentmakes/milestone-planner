@@ -9,9 +9,10 @@ import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
+import { DateRangeField } from '@/components/common/DateRangeField';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useUIStore } from '@/stores/uiStore';
-import { useAppStore, selectCanManageResources } from '@/stores/appStore';
+import { useAppStore, selectCanManageOthersAbsences } from '@/stores/appStore';
 import { 
   createVacation, 
   updateVacation, 
@@ -32,6 +33,7 @@ import { AbsenceTypeSelect } from './AbsenceTypeSelect';
 import { VacationICSImport } from './VacationICSImport';
 import styles from './VacationModal.module.css';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
+import { Icon, RepeatIcon, CalendarIcon, ArrowRightIcon, PersonIcon, DownloadIcon } from '@/components/common/Icon';
 
 // Memoized footer to prevent re-renders
 const ModalFooter = memo(function ModalFooter({
@@ -81,11 +83,7 @@ const ModalFooter = memo(function ModalFooter({
         title={blockedReason ?? 'Save the absence and export it to your Outlook calendar'}
         className={styles.exportBtn}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
+        <Icon icon={DownloadIcon} size={14} />
         Save & Export to Outlook
       </Button>
       <Button
@@ -108,7 +106,7 @@ export function VacationModal() {
   const currentUser = useAppStore((s) => s.currentUser);
   const absenceTypes = useAppStore((s) => s.absenceTypes);
   const setVacations = useAppStore((s) => s.setVacations);
-  const canManageResources = useAppStore(selectCanManageResources);
+  const canManageResources = useAppStore(selectCanManageOthersAbsences);
   
   const isOpen = activeModal === 'vacation';
   const isEditing = !!editingVacation;
@@ -118,12 +116,10 @@ export function VacationModal() {
   const createBlockedReason = !isEditing && whatIf.blocked ? whatIf.reason('Adding absences') : null;
   // GET /staff returns one row per user-site pair: list each person once
   const staffOptions = useMemo(() => uniqueById(staff), [staff]);
-  // The empty first entry stays a real, selectable option (as before).
+  // The picker's rows (searched by name and job title); its empty first row
+  // stays a real, selectable choice (as before).
   const staffSelectOptions = useMemo(
-    () => [
-      { value: '', label: 'Select staff member...' },
-      ...staffOptions.map((s) => ({ value: s.id, label: s.name })),
-    ],
+    () => staffOptions.map((s) => ({ id: s.id, label: s.name, hint: s.role })),
     [staffOptions]
   );
   
@@ -245,16 +241,6 @@ export function VacationModal() {
       return false;
     }
     
-    if (!startDate || !endDate) {
-      setError('Please select start and end dates');
-      return false;
-    }
-    
-    if (daysBetweenDateStrings(startDate, endDate) < 0) {
-      setError('Start date must be before end date');
-      return false;
-    }
-    
     // Validate recurring selection
     if (isRecurring && selectedDays.length === 0) {
       setError('Please select at least one day for the recurring pattern');
@@ -368,11 +354,12 @@ export function VacationModal() {
         
         {/* Staff Member Display or Selector */}
         {canManageResources && !isEditing ? (
-          <Select
+          <SearchableSelect
             label="Staff Member"
-            value={staffId || ''}
-            onChange={(e) => setStaffId(e.target.value ? Number(e.target.value) : null)}
+            value={staffId}
+            onChange={setStaffId}
             options={staffSelectOptions}
+            emptyLabel="Select staff member…"
             fullWidth
           />
         ) : staffMember ? (
@@ -389,10 +376,7 @@ export function VacationModal() {
           </div>
         ) : (
           <div className={styles.noStaff}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="8" r="4" />
-              <path d="M20 21a8 8 0 1 0-16 0" />
-            </svg>
+            <Icon icon={PersonIcon} size={20} />
             <span>No staff member selected</span>
           </div>
         )}
@@ -446,38 +430,28 @@ export function VacationModal() {
             <div className={styles.section}>
               <label className={styles.sectionLabel}>Duration</label>
               <div className={styles.dateRow}>
-                <Input
-                  label="From"
-                  type="date"
-                  className={styles.dateField}
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-                
-                <div className={styles.dateSeparator}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
-                </div>
-                
-                <Input
-                  label="To"
-                  type="date"
-                  className={styles.dateField}
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                <DateRangeField
+                  startLabel="From"
+                  endLabel="To"
+                  fieldClassName={styles.dateField}
+                  start={startDate}
+                  end={endDate}
+                  onChange={({ start, end }) => {
+                    setStartDate(start);
+                    setEndDate(end);
+                  }}
+                  highlightWeekdays={isRecurring ? selectedDays : undefined}
+                  separator={
+                    <div className={styles.dateSeparator}>
+                      <Icon icon={ArrowRightIcon} size={20} />
+                    </div>
+                  }
                 />
               </div>
               
               {duration > 0 && (
                 <div className={styles.duration}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
+                  <Icon icon={CalendarIcon} size={14} />
                   {duration} day{duration !== 1 ? 's' : ''}
                 </div>
               )}
@@ -495,12 +469,7 @@ export function VacationModal() {
                 }}
                 label={
                   <span className={styles.recurringLabel}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                      <path d="M17 1l4 4-4 4" />
-                      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                      <path d="M7 23l-4-4 4-4" />
-                      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                    </svg>
+                    <Icon icon={RepeatIcon} size={16} />
                     Recurring Absence
                   </span>
                 }

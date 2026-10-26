@@ -119,7 +119,10 @@ export interface KanbanCard {
   /** 0 for a leaf phase, >=1 for a subphase. */
   depth: number;
   assignments: StaffAssignment[];
+  /** Approved assignees (see assigneeIdsOf). */
   assigneeIds: number[];
+  /** People whose booking awaits approval (see pendingAssigneeIdsOf). */
+  pendingAssigneeIds: number[];
   /** Top-level phase this card belongs to; null when the card IS a leaf phase. */
   swimlanePhaseId: number | null;
   swimlanePhaseName: string | null;
@@ -146,8 +149,54 @@ function toDateOnly(value: string | null | undefined): string {
   return tIndex === -1 ? value : value.slice(0, tIndex);
 }
 
-function assigneeIdsOf(assignments: StaffAssignment[]): number[] {
-  return Array.from(new Set(assignments.map((a) => a.staff_id)));
+// =============================================================================
+// PENDING BOOKINGS (own bookings awaiting approval)
+// =============================================================================
+
+/**
+ * Whether the row is a booking awaiting approval (a pending create). It is
+ * shown dashed but books no capacity, moves no card and gets no reminders
+ * until approved. A pending change or removal leaves the row approved — its
+ * current values still count — and only carries the open request.
+ */
+export function isPendingAssignment(a: Pick<StaffAssignment, 'approval_status'>): boolean {
+  return a.approval_status === 'pending';
+}
+
+/** The requested allocation of an open change, when it differs from the row's. */
+export function requestedAllocation(a: StaffAssignment): number | null {
+  const request = a.approval;
+  if (!request || request.action !== 'assignments.self_update') return null;
+  const requested = request.requested?.allocation;
+  return typeof requested === 'number' && requested !== a.allocation ? requested : null;
+}
+
+/** Whether the row's removal awaits approval (the row still counts meanwhile). */
+export function isRemovalRequested(a: StaffAssignment): boolean {
+  return a.approval?.action === 'assignments.self_remove';
+}
+
+/**
+ * The card's assignees: people with an approved row, once each. Mirrors
+ * app/services/card_access.py — a pending assignee may not move the card —
+ * and feeds the due reminders and the assignee lanes.
+ */
+export function assigneeIdsOf(assignments: StaffAssignment[]): number[] {
+  return Array.from(
+    new Set(assignments.filter((a) => !isPendingAssignment(a)).map((a) => a.staff_id))
+  );
+}
+
+/** People whose booking on the card awaits approval (and who are not assigned yet). */
+export function pendingAssigneeIdsOf(assignments: StaffAssignment[]): number[] {
+  const approved = new Set(assigneeIdsOf(assignments));
+  return Array.from(
+    new Set(
+      assignments
+        .filter((a) => isPendingAssignment(a) && !approved.has(a.staff_id))
+        .map((a) => a.staff_id)
+    )
+  );
 }
 
 function collectFromSubphases(
@@ -195,6 +244,7 @@ function collectFromSubphases(
       depth,
       assignments,
       assigneeIds: assigneeIdsOf(assignments),
+      pendingAssigneeIds: pendingAssigneeIdsOf(assignments),
       swimlanePhaseId,
       swimlanePhaseName,
       path,
@@ -230,6 +280,7 @@ export function collectProjectCards(project: Project): KanbanCard[] {
         depth: 0,
         assignments,
         assigneeIds: assigneeIdsOf(assignments),
+      pendingAssigneeIds: pendingAssigneeIdsOf(assignments),
         swimlanePhaseId: null,
         swimlanePhaseName: null,
         path: phase.name,

@@ -20,6 +20,7 @@ import {
   snapToStep,
 } from './allocation';
 import styles from './AllocationSlider.module.css';
+import { Icon, WarningIcon } from '@/components/common/Icon';
 
 interface AllocationSliderProps {
   value: number;
@@ -138,7 +139,8 @@ export function AllocationSlider({
       </div>
       {over && (
         <div className={styles.overallocationWarning}>
-          ⚠️ Allocation exceeds staff&apos;s max capacity of {maxCapacity}%
+          <Icon icon={WarningIcon} size={14} />
+          Allocation exceeds staff&apos;s max capacity of {maxCapacity}%
         </div>
       )}
     </>

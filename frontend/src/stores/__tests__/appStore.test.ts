@@ -5,10 +5,17 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import { selectAbsenceTypesById, selectCanManageResources, selectStaffSiteIds, useAppStore } from '../appStore';
+import {
+  selectAbsenceTypesById,
+  selectCanManageOthersAbsences,
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  useAppStore,
+} from '../appStore';
 import { useUndoStore } from '../undoStore';
 import { resetAllStores } from '..';
-import { makePhase, makeProject, makeSite, makeStaff, makeUser } from '@/test/factories';
+import { makePhase, makeProject, makeProjectField, makeSite, makeStaff, makeTeam, makeUser } from '@/test/factories';
 import type { CompanyEvent } from '@/types';
 
 const KEY = 'milestone-app-storage-v3';
@@ -31,7 +38,8 @@ describe('data setters', () => {
     app().setInstanceSettings({ instance_title: 'Lab' });
     app().setSkills([]);
     app().setTags([]);
-    app().setTagGroups([]);
+    app().setProjectFields([makeProjectField()]);
+    app().setTeams([makeTeam()]);
     app().setAbsenceTypes([]);
     app().setCurrentUser(makeUser({ id: 9 }));
     app().setAuthChecking(false);
@@ -43,6 +51,8 @@ describe('data setters', () => {
       isAuthenticated: true,
     });
     expect(app().staff).toHaveLength(1);
+    expect(app().teams).toEqual([makeTeam()]);
+    expect(app().projectFields).toEqual([makeProjectField()]);
     expect(app().currentUser?.id).toBe(9);
   });
 
@@ -112,9 +122,13 @@ describe('site selection', () => {
 
   it('reset() clears data and undo history', () => {
     app().setProjects([makeProject()]);
+    app().setTeams([makeTeam()]);
+    app().setProjectFields([makeProjectField()]);
     useUndoStore.getState().saveState([], 'edit');
     app().reset();
     expect(app().projects).toEqual([]);
+    expect(app().teams).toEqual([]);
+    expect(app().projectFields).toEqual([]);
     expect(app().isAuthChecking).toBe(true);
     expect(useUndoStore.getState().canUndo).toBe(false);
   });
@@ -181,6 +195,33 @@ describe('selectors', () => {
     expect(selectStaffSiteIds(app())).not.toBe(map);
   });
 
+  it('selectStaffTeamIds unions the teams of a user across rows and memoises on the array', () => {
+    app().setStaff([
+      makeStaff({ id: 4, site_id: 1, team_ids: [1, 2] }),
+      makeStaff({ id: 4, site_id: 2, team_ids: [3] }),
+      makeStaff({ id: 5, site_id: 1, team_ids: undefined }),
+    ]);
+    const map = selectStaffTeamIds(app());
+    expect(map.get(4)).toEqual(new Set([1, 2, 3]));
+    expect(map.get(5)).toEqual(new Set());
+    expect(selectStaffTeamIds(app())).toBe(map);
+    app().setStaff([makeStaff({ id: 6, site_id: 3, team_ids: [4] })]);
+    const next = selectStaffTeamIds(app());
+    expect(next).not.toBe(map);
+    expect(next.get(6)).toEqual(new Set([4]));
+  });
+
+  it('selectTeamSiteById maps team ids to sites and memoises on the array', () => {
+    app().setTeams([makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 2 })]);
+    const map = selectTeamSiteById(app());
+    expect([...map]).toEqual([[1, 1], [2, 2]]);
+    expect(selectTeamSiteById(app())).toBe(map);
+    app().setTeams([makeTeam({ id: 3, site_id: 1 })]);
+    const next = selectTeamSiteById(app());
+    expect(next).not.toBe(map);
+    expect([...next]).toEqual([[3, 1]]);
+  });
+
   it('selectAbsenceTypesById indexes by id and memoises on the array', () => {
     const types = [
       { id: 1, name: 'Holidays', color: '#8b5cf6', counts_as_unavailable: true, sort_order: 0, is_active: true },
@@ -200,13 +241,15 @@ describe('selectors', () => {
     expect([...next.keys()]).toEqual([1]);
   });
 
-  it('selectCanManageResources is true for admins and superusers only', () => {
-    expect(selectCanManageResources(app())).toBe(false);
+  it('selectCanManageOthersAbsences follows absences.manage_others', () => {
+    expect(selectCanManageOthersAbsences(app())).toBe(false);
     app().setCurrentUser(makeUser({ role: 'admin' }));
-    expect(selectCanManageResources(app())).toBe(true);
+    expect(selectCanManageOthersAbsences(app())).toBe(true);
     app().setCurrentUser(makeUser({ role: 'superuser' }));
-    expect(selectCanManageResources(app())).toBe(true);
+    expect(selectCanManageOthersAbsences(app())).toBe(true);
     app().setCurrentUser(makeUser({ role: 'user' }));
-    expect(selectCanManageResources(app())).toBe(false);
+    expect(selectCanManageOthersAbsences(app())).toBe(false);
+    app().setCurrentUser(makeUser({ role: 'team_lead', permissions: ['absences.manage_others'] }));
+    expect(selectCanManageOthersAbsences(app())).toBe(true);
   });
 });

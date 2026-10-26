@@ -9,6 +9,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { GeneralPanel } from '../panels/GeneralPanel';
 import { useAppStore } from '@/stores/appStore';
 import type { User, UserRole } from '@/types';
+import { asSignedIn } from '@/test/permissionFixtures';
 
 const getSetting = vi.fn();
 const updateSetting = vi.fn();
@@ -26,9 +27,10 @@ function setRole(role: UserRole) {
     name: 'Some One',
     role,
     active: true,
+    is_resource: role !== 'admin',
     site_ids: [1],
   };
-  useAppStore.setState({ currentUser: user });
+  useAppStore.setState({ currentUser: asSignedIn(user) });
 }
 
 describe('GeneralPanel', () => {

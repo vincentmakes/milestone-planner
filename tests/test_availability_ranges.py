@@ -115,3 +115,22 @@ async def test_single_day_range(authed_client, mock_db_session):
 
     assert response.status_code == 200
     assert len(response.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_staff_availability_counts_approved_bookings_only(authed_client, mock_db_session):
+    """A self-booking awaiting approval takes no capacity until it is approved."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    result = MagicMock()
+    result.all.return_value = []
+    mock_db_session.execute.return_value = result
+
+    response = await client.get(
+        "/api/staff/1/availability", params={"startDate": "2026-01-01", "endDate": "2026-01-02"}
+    )
+
+    assert response.status_code == 200
+    stmt = mock_db_session.execute.await_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "project_assignments.approval_status = 'approved'" in sql

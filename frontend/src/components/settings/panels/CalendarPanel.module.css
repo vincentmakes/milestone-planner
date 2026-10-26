@@ -158,6 +158,26 @@
   border-radius: var(--radius-full);
 }
 
+/* A team chip carries the team's colour; a team without one shows a muted dot */
+.teamChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.teamDot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.muted {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
 .colorDot {
   display: inline-block;
   width: 14px;

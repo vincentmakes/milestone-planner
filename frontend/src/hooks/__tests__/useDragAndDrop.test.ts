@@ -31,6 +31,7 @@ import {
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import type { Project } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 import { setConfirmHandler } from '@/utils/confirmDialog';
 
 function buildProject(): Project {
@@ -173,6 +174,16 @@ describe('useDragAndDrop: whole project', () => {
 
     expect([phaseOf(10).start_date, phaseOf(10).end_date]).toEqual(['2026-03-04', '2026-03-08']);
     expect(phaseOf(10).children[0].children[0].start_date).toBe('2026-03-05');
+    // Project-level bookings move on their own route; a phase row follows its
+    // phase (no dates of its own) and is never PUT on the project route.
+    expect(useAppStore.getState().projects[0].staffAssignments[0].start_date).toBe('2026-03-04');
+    expect(updateStaffAssignment).toHaveBeenCalledWith(
+      50,
+      { start_date: '2026-03-04', end_date: '2026-03-08', allocation: 40 },
+      'project'
+    );
+    expect(updateStaffAssignment).not.toHaveBeenCalledWith(70, expect.anything(), expect.anything());
+    // ...but its local (effective) dates follow the phase.
     expect(phaseOf(10).staffAssignments[0].start_date).toBe('2026-03-04');
     expect(updatePhase).toHaveBeenCalledWith(11, expect.objectContaining({ start_date: '2026-03-11' }));
     expect(updateSubphase).toHaveBeenCalledWith(21, expect.objectContaining({ start_date: '2026-03-05' }));
@@ -262,7 +273,7 @@ describe('useDragAndDrop: subphases and bookings', () => {
     move(60);
     up();
     await waitFor(() =>
-      expect(updateStaffAssignment).toHaveBeenCalledWith(50, { start_date: '2026-03-04', end_date: '2026-03-08', allocation: 40 })
+      expect(updateStaffAssignment).toHaveBeenCalledWith(50, { start_date: '2026-03-04', end_date: '2026-03-08', allocation: 40 }, 'project')
     );
     expect(useAppStore.getState().projects[0].staffAssignments[0].start_date).toBe('2026-03-04');
   });
@@ -409,6 +420,24 @@ describe('useDragAndDrop: guards', () => {
     expect(useUIStore.getState().isDragging).toBe(false);
   });
 
+  it('moves an equipment booking with equipment_bookings.manage, not with projects.edit_any', async () => {
+    marchCells();
+    useAppStore.setState({ currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }) });
+    const bar = makeBar({ assignmentId: '60' }, 30);
+    const { result, rerender } = renderHook(() => useDragAndDrop());
+    act(() => result.current.startEquipmentAssignmentDrag(mouseDown(bar, 0), 60, 1, '2026-03-02', '2026-03-04', bar));
+    expect(useUIStore.getState().isDragging).toBe(false);
+
+    act(() => useAppStore.setState({ currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }) }));
+    rerender();
+    act(() => result.current.startEquipmentAssignmentDrag(mouseDown(bar, 0), 60, 1, '2026-03-02', '2026-03-04', bar));
+    move(-30);
+    up();
+    await waitFor(() =>
+      expect(updateEquipmentAssignment).toHaveBeenCalledWith(60, { start_date: '2026-03-01', end_date: '2026-03-03' })
+    );
+  });
+
   it('leaves a press on a resize handle to the resize hook', () => {
     const bar = makeBar({ phaseId: '10' }, 30);
     const handle = document.createElement('span');
@@ -470,6 +499,51 @@ describe('useDragAndDrop: persist failure', () => {
     expect(useAppStore.getState().projects).toEqual([serverCopy]);
     expect(useUndoStore.getState().undoStack).toEqual([]);
     expect(useUndoStore.getState().canUndo).toBe(false);
+  });
+});
+
+describe('useDragAndDrop: own booking sent for approval (202)', () => {
+  it('brings the server state back, clears the undo history and says so', async () => {
+    marchCells();
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_update'),
+        approval_required: ['assignments.self_update'],
+      }),
+    });
+    const serverCopy = buildProject();
+    vi.mocked(updateStaffAssignment).mockResolvedValueOnce({ success: true, pending: true, request_id: 31, id: 50 });
+    vi.mocked(loadAllProjects).mockResolvedValueOnce([serverCopy]);
+    const bar = makeBar({ assignmentId: '50' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+
+    act(() => result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 50, 1, '2026-03-02', '2026-03-06', bar, 4));
+    move(60);
+    up();
+
+    await waitFor(() => expect(useUIStore.getState().flashNotice?.message).toBe('Sent for approval'));
+    expect(updateStaffAssignment).toHaveBeenCalledWith(50, { start_date: '2026-03-04', end_date: '2026-03-08', allocation: 40 }, 'project');
+    // The optimistic move cannot stand: the server copy is back.
+    expect(useAppStore.getState().projects).toEqual([serverCopy]);
+    expect(useAppStore.getState().projects[0].staffAssignments[0].start_date).toBe('2026-03-02');
+    expect(useUndoStore.getState().undoStack).toEqual([]);
+    expect(useUIStore.getState().flashNotice?.tone).toBe('info');
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+  });
+
+  it('keeps the direct move when the server applied it', async () => {
+    marchCells();
+    const bar = makeBar({ assignmentId: '50' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() => result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 50, 1, '2026-03-02', '2026-03-06', bar, 4));
+    move(60);
+    up();
+    await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalled());
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    expect(useUIStore.getState().flashNotice).toBeNull();
+    expect(useUndoStore.getState().undoStack).toHaveLength(1);
   });
 });
 
@@ -537,5 +611,152 @@ describe('useDragAndDrop: touch', () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(updateProject).not.toHaveBeenCalled();
     expect(updatePhase).not.toHaveBeenCalled();
+  });
+});
+
+describe('useDragAndDrop: unlinked card bookings', () => {
+  /** Phase 10 (Mar 2-6) holds segment 70 (Mar 3-4); subphase 20 (Mar 2-4) holds its own row 70. */
+  function withSegments(): Project {
+    const project = buildProject();
+    project.phases[0].staffAssignments = [
+      { id: 70, staff_id: 4, allocation: 50, start_date: '2026-03-03', end_date: '2026-03-04', linked: false },
+      { id: 71, staff_id: 5, allocation: 30, start_date: '2026-03-02', end_date: '2026-03-06', linked: true },
+    ];
+    project.phases[0].children[0].staffAssignments = [
+      { id: 70, staff_id: 4, allocation: 20, start_date: '2026-03-03', end_date: '2026-03-03', linked: false },
+    ];
+    return project;
+  }
+  const phaseBooking = { level: 'phase' as const, bounds: { start: '2026-03-02', end: '2026-03-06' } };
+
+  beforeEach(() => {
+    useAppStore.setState({ projects: [withSegments()] });
+  });
+
+  it('stops at the card edge while dragging and PUTs the clamped dates to the phase route', async () => {
+    marchCells();
+    const bar = makeBar({ assignmentId: '70' }, 60); // Mar 3
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() =>
+      result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 70, 1, '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+
+    move(300); // +10 days: way past the phase end
+    // Mar 5 (index 4) is the last start keeping the 2-day segment inside
+    expect(bar.style.left).toBe('120px');
+    up();
+
+    await waitFor(() =>
+      expect(updateStaffAssignment).toHaveBeenCalledWith(
+        70,
+        { start_date: '2026-03-05', end_date: '2026-03-06', allocation: 50 },
+        'phase'
+      )
+    );
+    const phase = phaseOf(10);
+    expect([phase.staffAssignments[0].start_date, phase.staffAssignments[0].end_date]).toEqual(['2026-03-05', '2026-03-06']);
+    // Ids are unique per level only: the subphase row 70 and the project row stay put
+    expect(phase.children[0].staffAssignments[0].start_date).toBe('2026-03-03');
+    expect(useAppStore.getState().projects[0].staffAssignments[0].start_date).toBe('2026-03-02');
+  });
+
+  it('stops at the card start when dragged before it', async () => {
+    marchCells();
+    const bar = makeBar({ assignmentId: '70' }, 60);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() =>
+      result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 70, 1, '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+    move(-150);
+    expect(bar.style.left).toBe('30px'); // Mar 2
+    up();
+    await waitFor(() =>
+      expect(updateStaffAssignment).toHaveBeenCalledWith(
+        70,
+        { start_date: '2026-03-02', end_date: '2026-03-03', allocation: 50 },
+        'phase'
+      )
+    );
+  });
+
+  it('keeps the dates inside the card without the header cells too', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const bar = makeBar({ assignmentId: '70' }, 60);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() =>
+      result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 70, 1, '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+    move(300);
+    up();
+    await waitFor(() =>
+      expect(updateStaffAssignment).toHaveBeenCalledWith(
+        70,
+        { start_date: '2026-03-05', end_date: '2026-03-06', allocation: 50 },
+        'phase'
+      )
+    );
+  });
+
+  it('shows no lag indicator for a booking (never looks up a card under its id)', () => {
+    marchCells();
+    // Subphase 30 has an SS link: a lookup under booking id 30 used to show its lag
+    const bar = makeBar({ assignmentId: '30' }, 60);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() => result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 30, 1, '2026-03-03', '2026-03-04', bar, 4));
+    move(30);
+    expect(useUIStore.getState().dragIndicator.visible).toBe(false);
+    act(() => up());
+  });
+
+  it('moves the unlinked segments of a dragged phase with it locally, without writing them', async () => {
+    marchCells();
+    const bar = makeBar({ phaseId: '10' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() => result.current.startPhaseDrag(mouseDown(bar, 0), 10, 1, '2026-03-02', '2026-03-06', false, bar));
+    move(90); // +3 days
+    up();
+
+    await waitFor(() => expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-05', end_date: '2026-03-09' }));
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    const phase = phaseOf(10);
+    // Segments translated, the linked row on the phase's dates -- the server
+    // fits them itself in the card PUTs, so nothing is written for them.
+    expect(phase.staffAssignments[0]).toMatchObject({ start_date: '2026-03-06', end_date: '2026-03-07' });
+    expect(phase.staffAssignments[1]).toMatchObject({ start_date: '2026-03-05', end_date: '2026-03-09' });
+    expect(phase.children[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-06', end_date: '2026-03-06' });
+    expect(updateSubphase).toHaveBeenCalledWith(20, expect.objectContaining({ start_date: '2026-03-05' }));
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it('says why a refused segment move failed, then reloads', async () => {
+    marchCells();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(updateStaffAssignment).mockRejectedValueOnce(
+      new Error('This person is already booked on this card for overlapping dates')
+    );
+    const bar = makeBar({ assignmentId: '70' }, 60);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() =>
+      result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 70, 1, '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+    move(30);
+    up();
+    await waitFor(() =>
+      expect(useUIStore.getState().flashNotice?.message).toBe('This person is already booked on this card for overlapping dates')
+    );
+    await waitFor(() => expect(loadAllProjects).toHaveBeenCalled());
+  });
+
+  it('moves the unlinked segments of a dragged subphase locally, without writing them', async () => {
+    marchCells();
+    const bar = makeBar({ subphaseId: '20' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() => result.current.startSubphaseDrag(mouseDown(bar, 0), 20, 1, 10, '2026-03-02', '2026-03-04', false, bar));
+    move(30); // +1 day
+    up();
+    await waitFor(() => expect(updateSubphase).toHaveBeenCalledWith(20, { start_date: '2026-03-03', end_date: '2026-03-05' }));
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    expect(phaseOf(10).children[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-04', end_date: '2026-03-04' });
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,8 @@ import { Header } from '../Header';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import type { HeaderDensity } from '@/hooks/useHeaderDensity';
+import { makeTeam, makeUser } from '@/test/factories';
+import type { Site } from '@/types';
 
 // Network and presence are not what is under test here.
 vi.mock('@/api/endpoints/settings', () => ({
@@ -48,7 +50,7 @@ function renderAt(tier: HeaderDensity) {
 const overflowTrigger = () => screen.queryByRole('button', { name: 'More controls' });
 
 beforeEach(() => {
-  useAppStore.setState({ currentUser: { id: 1, role: 'admin' } as never });
+  useAppStore.setState({ currentUser: makeUser({ id: 1, role: 'admin' }) });
   useViewStore.setState({ currentView: 'gantt' });
 });
 
@@ -81,6 +83,16 @@ describe('Header density', () => {
         fireEvent.click(overflowTrigger()!);
       }
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+  });
+
+  it.each(TIERS)('keeps the team filter in the bar at %s when the site has teams', (tier) => {
+    useAppStore.setState({ currentSite: { id: 1, name: 'Basel' } as Site, teams: [makeTeam({ site_id: 1 })] });
+    try {
+      renderAt(tier);
+      expect(screen.getByRole('button', { name: 'Team filter: Whole site' })).toBeInTheDocument();
+    } finally {
+      useAppStore.setState({ currentSite: null, teams: [] });
     }
   });
 

@@ -9,7 +9,11 @@ import { ProjectModal } from '../ProjectModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { updateProject } from '@/api/endpoints/projects';
-import { makeStaff } from '@/test/factories';
+import { makeStaff, makeTeam, makeUser } from '@/test/factories';
+import { dateValue, pickEnd, pickRange } from '@/test/datePicker';
+import { optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
 import type { Project, Site } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -40,17 +44,19 @@ const project = {
 beforeEach(() => {
   useAppStore.setState({
     currentSite: { id: 1, name: 'Basel' } as Site,
-    currentUser: { id: 1, name: 'Ada Admin', role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, name: 'Ada Admin', role: 'admin' }),
     staff: [],
     projects: [project],
     tags: [],
-    tagGroups: [],
+    projectFields: [],
   });
   act(() => useUIStore.getState().openProjectModal(project));
 });
 
 afterEach(() => {
   useUIStore.getState().closeModal();
+  useViewStore.setState({ teamFilters: {} });
+  useAppStore.setState({ teams: [] });
   vi.restoreAllMocks();
 });
 
@@ -81,41 +87,83 @@ describe('ProjectModal tag picker during save', () => {
 describe('ProjectModal fields', () => {
   it('labels every shared Input / Select and keeps "Select PM" selectable', async () => {
     vi.mocked(updateProject).mockResolvedValueOnce({} as never);
-    useAppStore.setState({ staff: [makeStaff({ id: 4, name: 'Bob Brown', site_id: 1 })] });
+    useAppStore.setState({ staff: [makeStaff({ id: 4, name: 'Bob Brown', role: 'Engineer', site_id: 1 })] });
     render(<ProjectModal />);
 
     expect(screen.getByLabelText('Project Name *')).toHaveValue('Bioprocess Scale-Up');
-    expect(screen.getByLabelText('Start Date *')).toHaveValue('2026-09-01');
-    expect(screen.getByLabelText('End Date *')).toHaveValue('2026-10-01');
+    expect(dateValue('Start Date *')).toBe('2026-09-01');
+    expect(dateValue('End Date *')).toBe('2026-10-01');
     expect(screen.getByLabelText('Customer')).toHaveValue('');
     expect(screen.getByLabelText('Sales PM')).toHaveValue('');
-    expect(screen.getByLabelText('Project Volume (CHF)')).toHaveValue(null);
+    expect(screen.getByLabelText('Volume')).toHaveValue(null);
 
-    const pm = screen.getByLabelText('Project Manager') as HTMLSelectElement;
-    expect(pm.value).toBe('');
-    expect(Array.from(pm.options).map((o) => [o.value, o.text, o.disabled])).toEqual([
-      ['', 'Select PM', false],
-      ['4', 'Bob Brown', false],
-    ]);
-    fireEvent.change(pm, { target: { value: '4' } });
-    expect(pm.value).toBe('4');
-    fireEvent.change(pm, { target: { value: '' } });
-    expect(pm.value).toBe('');
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Select PM');
+    const rows = pickerOptions(/^Project Manager/);
+    expect(rows.map(optionLabel)).toEqual(['Select PM', 'Bob Brown']);
+    expect(rows.map((o) => o.getAttribute('aria-disabled'))).toEqual([null, null]);
+    expect(rows[1]).toHaveTextContent('Bob Brown Engineer');
+    pickOption(/^Project Manager/, 'Bob Brown');
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Bob Brown');
+    pickOption(/^Project Manager/, 'Select PM');
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Select PM');
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     });
-    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ name: 'Bioprocess Scale-Up' }));
+    expect(updateProject).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ name: 'Bioprocess Scale-Up', pm_id: null })
+    );
+  });
+
+  it('finds the project manager by name or job title and saves the pick', async () => {
+    vi.mocked(updateProject).mockResolvedValueOnce({} as never);
+    useAppStore.setState({
+      staff: [
+        makeStaff({ id: 4, name: 'Bob Brown', role: 'Engineer', site_id: 1 }),
+        makeStaff({ id: 5, name: 'Alice Martin', role: 'Chemist', site_id: 1 }),
+      ],
+    });
+    render(<ProjectModal />);
+    fireEvent.click(pickerTrigger(/^Project Manager/));
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: 'chem' } });
+    expect(pickerOptions(/^Project Manager/).map(optionLabel)).toEqual(['Select PM', 'Alice Martin']);
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Alice Martin');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ pm_id: 5 }));
+  });
+
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
+  it('never lets the end precede the start', async () => {
+    vi.mocked(updateProject).mockResolvedValueOnce({} as never);
+    render(<ProjectModal />);
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('End Date *', '2026-08-20');
+    expect(dateValue('Start Date *')).toBe('2026-08-20');
+    expect(dateValue('End Date *')).toBe('2026-09-19');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ start_date: '2026-08-20', end_date: '2026-09-19' }));
   });
 
   it('saves what was typed into each field', async () => {
     vi.mocked(updateProject).mockResolvedValueOnce({} as never);
     render(<ProjectModal />);
 
+    pickRange('Start Date *', '2026-09-15', '2026-11-30');
+    expect(dateValue('Start Date *')).toBe('2026-09-15');
+    expect(dateValue('End Date *')).toBe('2026-11-30');
+
     const edits: [string, string][] = [
       ['Project Name *', 'Catalyst Optimization'],
-      ['Start Date *', '2026-09-15'],
-      ['End Date *', '2026-11-30'],
       ['Customer', 'Acme'],
       ['Sales PM', 'Sam Sales'],
     ];
@@ -123,8 +171,8 @@ describe('ProjectModal fields', () => {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
       expect(screen.getByLabelText(label)).toHaveValue(value);
     }
-    fireEvent.change(screen.getByLabelText('Project Volume (CHF)'), { target: { value: '250000' } });
-    expect(screen.getByLabelText('Project Volume (CHF)')).toHaveValue(250000);
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '250000' } });
+    expect(screen.getByLabelText('Volume')).toHaveValue(250000);
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
@@ -143,7 +191,7 @@ describe('ProjectModal fields', () => {
     vi.mocked(updateProject).mockResolvedValueOnce({} as never);
     render(<ProjectModal />);
 
-    const confirmed = screen.getByRole('switch', { name: 'Project Confirmed' });
+    const confirmed = screen.getByRole('switch', { name: 'Confirmed' });
     const archived = screen.getByRole('switch', { name: 'Archived' });
     expect(confirmed).not.toBeChecked();
     expect(archived).not.toBeChecked();
@@ -156,5 +204,26 @@ describe('ProjectModal fields', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     });
     expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ confirmed: true, archived: true }));
+  });
+});
+
+describe('ProjectModal PM picker with a team filter', () => {
+  it('keeps the currently selected item even when it no longer matches', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        makeStaff({ id: 42, name: 'Pat Manager', site_id: 1, team_ids: [2] }),
+        makeStaff({ id: 43, name: 'Ann Teamer', site_id: 1, team_ids: [1] }),
+        makeStaff({ id: 44, name: 'Out Sider', site_id: 1, team_ids: [2] }),
+      ],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    act(() => useUIStore.getState().openProjectModal({ ...project, pm_id: 42 }));
+    render(<ProjectModal />);
+
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Pat Manager');
+    const rows = pickerOptions(/^Project Manager/);
+    expect(rows.map(optionLabel)).toEqual(['Select PM', 'Pat Manager', 'Ann Teamer']);
+    expect(rows[1]).toHaveAttribute('aria-selected', 'true');
   });
 });

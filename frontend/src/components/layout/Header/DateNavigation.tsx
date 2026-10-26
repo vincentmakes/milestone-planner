@@ -7,6 +7,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { addWeeks, addMonths, startOfWeek, startOfQuarter } from 'date-fns';
 import styles from './DateNavigation.module.css';
+import { Icon, ChevronRightIcon, BackIcon } from '@/components/common/Icon';
 
 interface DateNavigationProps {
   /** Abbreviates the period ("Aug 2026" rather than "August 2026") when the
@@ -87,9 +88,7 @@ export function DateNavigation({ shortLabel = false }: DateNavigationProps) {
           onClick={() => navigate(-1)}
           title="Previous period"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
+          <Icon icon={BackIcon} size={16} />
         </button>
         
         <span className={styles.periodLabel}>{getPeriodLabel()}</span>
@@ -99,9 +98,7 @@ export function DateNavigation({ shortLabel = false }: DateNavigationProps) {
           onClick={() => navigate(1)}
           title="Next period"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
+          <Icon icon={ChevronRightIcon} size={16} />
         </button>
       </div>
       

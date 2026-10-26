@@ -17,12 +17,18 @@ import {
   addTenantToOrganization,
   updateTenantGroupAccess,
 } from '@/api';
-import type { OrganizationDetail, OrganizationSSOTestResult, TenantSummary } from '@/api/endpoints/admin';
+import type {
+  OrganizationDetail,
+  OrganizationSSOTestResult,
+  TenantSummary,
+} from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './AdminModal.module.css';
+import { Icon, CloseIcon } from '@/components/common/Icon';
+import { SSOTestResult } from '@/components/common/SSOTestResult';
 
 /** Roles a tenant `users.role` CHECK accepts -- the only valid SSO default roles */
 const SSO_DEFAULT_ROLES = ['user', 'superuser', 'admin'] as const;
@@ -328,10 +334,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
             {organization?.name || 'Organization Details'}
           </h2>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close dialog">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <Icon icon={CloseIcon} size={20} />
           </button>
         </div>
 
@@ -577,48 +580,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                   </span>
 
                   {ssoTestResult && (
-                    <div style={{
-                      marginTop: '1rem',
-                      padding: '1rem',
-                      background: 'var(--bg-tertiary)',
-                      borderRadius: 'var(--radius-md)',
-                      fontSize: '0.875rem',
-                    }}>
-                      <div style={{ fontWeight: 500, marginBottom: '0.75rem' }}>
-                        {ssoTestResult.summary}
-                      </div>
-                      {ssoTestResult.checks.map((check, index) => (
-                        <div
-                          key={`${check.name}-${index}`}
-                          style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.6rem' }}
-                        >
-                          <span
-                            aria-hidden="true"
-                            style={{
-                              flexShrink: 0,
-                              color: check.status === 'pass' ? 'var(--accent-green)'
-                                : check.status === 'fail' ? 'var(--accent-red)'
-                                : 'var(--text-muted)',
-                            }}
-                          >
-                            {check.status === 'pass' ? '✓'
-                              : check.status === 'fail' ? '✕'
-                              : check.status === 'warn' ? '!' : '?'}
-                          </span>
-                          <div>
-                            <div style={{ fontWeight: 500 }}>
-                              {check.name}
-                              {check.code && (
-                                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-                                  {' '}({check.code})
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ color: 'var(--text-muted)' }}>{check.message}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <SSOTestResult result={ssoTestResult} className={styles.ssoTestResult} />
                   )}
                 </div>
               )}

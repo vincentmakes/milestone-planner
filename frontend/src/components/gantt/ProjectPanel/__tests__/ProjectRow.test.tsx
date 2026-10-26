@@ -107,6 +107,13 @@ describe('ProjectRow summary', () => {
     expect(screen.getByTitle('Project completion (calculated from phases)')).toHaveTextContent('50%');
   });
 
+  it('leaves out the customer while the Customer field is hidden', () => {
+    useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
+    renderRow(buildProject());
+    expect(screen.getByText('Pat Manager')).toBeInTheDocument();
+    expect(screen.queryByText(/Acme Pharma/)).not.toBeInTheDocument();
+  });
+
   it('derives a phase completion from its children when one has a value', () => {
     const project = buildProject({
       confirmed: true,

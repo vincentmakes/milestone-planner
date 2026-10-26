@@ -14,6 +14,7 @@ import { render } from '@testing-library/react';
 import { AssignmentModal } from '../AssignmentModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { dateValue } from '@/test/datePicker';
 import type { Project } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -70,8 +71,7 @@ describe('AssignmentModal default dates in America/New_York', () => {
     useUIStore.getState().openModal('staffAssignment', { projectId: 1 });
     render(<AssignmentModal mode="staff" />);
 
-    const [start, end] = Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="date"]'));
-    expect(start).toHaveValue('2026-03-02');
-    expect(end).toHaveValue('2026-03-02');
+    expect(dateValue('Start Date *')).toBe('2026-03-02');
+    expect(dateValue('End Date *')).toBe('2026-03-02');
   });
 });

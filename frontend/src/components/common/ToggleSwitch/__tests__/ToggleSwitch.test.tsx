@@ -30,6 +30,18 @@ describe('ToggleSwitch', () => {
     expect(screen.getByRole('switch', { name: 'Enable SSO' })).toBeDisabled();
   });
 
+  it('is described by the hint it names', () => {
+    render(
+      <>
+        <ToggleSwitch checked onChange={() => {}} label="Kanban board" aria-describedby="kanban-hint" />
+        <span id="kanban-hint">When off, nobody sees the board.</span>
+      </>
+    );
+    expect(screen.getByRole('switch', { name: 'Kanban board' })).toHaveAccessibleDescription(
+      'When off, nobody sees the board.'
+    );
+  });
+
   it('can be named with aria-label when it has no visible text', () => {
     render(<ToggleSwitch checked onChange={() => {}} aria-label="Show weekends" />);
     expect(screen.getByRole('switch', { name: 'Show weekends' })).toBeChecked();

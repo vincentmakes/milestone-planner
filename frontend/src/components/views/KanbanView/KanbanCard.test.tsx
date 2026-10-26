@@ -21,6 +21,7 @@ function makeCard(over: Partial<KanbanCardData> = {}): KanbanCardData {
     depth: 1,
     assignments: [],
     assigneeIds: [],
+    pendingAssigneeIds: [],
     swimlanePhaseId: 1,
     swimlanePhaseName: 'Design',
     path: 'Design / DoE setup',
@@ -98,5 +99,42 @@ describe('KanbanCard', () => {
   it('never flags a done card as overdue', () => {
     renderCard({ card: makeCard({ endDate: '2020-01-01', status: 'done' }) });
     expect(screen.queryByText('Overdue')).not.toBeInTheDocument();
+  });
+});
+
+describe('KanbanCard assignee avatars', () => {
+  const row = (id: number, staff_id: number, staff_name: string, allocation: number, approval_status: 'approved' | 'pending' = 'approved') => ({
+    id,
+    staff_id,
+    staff_name,
+    allocation,
+    start_date: '2026-09-01',
+    end_date: '2026-09-14',
+    approval_status,
+  });
+
+  it('draws one avatar per person, whatever their number of bookings on the card', () => {
+    renderCard({
+      card: makeCard({
+        assignments: [row(1, 4, 'Bob Brown', 40), row(2, 7, 'Alice Anderson', 50), row(3, 4, 'Bob Brown', 60)],
+      }),
+    });
+    expect(screen.getAllByText('BB')).toHaveLength(1);
+    expect(screen.getByTitle('Bob Brown - 40%, 60%')).toBeInTheDocument();
+    expect(screen.getByTitle('Alice Anderson - 50%')).toBeInTheDocument();
+  });
+
+  it('is dashed only while none of the person\'s bookings is approved', () => {
+    renderCard({
+      card: makeCard({
+        assignments: [
+          row(1, 4, 'Bob Brown', 40, 'pending'),
+          row(2, 7, 'Alice Anderson', 50, 'pending'),
+          row(3, 7, 'Alice Anderson', 20),
+        ],
+      }),
+    });
+    expect(screen.getByTitle('Bob Brown - 40% (pending approval)').className).toMatch(/pendingAvatar/);
+    expect(screen.getByTitle('Alice Anderson - 50%, 20%').className).not.toMatch(/pendingAvatar/);
   });
 });

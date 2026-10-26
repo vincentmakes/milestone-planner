@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  makeApprovalRequest,
   makeCustomColumn,
   makeEquipment,
   makePhase,
@@ -27,6 +28,7 @@ describe('test factories', () => {
     ['makeVacation', makeVacation],
     ['makeTag', makeTag],
     ['makeCustomColumn', makeCustomColumn],
+    ['makeApprovalRequest', makeApprovalRequest],
   ] as const)('%s applies an override and keeps the other defaults', (_name, factory) => {
     const base = factory();
     const made = factory({ id: 42 });
@@ -54,10 +56,31 @@ describe('test factories', () => {
   it('accepts overrides that set nullable fields', () => {
     expect(makeUser({ role: 'user', site_ids: [] })).toMatchObject({ role: 'user', site_ids: [] });
     expect(makeCustomColumn({ column_type: 'text', list_options: null }).list_options).toBeNull();
-    expect(makeTag({ group_id: 5, all_sites: false, site_ids: [2] })).toMatchObject({ group_id: 5, site_ids: [2] });
+    expect(makeTag({ all_sites: false, site_ids: [2] })).toMatchObject({ all_sites: false, site_ids: [2] });
     expect(makeVacation({ absence_type_id: 3 }).absence_type_id).toBe(3);
     expect(makeSite({ name: 'Zurich' }).name).toBe('Zurich');
     expect(makeEquipment({ type: 'HPLC' }).type).toBe('HPLC');
     expect(makeStaff({ max_capacity: 80 }).max_capacity).toBe(80);
+  });
+
+  it('makeUser derives the role\'s default permissions unless given', () => {
+    const admin = makeUser();
+    expect(admin.permissions).toContain('roles.manage');
+    expect(admin).toMatchObject({ role_name: 'Admin', can_see_all_sites: true, approval_required: [] });
+
+    const superuser = makeUser({ role: 'superuser' });
+    expect(superuser.permissions).toEqual(expect.arrayContaining(['projects.delete', 'whatif.use']));
+    expect(superuser.permissions).not.toContain('sites.manage');
+    expect(superuser).toMatchObject({ role_name: 'Superuser', can_see_all_sites: false });
+
+    const user = makeUser({ role: 'user' });
+    expect(user.permissions).toEqual(expect.arrayContaining(['projects.manage_as_pm', 'views.kanban']));
+    expect(user.permissions).not.toContain('projects.edit_any');
+
+    expect(makeUser({ role: 'team_lead' })).toMatchObject({ role_name: 'team_lead', permissions: [] });
+    expect(makeUser({ role: 'user', permissions: ['sites.view_all'] })).toMatchObject({
+      permissions: ['sites.view_all'],
+      can_see_all_sites: true,
+    });
   });
 });

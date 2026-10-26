@@ -5,6 +5,138 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-10-23
+
+### Added
+- **Project fields**: administrators add their own fields to projects in Settings → Project fields — a dropdown with one or several choices, whose coloured items can be reordered and limited to some sites and teams, a text, a number or a switch — and everyone who edits a project fills them in the project dialog.
+- The built-in Customer, Sales PM and Volume fields can be renamed and hidden for the whole instance in Settings → Project fields; Confirmed can be renamed. A custom name replaces the default one everywhere the field is named, and the defaults are the same short names everywhere (Customer, Sales PM, Volume, Confirmed).
+- The site Excel export has **Project fields**, **Project field options** and **Project field values** sheets.
+- **My Work** replaces My Todos, with three tabs: **My Approvals** (the booking requests you may decide), **My Assignments** (your bookings across projects, current and upcoming by default or all, each with an **Open** button that shows the booking in its dialog) and **My Requests** (your own requests). The sidebar badge counts the requests waiting for your decision.
+- **Comments on bookings**: the dialog of a staff booking has a **Comments** section with @-mentions. A booking on a phase or subphase shares the comment thread of its Kanban card; project-level bookings have their own project thread. The site Excel export's **Card comments** sheet also lists the project threads.
+- Every people picker (project manager, booking, Kanban assignee, absence, team members) has a search box that opens focused and filters as you type.
+- Settings → SSO: a Test configuration button checks the entered Microsoft Entra values (directory, client ID, secret, redirect URI) before they are saved.
+- Assigning staff or equipment, or requesting an assignment, can include an optional comment. On a staff booking it is added to the booking's comment thread (for people who may comment); with a request it reaches the approver and is added to the thread once approved, if the requester may comment; on an equipment booking it is kept as a note, also in the site Excel export's **Equipment assignments** sheet. The right-click **Assign me…** and **Request to assign me…** entries now open that dialog, with you and your capacity preset, so the comment or message can be added and the allocation changed.
+
+### Changed
+- Tag groups became dropdown project fields: existing groups are converted automatically on upgrade (a single-select group becomes a dropdown, any other group a multi-select dropdown); their tags become the field's items with the same colours, order and site and team limits, and projects keep what they had selected.
+- The Gantt and Kanban **Filter** (formerly **Tags**) lists the dropdown fields and the tags; **Colour by** offers the dropdown fields and Tags, **Group by** the dropdown fields.
+- A Gantt filter, grouping or colour choice saved before 2.0.0 is reset once, because the saved choices changed shape.
+- Settings → Tags lists tags only.
+- Booking a person a second time on a phase or subphase now places the new booking automatically: a booking that covered the whole phase is split in half (it keeps the first half, the new one gets the second), otherwise the new booking takes the largest free stretch; it is refused only when their bookings already cover the whole phase. When the booking needs approval, the split or the free stretch is applied when the request is approved.
+- The Gantt context menu offers **Assign me again…** on a phase or subphase you are already booked on, and the Kanban card dialog lets an editor book someone already on the card a second time.
+- The Gantt header dropdowns (Filter, Group by, Colour by and the column menus) and the Staff and Equipment overview filters are no longer cut off by an open overview panel or the bottom of the window: they open above their button when there is more room there.
+- The default skills and equipment types of Settings → Features & defaults apply only to the Staff and Equipment panels below the Gantt chart; the standalone Staff and Equipment views open unfiltered.
+- Of My Todos' tabs, **To decide** is now **My Approvals** and **My requests** is **My Requests**; **My tasks** gives way to **My Assignments**.
+- Reading a comment thread no longer needs the Kanban board: anyone who can see the project can read it (posting still needs the comment permission), so the booking dialog's thread works while the board is turned off.
+- The booking dialog opens read-only, with the reason, for a booking you cannot change: someone else's booking awaiting approval, or your own while your change request on it is open. The Gantt context menu's **Edit Assignment** follows the same rule.
+- Saving a change to live SSO sign-in settings now asks for a typed confirmation and explains who would be affected.
+
+### Removed
+- Tag groups: the `/api/tag-groups` routes, the `tags.group_id` column and the `tag_groups` table are removed once the groups are converted.
+- Personal tasks: My Todos' tasks, the task dialog, the `/api/todos` routes, the `todos.manage_own` and `todos.assign_others` permissions and the task notifications.
+
+### Fixed
+- A newly posted comment no longer shows *(edited)*.
+- The project manager can be cleared again from the project dialog.
+- Booking equipment from a phase or subphase row now works (it used to fail with a not-found error).
+
+### Security
+- Updated `vite` to 7.3.7 to close GHSA-587h-7wmj-h5pm, GHSA-r825-w8mm-5pxw, GHSA-698v-4r3x-3vcv, GHSA-rq7h-c2jc-7f22 and GHSA-9jrq-w75r-8gcw (development server only; the shipped application was not affected).
+- Updated `vitest` and `@vitest/coverage-v8` to 4.1.12 to close GHSA-qxg6-89mg-rqv8 and GHSA-xp26-3454-mjgp in `@vitest/mocker` (test tooling only).
+- The single sign-on log lines no longer carry a digest of the client secret, only whether one is set.
+- A single sign-on redirect can only lead to a page of the application itself, whatever the configured redirect URI or the tenant name in the sign-in state.
+
+## [1.17.0] - 2026-10-22
+
+### Added
+- A booking on a phase or subphase can be **unlinked** — click the pin on its row in the Gantt chart, or turn off **Follow the phase dates** in the assignment dialog — to give it its own dates inside the phase; an unlinked booking can be dragged and resized on the timeline within the phase, and clicking the pin again makes it follow the phase dates.
+- A person can be booked several times on the same phase or subphase (for example a few days at the start and a few days at the end), as long as the bookings do not overlap.
+- A person with several bookings on a phase or subphase gets an overview row in the Gantt chart that groups them; it can be collapsed to one line that shows the bookings as blocks.
+
+### Changed
+- Moving a phase or subphase moves its unlinked bookings with it, and shortening it fits them inside its new dates.
+- Booking a person on a phase or subphase for dates that overlap one of their bookings there is refused.
+- The Kanban card dialog removes bookings one by one, and a card shows each person once however many bookings they have on it.
+- The site Excel export's Phase assignments and Subphase assignments sheets have **Start**, **End** and **Linked** columns.
+- Known limit: shortening a phase past two bookings of the same person can leave them overlapping until one of them is edited.
+- The pin and the phase name on a booking row in the Gantt chart are separate controls: the pin links or unlinks the booking (filled when it follows the phase dates, outlined when it has its own), and clicking the name scrolls the timeline to the booking — on an overview row, to the person's first booking.
+- Every icon in the app is now a Material icon, one consistent set in the light and dark themes; the Equipment view has a wrench in the sidebar instead of a cog.
+- A person's bookings on a phase are listed in date order, and an unlinked booking's pin is greyed out, with the reason, while another of their bookings on that phase would overlap the phase dates.
+
+### Fixed
+- The message shown when a drag on the Gantt chart is refused is readable in the dark theme.
+
+## [1.16.0] - 2026-10-22
+
+### Added
+- A **Bookable as a resource** switch on each user in Settings → Users, so administrators (and anyone else) can be booked on projects: administrators are not bookable by default, everyone else is, and the user list marks the people who are not bookable.
+
+### Changed
+- Who appears in the Staff view and the Staff panel no longer depends on the role: everyone bookable is listed, nobody else.
+- A person marked not bookable keeps their existing bookings but cannot receive new ones — booking them is refused with a message, their own "Assign me" and "Join" entries are hidden, and their pending requests to join something can no longer be approved (requests to change or remove an existing booking still can).
+- The site Excel export's Users sheet has a **Bookable** column.
+
+## [1.15.0] - 2026-10-22
+
+### Added
+- **Settings → Features & defaults**: administrators choose whether the Gantt chart opens with the Staff or the Equipment panel, which skills the Staff panel and which equipment types the Equipment panel show by default (everyone can still close the panel or change the filter), turn the Kanban board off for everyone, turn the automatic bank-holiday import (Nager) off, and choose whether new projects start with the predefined phases selected.
+- Notifications when someone else changes your plan: the booked person hears when their booking is added, changed or removed or its phase moves or is deleted, and the project manager hears about bookings, equipment, project details, phases and approvals on their project — never the person who made the change; several changes by the same person on the same project within ten minutes merge into one line.
+
+### Changed
+- Instance settings are now validated: a value that does not fit a known setting is refused instead of being saved.
+- Clicking a notification about a project opens it on the Gantt chart, switching site if needed, and card notifications do the same while the Kanban board is turned off.
+
+## [1.14.0] - 2026-10-22
+
+### Added
+- A two-month calendar picker for every date in the app — projects, phases, subphases, staff and equipment bookings, equipment blocks, absences, bank holidays, company events, milestone dates and todo due dates: click a date field (or press Enter, Space or the down arrow), pick the start, then the end; weekends are greyed and the site's bank holidays and closures are marked with a dot and their name.
+
+### Changed
+- An end date can no longer be set before the start: picking a start after the end moves the end along and keeps the duration, and picking an end before the start makes it the new start.
+- The optional end date of bank holidays and company events is cleared from the calendar with **Clear end date**; an empty end means the same day.
+
+## [1.13.0] - 2026-10-22
+
+### Added
+- Roles and permissions: **Settings → Roles** lists the Administrator, Superuser and User roles and any roles you add, and lets an admin set, permission by permission, what each role may do — 59 permissions in 17 groups, each Allow or Deny, with project-manager rights granted on the projects a person manages.
+- Approvals for own bookings: a role can be set to **Needs approval** for booking yourself, changing your own booking or removing it; the request waits as a dashed *Pending approval* row (not counted in capacity) until an approver accepts or rejects it, with an optional reason.
+- The **Approvals** tab of Settings → Roles chooses, per action, whether the project's manager approves and which roles do; administrators can always approve.
+- Approvers can approve or reject straight from the booking's right-click menu in the Gantt chart or from the Kanban card, and requesters can cancel a request there.
+- **My Todos** in the sidebar, with an open-items badge: **To decide** (requests waiting for you), **My tasks** (personal tasks with notes, a due date and an optional project or card, which can be given to colleagues) and **My requests** (your requests and their outcome).
+- New notifications when someone asks for your approval, when your request is decided and when someone gives you a task; each opens the matching tab of My Todos.
+- Site visibility: people see and work only at the sites they belong to unless their role has **See all sites** (administrators by default); the site selector lists only those sites, and the Cross-site view needs more than one.
+- Custom roles can be the default role of new single sign-on accounts.
+- The demo tenant ships with a Team Lead role, own bookings that need approval, a pending request and a few tasks.
+- The site Excel export shows each booking's approval status and pending change, and has an **Approval requests** sheet.
+
+### Changed
+- Superusers now manage projects, bookings, absences and staff notes only at the sites they belong to, like holidays, events and equipment already were.
+- Seeing colleagues' absences is a permission (**See colleagues' absences**): with it you see those of the people at your sites, also when you pick a site; without it only your own.
+- A change to a role's permissions applies to everyone holding it on their next action, without signing out.
+- The API documentation is open to roles with the **API documentation** permission (administrators by default).
+- The Users list filters by any role, and the role picker offers only roles whose permissions you hold yourself.
+- Superusers can no longer change an administrator's skills; that now needs the permission to edit administrator accounts.
+- Upgrading creates the role, approval and todo tables and the default roles automatically on startup; the `add_rbac` migration is also available through `run_migration.py`.
+
+### Fixed
+- Moving a project or phase in the Gantt chart no longer sends the phase- and subphase-level staff bookings it carries to the wrong address, which could change an unrelated project-level booking.
+
+## [1.12.0] - 2026-10-21
+
+### Added
+- Teams: group the people of a site into teams with a name, description, colour and members, in **Settings → Teams** (admins at every site, superusers at their own sites).
+- A **Teams** filter next to the site selector narrows the Gantt chart, Kanban board, archived projects, sidebar stats, resource panels, Staff and Equipment views and pickers to the whole site, one or more teams, or projects and people with no team; it is remembered per site in your browser. Team-limited company events and the tag filter's options follow it too.
+- Projects can belong to one or more teams of their site; a new project starts with the teams of the active filter.
+- Tags, equipment and company events can be limited to teams, site by site; a team-limited tag is offered only on projects of those teams.
+- A site closure limited to teams takes out only their members and leaves the rest of the site, and the calendar header, untouched.
+- **Settings → Company events** has a **Teams** column showing the teams each event is limited to (or *Whole site*), and the Staff view's Company events row names them after the event.
+- The Users list shows each person's teams.
+- The site Excel export has **Teams**, **Team members** and **Project teams** sheets and a **Teams** column on Equipment, Tags and Company events.
+- The demo tenant ships with two teams per site, team projects, a team-limited tag, team-limited equipment and a team-limited event.
+
+### Changed
+- Upgrading creates the team tables automatically on startup; the `add_teams` migration is also available through `run_migration.py`.
+
 ## [1.11.0] - 2026-10-18
 
 ### Added

@@ -18,6 +18,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app import main
 from app.config import Settings
+from app.services.permissions import PermissionSet
 
 INDEX = "<!doctype html><title>Milestone SPA</title>"
 
@@ -131,11 +132,38 @@ async def test_docs_are_refused_to_non_admins(tmp_path, monkeypatch, user):
 
     assert lookup.await_count == 3
     assert schema.status_code == 401
-    assert schema.json() == {"error": "Authentication required. Admin access only."}
+    assert schema.json() == {
+        "error": "Authentication required. Permission required: system.api_docs"
+    }
     for page in (docs, redoc):
         assert page.status_code == 401
         assert "Authentication Required" in page.text
         assert "swagger" not in page.text.lower() and "redoc" not in page.text.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("permissions", "expected"),
+    [
+        # A custom role granted the key reads the docs ...
+        (PermissionSet("api_reader", {"system.api_docs": "allow"}), 200),
+        # ... a superuser (no rows for it) does not.
+        (PermissionSet("superuser", {"projects.create": "allow"}), 401),
+    ],
+)
+async def test_docs_follow_the_system_api_docs_permission(
+    tmp_path, monkeypatch, permissions, expected
+):
+    user = {"id": 4, "role": permissions.role_key, "permissions": permissions}
+    with (
+        patch("app.middleware.auth.get_current_user_from_session", AsyncMock(return_value=user)),
+        built_app(tmp_path, monkeypatch) as app,
+    ):
+        async with client(app) as c:
+            schema = await c.get("/api/openapi.json")
+            docs = await c.get("/api/docs")
+
+    assert (schema.status_code, docs.status_code) == (expected, expected)
 
 
 @pytest.mark.asyncio

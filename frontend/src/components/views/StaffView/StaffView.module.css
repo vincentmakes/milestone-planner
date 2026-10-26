@@ -46,6 +46,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* Keeps the count pill off the Filter trigger in a narrow header */
+  gap: 0.75rem;
   height: 52px;
   padding: 0 1rem;
   background: var(--bg-tertiary);
@@ -350,6 +352,13 @@
   text-overflow: ellipsis;
 }
 
+/* The teams a company event is limited to, after its name */
+.detailTeams {
+  margin-left: 0.375rem;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
 .dateBadge {
   color: var(--text-muted);
   font-size: 10px;
@@ -635,19 +644,15 @@
 }
 
 .filterDropdown {
-  /* position:fixed so the dropdown escapes ancestor overflow:hidden when the
-     embedded staff panel is short. Coordinates and max-height set inline. */
-  position: fixed;
+  /* Portaled by AnchoredPanel (fixed under or above the trigger, measured
+     max-height), so a short embedded staff panel never clips it. */
   min-width: 320px;
   max-width: 450px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: var(--z-dropdown);
   animation: slideIn var(--transition-fast) ease-out;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 

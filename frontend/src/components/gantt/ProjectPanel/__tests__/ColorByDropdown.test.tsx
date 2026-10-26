@@ -1,29 +1,34 @@
 /**
- * ColorByDropdown: radios for "Default" + each tag group (display order),
- * writes the current site's colouring (independent of Group by), and the
- * shared close rules (Escape, focus-out, outside mousedown).
+ * ColorByDropdown: radios for "Default", each dropdown project field applying
+ * to the site (display order) and "Tags" while the site has tags; writes the
+ * current site's colouring (independent of Group by).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { ColorByDropdown } from '../ColorByDropdown';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Site, Tag, TagGroup } from '@/types';
-
-function tag(id: number, name: string, groupId: number): Tag {
-  return { id, name, color: '#10b981', group_id: groupId, all_sites: true, site_ids: [], sort_order: 0 };
-}
+import { makeProjectField, makeProjectFieldOption, makeTag } from '@/test/factories';
+import type { Site } from '@/types';
 
 // Display order: Project type (sort 0) before Area (sort 1)
-const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
+const TYPE = makeProjectField({ id: 1, name: 'Project type', options: [makeProjectFieldOption({ id: 11 })] });
+const AREA = makeProjectField({
+  id: 2,
+  name: 'Area',
+  field_type: 'multiselect',
+  sort_order: 1,
+  options: [makeProjectFieldOption({ id: 21 })],
+});
+const NOTES = makeProjectField({ id: 3, name: 'Notes', field_type: 'number' });
+const zurichTag = makeTag({ id: 2, name: 'Zurich', all_sites: false, site_ids: [2] });
 
 beforeEach(() => {
   localStorage.clear();
   useViewStore.setState({ ganttColorBy: {}, ganttGrouping: {}, collapsedGanttSections: {} });
   useAppStore.setState({
-    tags: [tag(1, 'Internal', 1), tag(2, 'Customer', 1), tag(3, 'Bio', 2)],
-    tagGroups: [AREA, TYPE],
+    projectFields: [AREA, NOTES, TYPE],
+    tags: [makeTag({ id: 1, name: 'Pilot' }), zurichTag],
     currentSite: { id: 1, name: 'Basel' } as Site,
   });
 });
@@ -33,9 +38,16 @@ function open() {
   return screen.getByRole('dialog', { name: 'Colour projects' });
 }
 
+function choiceLabels(dialog: HTMLElement) {
+  const radiogroup = within(dialog).getByRole('radiogroup', { name: 'Colour projects by' });
+  return within(radiogroup)
+    .getAllByRole('radio')
+    .map((r) => r.closest('label')!.textContent);
+}
+
 describe('ColorByDropdown', () => {
-  it('renders nothing when there are no tag groups', () => {
-    useAppStore.setState({ tagGroups: [] });
+  it('renders nothing without a dropdown field or a tag at the site', () => {
+    useAppStore.setState({ projectFields: [NOTES], tags: [zurichTag] });
     const { container } = render(<ColorByDropdown />);
     expect(container).toBeEmptyDOMElement();
   });
@@ -46,23 +58,32 @@ describe('ColorByDropdown', () => {
     expect(screen.getByRole('button', { name: 'Colour by' })).toBeDisabled();
   });
 
-  it('offers "Default" and one radio per tag group, in group order', () => {
+  it('offers "Default", one radio per field in field order, then "Tags"', () => {
     render(<ColorByDropdown />);
     const trigger = screen.getByRole('button', { name: 'Colour by' });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveAttribute('title', 'Colour projects by a field or the tags');
     const dialog = open();
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(within(dialog).getByText('Colour by')).toBeInTheDocument();
-
-    const radiogroup = within(dialog).getByRole('radiogroup', { name: 'Colour projects by tag group' });
-    const radios = within(radiogroup).getAllByRole('radio');
-    expect(radios.map((r) => r.closest('label')!.textContent)).toEqual(['Default', 'Project type', 'Area']);
-    expect(radios[0]).toBeChecked();
+    expect(choiceLabels(dialog)).toEqual(['Default', 'Project type', 'Area', 'Tags']);
+    expect(within(dialog).getByRole('radio', { name: 'Default' })).toBeChecked();
     // No footer controls
     expect(within(dialog).queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('colours the current site by the picked group and names the trigger after it', () => {
+  it('offers only the fields while the site has no tag, and only "Tags" without a field', () => {
+    useAppStore.setState({ tags: [zurichTag] });
+    const { unmount } = render(<ColorByDropdown />);
+    expect(choiceLabels(open())).toEqual(['Default', 'Project type', 'Area']);
+    unmount();
+
+    useAppStore.setState({ projectFields: [NOTES], tags: [makeTag({ id: 1, name: 'Pilot' })] });
+    render(<ColorByDropdown />);
+    expect(choiceLabels(open())).toEqual(['Default', 'Tags']);
+  });
+
+  it('colours the current site by the picked field or the tags and names the trigger after it', () => {
     render(<ColorByDropdown />);
     const dialog = open();
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Area' }));
@@ -72,6 +93,11 @@ describe('ColorByDropdown', () => {
     // Stays open, now showing the active state
     expect(within(dialog).getByRole('radio', { name: 'Area' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'Coloured by Area' })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Tags' }));
+    expect(useViewStore.getState().ganttColorBy).toEqual({ ':1': 'tags' });
+    expect(within(dialog).getByRole('radio', { name: 'Tags' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Coloured by Tags' })).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Default' }));
     expect(useViewStore.getState().ganttColorBy).toEqual({});
@@ -84,39 +110,5 @@ describe('ColorByDropdown', () => {
     const dialog = open();
     expect(within(dialog).getByRole('radio', { name: 'Project type' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'Coloured by Project type' })).toBeInTheDocument();
-  });
-
-  it('closes on Escape without letting it reach the app shortcuts, and returns focus', () => {
-    render(<ColorByDropdown />);
-    const dialog = open();
-    let reachedDocument = false;
-    const listener = () => { reachedDocument = true; };
-    document.addEventListener('keydown', listener);
-    try {
-      fireEvent.keyDown(within(dialog).getByRole('radio', { name: 'Area' }), { key: 'Escape' });
-    } finally {
-      document.removeEventListener('keydown', listener);
-    }
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(reachedDocument).toBe(false);
-    expect(screen.getByRole('button', { name: 'Colour by' })).toHaveFocus();
-  });
-
-  it('closes when focus leaves it, and on an outside mousedown', () => {
-    render(
-      <>
-        <ColorByDropdown />
-        <button type="button">Elsewhere</button>
-      </>
-    );
-    const dialog = open();
-    fireEvent.blur(within(dialog).getByRole('radio', { name: 'Area' }), {
-      relatedTarget: screen.getByRole('button', { name: 'Elsewhere' }),
-    });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-
-    open();
-    fireEvent.mouseDown(screen.getByRole('button', { name: 'Elsewhere' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

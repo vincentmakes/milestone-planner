@@ -27,7 +27,7 @@ An open-source R&D project management platform for multi-site organizations.
 
 - **Gantt chart visualization** — Interactive timeline with drag & drop, resize phases, dependencies and critical path
 - **Kanban board** — Phases and subphases as cards with status, assignees and comment threads, kept in sync with the Gantt
-- **Tags and tag groups** — Colour-coded project labels per site; group, filter and colour the Gantt by them
+- **Project fields and tags** — Your own dropdown, text, number and switch fields on projects, renameable built-in fields and colour-coded tags per site; filter, group and colour the Gantt by them
 - **Resource management** — Staff allocation with percentage-based assignments and a workload heatmap
 - **Absences and site calendars** — Vacation types, bank holidays and company events, with `.ics` import
 - **Equipment scheduling** — Book equipment across projects with conflict detection and maintenance blocks
@@ -66,7 +66,7 @@ The Codespace automatically creates a demo tenant with sample data:
 | **Admin Portal** | `/admin/` | `admin@demo.local` | `demo1234` |
 | **Demo Tenant** | `/t/demo/` | `admin@demo.local` | `demo1234` |
 
-The demo tenant includes 2 sites (Winterthur, Frankfurt), 5 projects (one archived) with phases, nested subphases, dependencies, staff and equipment bookings, 9 people (incl. a part-time member, a project manager and an inactive account) with skills, 8 equipment items, tag groups, custom columns, bank holidays, a site closure, absences of every type, Kanban comments and notifications. All staff accounts use password `demo1234`.
+The demo tenant includes 2 sites (Winterthur, Frankfurt), 5 projects (one archived) with phases, nested subphases, dependencies, staff and equipment bookings, 9 people (incl. a part-time member, a project manager and an inactive account) with skills, 8 equipment items, project fields, tags, custom columns, bank holidays, a site closure, absences of every type, Kanban comments and notifications. All staff accounts use password `demo1234`.
 
 ### Option 2: Docker Fresh Install
 

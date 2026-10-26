@@ -4,6 +4,11 @@ SSO default-role validation (F3-5 / B1-6) and secret-free SSO logging (B1-4).
 An organization SSO ``default_user_role`` outside the tenant ``users`` role set
 used to be stored as-is; the callback then inserted it into ``users.role`` and
 every first-time sign-in in the organization failed with a 500.
+
+Since RBAC the stored default is resolved per tenant at sign-in
+(``resolve_sso_default_role``): a key that exists in the tenant's ``roles``
+and is not ``admin``, otherwise ``user`` -- an auto-created account never
+becomes an administrator.
 """
 
 import logging
@@ -19,8 +24,9 @@ from app.routers.auth import SSO_NONCE_COOKIE, _sign_sso_state, _sso_state_nonce
 from app.schemas.auth import SSOConfigUpdate
 from app.schemas.organization import OrganizationSSOConfigCreate
 from app.services.session import SessionService
-from app.services.sso import SSOService, normalize_sso_default_role
+from app.services.sso import SSOService, resolve_sso_default_role
 from tests.conftest import FakeUser
+from tests.support import scalar_result
 from tests.test_sso_callback import ORG_CONFIG, resolved_tenant
 
 # ---------------------------------------------------------------------------
@@ -28,12 +34,12 @@ from tests.test_sso_callback import ORG_CONFIG, resolved_tenant
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("role", ["user", "superuser", "admin"])
+@pytest.mark.parametrize("role", ["user", "superuser"])
 def test_org_sso_accepts_valid_roles(role):
     assert OrganizationSSOConfigCreate(defaultUserRole=role).default_user_role == role
 
 
-@pytest.mark.parametrize("role", ["viewer", "Admin", "", "member"])
+@pytest.mark.parametrize("role", ["viewer", "Admin", "admin", "", "member"])
 def test_org_sso_rejects_invalid_roles(role):
     with pytest.raises(ValidationError):
         OrganizationSSOConfigCreate(defaultUserRole=role)
@@ -43,12 +49,17 @@ def test_org_sso_role_is_optional():
     assert OrganizationSSOConfigCreate().default_user_role is None
 
 
-@pytest.mark.parametrize("role", ["viewer", "admin"])
-def test_tenant_sso_rejects_roles_outside_its_check_constraint(role):
-    # Tenant-level SSO is stricter: sso_config_default_role_check allows only
-    # superuser|user, and the schema mirrors it.
+@pytest.mark.parametrize("role", ["admin", "Admin", "not a key", ""])
+def test_tenant_sso_rejects_the_admin_role_and_malformed_keys(role):
+    # Never the admin role (sign-in never creates an administrator); a custom
+    # role key passes the schema and is checked against ``roles`` by the route.
     with pytest.raises(ValidationError):
         SSOConfigUpdate(default_role=role)
+
+
+@pytest.mark.parametrize("role", ["user", "superuser", "team_lead"])
+def test_tenant_sso_schema_accepts_role_keys(role):
+    assert SSOConfigUpdate(default_role=role).default_role == role
 
 
 @pytest.mark.asyncio
@@ -85,22 +96,48 @@ async def test_org_sso_put_with_invalid_role_is_422(test_settings):
     [
         ("user", "user"),
         ("superuser", "superuser"),
-        ("admin", "admin"),
-        (" Admin ", "admin"),
-        ("viewer", "user"),
+        (" Superuser ", "superuser"),
+        # Never an administrator by default, whatever is stored.
+        ("admin", "user"),
+        (" Admin ", "user"),
         ("", "user"),
+        ("   ", "user"),
         (None, "user"),
         (3, "user"),
     ],
 )
-def test_normalize_sso_default_role(stored, expected):
-    assert normalize_sso_default_role(stored) == expected
+async def test_resolve_sso_default_role_without_a_lookup(stored, expected, mock_db_session):
+    """System roles always exist; non-strings and admin never reach the database."""
+    assert await resolve_sso_default_role(mock_db_session, stored) == expected
+    mock_db_session.execute.assert_not_awaited()
+
+
+async def test_resolve_sso_default_role_accepts_an_existing_custom_role(mock_db_session):
+    mock_db_session.execute.return_value = scalar_result("team_lead")
+
+    assert await resolve_sso_default_role(mock_db_session, "team_lead") == "team_lead"
+    sql = str(
+        mock_db_session.execute.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    )
+    assert "roles.key = 'team_lead'" in sql
+
+
+async def test_resolve_sso_default_role_falls_back_for_an_unknown_role(mock_db_session):
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    assert await resolve_sso_default_role(mock_db_session, "viewer") == "user"
+
+
+async def test_resolve_sso_default_role_skips_the_lookup_for_a_malformed_key(mock_db_session):
+    assert await resolve_sso_default_role(mock_db_session, "Not a key!") == "user"
+    mock_db_session.execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_callback_auto_creates_user_with_fallback_role(app_client, mock_db_session):
-    """A stored 'viewer' default creates a 'user', not an IntegrityError/500."""
-    config = {**ORG_CONFIG, "auto_create_users": True, "default_role": "viewer"}
+@pytest.mark.parametrize("stored", ["viewer", "admin"])
+async def test_callback_auto_creates_user_with_fallback_role(app_client, mock_db_session, stored):
+    """A stored 'viewer' default creates a 'user', not an IntegrityError/500; 'admin' too."""
+    config = {**ORG_CONFIG, "auto_create_users": True, "default_role": stored}
     state = _sign_sso_state("acme")
     # /auth/sso/login sets this cookie; the callback requires it (B1-8).
     app_client.cookies.set(SSO_NONCE_COOKIE, _sso_state_nonce(state))

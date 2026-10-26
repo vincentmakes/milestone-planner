@@ -11,7 +11,7 @@
 import { useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { canManageAnyProject, isSelf } from '@/utils/permissions';
+import { canBookSelf, canManageAnyProject } from '@/utils/permissions';
 import { format } from 'date-fns';
 import { addDaysToDateString } from '@/utils/date';
 
@@ -43,11 +43,12 @@ export function useResourceDragDrop() {
     resourceId: number,
     resourceName: string
   ) => {
-    // Anyone who manages a project may drag resources onto it; everyone may
-    // drag themselves (the drop target decides whether the project accepts).
+    // Anyone who manages a project may drag resources onto it; everyone whose
+    // role books their own time (allow or approval mode) may drag themselves
+    // (the drop target decides whether the project accepts).
     const allowed =
       canManageAnyProject(currentUser, projects) ||
-      (type === 'staff' && isSelf(currentUser, resourceId));
+      (type === 'staff' && canBookSelf(currentUser, resourceId));
     if (!allowed) {
       e.preventDefault();
       return;

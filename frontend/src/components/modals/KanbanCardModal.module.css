@@ -86,8 +86,7 @@
   font-weight: var(--font-weight-medium);
 }
 
-.assignees,
-.comments {
+.assignees {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -151,6 +150,8 @@
 }
 
 .removeBtn {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   color: var(--text-tertiary);
@@ -170,69 +171,53 @@
   align-items: center;
 }
 
-/* Wrapper of the shared Select: takes the row's free width and may shrink */
+/* Wrapper of the assignee picker: takes the row's free width and may shrink */
 .assigneeSelect {
   flex: 1;
   min-width: 0;
 }
 
-.comment {
-  padding: 8px 10px;
-  background: var(--bg-secondary);
-  border-radius: 5px;
-}
-
-.commentHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 3px;
-}
-
-.author {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-}
-
-.deletedAuthor {
-  font-style: italic;
-  color: var(--text-muted);
-}
-
-.commentDate {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  margin-right: auto;
-}
-
-.commentBody {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.composer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
-}
-
-.textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--input-border);
-  border-radius: 5px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: var(--font-size-sm);
-  resize: vertical;
-}
-
 .missing {
   color: var(--text-tertiary);
   font-size: var(--font-size-sm);
+}
+
+/* A booking awaiting approval: dashed outline, muted name. */
+.assignee.assigneePending {
+  border: 1px dashed var(--border-color);
+  color: var(--text-tertiary);
+}
+
+.assigneeName .assigneeBadge {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.allocationCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The value a pending change asks for, next to the current one. */
+.requested {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+/* An unlinked booking's own dates, after the name */
+.assigneeName .segmentDates {
+  margin-left: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
 }

@@ -19,11 +19,14 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
-import { getEquipment } from '@/api/endpoints/equipment';
+import { apiPost, apiPut, apiDelete } from '@/api/client';
+import { getAllEquipment, getEquipment } from '@/api/endpoints/equipment';
 import type { Equipment, Site } from '@/types';
-import { useManageableSites } from './calendarUtils';
-import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
+import { teamIdsWithinSites } from '@/utils/teams';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
+import { can } from '@/utils/permissions';
+import { TeamScope } from './TeamScope';
+import { Icon, BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -42,16 +45,17 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const currentUser = useAppStore((s) => s.currentUser);
   const currentSite = useAppStore((s) => s.currentSite);
   const setEquipment = useAppStore((s) => s.setEquipment);
-  const manageableSites = useManageableSites();
+  const manageableSites = useVisibleSites();
 
-  const isAdmin = currentUser?.role === 'admin';
-  const canManage = isAdmin || currentUser?.role === 'superuser';
+  const canSeeAllSites = currentUser?.can_see_all_sites ?? false;
+  const canManage = can(currentUser, 'equipment.manage');
+  const canViewEquipment = can(currentUser, 'views.equipment');
   const manageableIds = useMemo(() => manageableSites.map((s) => s.id), [manageableSites]);
 
-  /** Linked sites the user can't manage (always none for admins) */
+  /** Linked sites the user can't see (always none with sites.view_all) */
   const foreignSiteIds = useCallback(
-    (eq: Equipment) => (isAdmin ? [] : equipmentSiteIds(eq).filter((id) => !manageableIds.includes(id))),
-    [isAdmin, manageableIds]
+    (eq: Equipment) => (canSeeAllSites ? [] : equipmentSiteIds(eq).filter((id) => !manageableIds.includes(id))),
+    [canSeeAllSites, manageableIds]
   );
   
   // State
@@ -82,7 +86,7 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const loadEquipment = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await apiGet<Equipment[]>('/api/equipment/all');
+      const data = await getAllEquipment();
       setLocalEquipment(data);
     } catch (err) {
       console.error('Failed to load equipment:', err);
@@ -132,10 +136,12 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   };
   
   // After a save or delete: reload the list, and refresh the global store with
-  // the per-site rows every equipment filter expects (not /all)
+  // the per-site rows every equipment filter expects (not /all). That read
+  // needs views.equipment: without it the view slice stays empty, like the
+  // initial load.
   const refreshAfterChange = async () => {
     await loadEquipment();
-    setEquipment(await getEquipment(true));
+    if (canViewEquipment) setEquipment(await getEquipment(true));
     handleCloseForm();
   };
 
@@ -191,10 +197,10 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           right={
             canManage && (
               <>
-                <Button variant="secondary" icon={<GearIcon />} onClick={() => openSettings('equipment-types')}>
+                <Button variant="secondary" icon={<Icon icon={GearIcon} />} onClick={() => openSettings('equipment-types')}>
                   Manage Types
                 </Button>
-                <Button icon={<PlusIcon />} onClick={handleCreate}>
+                <Button icon={<Icon icon={PlusIcon} />} onClick={handleCreate}>
                   Add Equipment
                 </Button>
               </>
@@ -252,7 +258,7 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                           disabled={isShared}
                           aria-label={`Edit ${eq.name}`}
                         >
-                          <EditIcon />
+                          <Icon icon={EditIcon} size={15} />
                         </button>
                       </span>
                     </td>
@@ -309,6 +315,10 @@ function EquipmentForm({
     equipment ? equipmentSiteIds(equipment) : defaultSiteId !== null ? [defaultSiteId] : []
   );
   const [active, setActive] = useState(equipment?.active ?? true);
+  // Teams it is limited to, flat across sites (none = the whole of each site)
+  const teams = useAppStore((s) => s.teams);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>(equipment?.team_ids ?? []);
+  const selectedSites = sites.filter((s) => selectedSiteIds.includes(s.id));
 
   const toggleSite = (siteId: number) => {
     setSelectedSiteIds((prev) =>
@@ -324,8 +334,9 @@ function EquipmentForm({
   const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting equipment') : null;
   const [error, setError] = useState<string | null>(null);
 
-  // The site links the form opened with (the default site is fixed at open)
+  // The site links and teams the form opened with (the default site is fixed at open)
   const [initialSiteIds] = useState(selectedSiteIds);
+  const [initialTeamIds] = useState(selectedTeamIds);
   useReportDirty(
     onDirtyChange,
     name !== (equipment?.name || '') ||
@@ -333,7 +344,9 @@ function EquipmentForm({
       active !== (equipment?.active ?? true) ||
       (isAddingNewType && newTypeName.trim() !== '') ||
       selectedSiteIds.length !== initialSiteIds.length ||
-      selectedSiteIds.some((id) => !initialSiteIds.includes(id))
+      selectedSiteIds.some((id) => !initialSiteIds.includes(id)) ||
+      selectedTeamIds.length !== initialTeamIds.length ||
+      selectedTeamIds.some((id) => !initialTeamIds.includes(id))
   );
   
   // Handle new type confirmation
@@ -380,6 +393,8 @@ function EquipmentForm({
         site_id: selectedSiteIds[0],
         site_ids: selectedSiteIds,
         active,
+        // Teams of sites no longer selected are dropped
+        team_ids: teamIdsWithinSites(selectedTeamIds, teams, selectedSiteIds),
       };
       
       if (isEditing && equipment) {
@@ -425,7 +440,7 @@ function EquipmentForm({
     <form onSubmit={handleSubmit} className={styles.form}>
       <div className={styles.formHeader}>
         <h3>{isEditing ? 'Edit Equipment' : 'Add Equipment'}</h3>
-        <Button type="button" variant="ghost" icon={<BackIcon />} onClick={onCancel}>
+        <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} onClick={onCancel}>
           Back to list
         </Button>
       </div>
@@ -470,10 +485,10 @@ function EquipmentForm({
                 }}
               />
               <button type="button" className={styles.confirmBtn} onClick={confirmNewType} aria-label="Add type" title="Add type">
-                <CheckIcon />
+                <Icon icon={CheckIcon} size={14} />
               </button>
               <button type="button" className={styles.cancelBtn} onClick={cancelNewType} aria-label="Cancel adding a type" title="Cancel">
-                <CloseIcon />
+                <Icon icon={CloseIcon} size={14} />
               </button>
             </div>
           ) : type ? (
@@ -542,6 +557,16 @@ function EquipmentForm({
           <span className={styles.hint}>
             Select every site where this equipment can be booked
           </span>
+          {selectedSites.map((site) => (
+            <TeamScope
+              key={site.id}
+              site={site}
+              teams={teams}
+              selected={selectedTeamIds}
+              onChange={setSelectedTeamIds}
+              multiSite={selectedSites.length > 1}
+            />
+          ))}
         </div>
         
         {/* Active Status (only for editing) */}

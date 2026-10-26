@@ -6,7 +6,8 @@ from datetime import date
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS
+from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS, OptionalText
+from app.schemas.team import TeamIds
 
 
 class EquipmentResponse(BaseModel):
@@ -16,7 +17,8 @@ class EquipmentResponse(BaseModel):
     Equipment can belong to several sites (``site_ids``). ``site_id`` and
     ``site_name`` are one of them: the row's site in per-site listings
     (GET /equipment returns one row per equipment-site pair), otherwise the
-    primary (first) site.
+    primary (first) site. ``team_ids`` / ``team_names``: the teams it is
+    limited to; a site with none of them keeps the whole site.
     """
 
     id: int
@@ -26,6 +28,8 @@ class EquipmentResponse(BaseModel):
     site_name: str | None = None
     site_ids: list[int] = []
     site_names: list[str] = []
+    team_ids: list[int] = []
+    team_names: list[str] = []
     description: str | None = None
     active: int = 1
     created_at: DateTimeJS
@@ -40,13 +44,15 @@ class EquipmentCreate(BaseModel):
 
     ``site_ids`` lists every site the equipment belongs to. Clients that
     predate multi-site equipment send ``site_id`` instead, which is taken as
-    the single site. At least one site is required.
+    the single site. At least one site is required. ``team_ids`` limits it to
+    teams at its sites (a site with no listed team keeps the whole site).
     """
 
     name: str = Field(..., min_length=1, max_length=200)
     type: str | None = Field(None, max_length=100)
     site_id: int | None = None
     site_ids: list[int] | None = Field(None, min_length=1)
+    team_ids: TeamIds | None = None
     description: str | None = None
 
     @model_validator(mode="after")
@@ -68,13 +74,16 @@ class EquipmentUpdate(BaseModel):
     Request model for updating equipment.
 
     ``site_ids``, when given, replaces the equipment's site links (legacy
-    ``site_id`` alone is taken as a single-site replacement).
+    ``site_id`` alone is taken as a single-site replacement). ``team_ids``,
+    when given, replaces its teams (each at one of its sites); a site change
+    alone drops the teams of the removed sites.
     """
 
     name: str | None = Field(None, min_length=1, max_length=200)
     type: str | None = Field(None, max_length=100)
     site_id: int | None = None
     site_ids: list[int] | None = Field(None, min_length=1)
+    team_ids: TeamIds | None = None
     description: str | None = None
     active: int | None = None
 
@@ -83,6 +92,10 @@ class EquipmentUpdate(BaseModel):
         if self.site_ids is None and self.site_id is not None:
             self.site_ids = [self.site_id]
         return self
+
+
+# The optional note of an equipment booking.
+EQUIPMENT_NOTE_MAX = 2000
 
 
 class EquipmentAssignmentResponse(BaseModel):
@@ -95,6 +108,7 @@ class EquipmentAssignmentResponse(BaseModel):
     equipment_id: int
     start_date: DateAsDateTimeJS
     end_date: DateAsDateTimeJS
+    note: str | None = None
     created_at: DateTimeJS
 
     class Config:
@@ -107,14 +121,19 @@ class EquipmentAssignmentCreate(DateRangeOrdered):
     equipment_id: int
     start_date: date
     end_date: date
+    note: OptionalText = Field(None, max_length=EQUIPMENT_NOTE_MAX)
 
 
 class EquipmentAssignmentUpdate(DateRangeOrdered):
-    """Request model for updating equipment assignment."""
+    """
+    Request model for updating equipment assignment. ``note`` left out keeps
+    the booking's; given as ``null`` or blank it clears it.
+    """
 
     equipment_id: int | None = None
     start_date: date | None = None
     end_date: date | None = None
+    note: OptionalText = Field(None, max_length=EQUIPMENT_NOTE_MAX)
 
 
 class EquipmentBlockResponse(BaseModel):

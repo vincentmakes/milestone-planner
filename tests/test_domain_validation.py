@@ -21,6 +21,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from tests.conftest import FakeUser
+from tests.support import card_lock_result
+from tests.test_project_access_routes import _placement
 
 
 def _scalar_result(value):
@@ -44,6 +46,8 @@ def _scalars_result(values):
 
 def _row(**fields):
     row = MagicMock()
+    # An approved row without an open approval request, unless told otherwise.
+    fields = {"approval_status": "approved", "approval_request_id": None, **fields}
     for key, value in fields.items():
         setattr(row, key, value)
     return row
@@ -108,11 +112,27 @@ async def test_phase_assignment_without_allocation_still_defaults_to_100(
     resolved.first.return_value = (1,)
     detail = MagicMock()
     detail.first.return_value = (
-        _row(id=3, phase_id=1, project_id=1, staff_id=5, allocation=100),
+        _row(
+            id=3,
+            phase_id=1,
+            project_id=1,
+            staff_id=5,
+            allocation=100,
+            start_date=None,
+            end_date=None,
+        ),
         "A B",
         None,
+        date(2026, 3, 2),
+        date(2026, 3, 13),
     )
-    mock_db_session.execute.side_effect = [resolved, _scalar_result(5), detail]
+    mock_db_session.execute.side_effect = [
+        resolved,
+        _scalar_result(True),
+        card_lock_result(),
+        _placement(),  # no booking of the person on the phase yet
+        detail,
+    ]
 
     response = await client.post(
         "/api/phases/1/staff", json={"staff_id": 5, "project_id": 1, "allocation": None}
@@ -181,7 +201,9 @@ async def test_single_day_ranges_are_fine(authed_client, mock_db_session):
     phase = _row(
         id=1, project_id=1, type="Design", start_date=date(2026, 1, 1), end_date=date(2026, 1, 9)
     )
-    mock_db_session.execute.side_effect = [_scalar_result(phase)]
+    # The phase, its approved bookings (the move notifies them), then its
+    # segments to fit (none).
+    mock_db_session.execute.side_effect = [_scalar_result(phase), MagicMock(), MagicMock()]
 
     response = await client.put(
         "/api/phases/1", json={"start_date": "2026-01-05", "end_date": "2026-01-05"}

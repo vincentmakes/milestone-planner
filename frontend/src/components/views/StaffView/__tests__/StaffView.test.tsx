@@ -7,16 +7,21 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { StaffView } from '../StaffView';
-import { resetAllStores, useAppStore, useUIStore } from '@/stores';
+import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
+import { tagFilterKey } from '@/utils/tags';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { formatDateISO } from '@/utils/date';
+import { buildEventDateSet } from '@/api';
+import type { CompanyEvent } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 import {
   makePhase,
   makeProject,
   makeSite,
   makeStaff,
   makeSubphase,
+  makeTeam,
   makeUser,
   makeVacation,
 } from '@/test/factories';
@@ -143,6 +148,70 @@ describe('StaffView panel', () => {
     );
   });
 
+  it('leaves bookings awaiting approval out of the availability and marks their bars', () => {
+    seed();
+    const state = useAppStore.getState();
+    const [project, archived] = state.projects;
+    useAppStore.setState({
+      projects: [
+        {
+          ...project,
+          staffAssignments: [
+            ...project.staffAssignments,
+            { id: 102, staff_id: 5, allocation: 30, start_date: isoOffset(-1), end_date: isoOffset(1), approval_status: 'pending' },
+          ],
+        },
+        archived,
+      ],
+    });
+    render(<StaffView />);
+    // Bob: 50 % approved of 80 %; the pending 30 % does not count.
+    expect(within(rowFor('Bob Brown')).getByText('30% available')).toBeInTheDocument();
+    const pendingBar = screen.getByTestId('staff-bar-assignment-102');
+    expect(pendingBar.className).toMatch(/pendingBar/);
+    expect(pendingBar).toHaveAttribute('title', expect.stringContaining('pending approval'));
+    expect(screen.getByTestId('staff-bar-assignment-101').className).not.toMatch(/pendingBar/);
+  });
+
+  it('counts an unlinked phase booking on its own days only', () => {
+    seed();
+    const [project, archived] = useAppStore.getState().projects;
+    const phase = project.phases[0];
+    useAppStore.setState({
+      projects: [
+        {
+          ...project,
+          phases: [
+            {
+              ...phase,
+              // Alice's 30 % on the phase now has its own dates, after today
+              staffAssignments: [
+                { id: 201, staff_id: 4, allocation: 30, start_date: isoOffset(2), end_date: isoOffset(4), linked: false },
+              ],
+            },
+          ],
+        },
+        archived,
+      ],
+    });
+    render(<StaffView />);
+    // Only the subphase's 20 % is booked today
+    expect(within(rowFor('Alice Ames')).getByText('80% available')).toBeInTheDocument();
+  });
+
+  it('does not let a user without assignments.self_create drag their own row', () => {
+    seed('user', 4);
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_create'),
+      }),
+    });
+    render(<StaffView />);
+    expect(rowFor('Alice Ames')).toHaveAttribute('draggable', 'false');
+  });
+
   it('reports zero availability for someone absent today', () => {
     seed();
     useAppStore.setState({
@@ -191,6 +260,44 @@ describe('StaffView panel', () => {
     expect(screen.queryByText('Roles')).not.toBeInTheDocument();
   });
 
+  it("starts the Gantt panel with the admin's default skills that still exist, ignoring unknown ids; Clear works for the session", () => {
+    seed();
+    // 99 was deleted since
+    useAppStore.setState({ instanceSettings: { staff_panel_default_skills: '[7,99]' } });
+    const { unmount } = render(<StaffView embedded />);
+
+    expect(screen.getByText('Alice Ames')).toBeInTheDocument();
+    expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
+    expect(screen.getByText('1 filter')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /1 filter/ }));
+    expect(screen.getByRole('checkbox', { name: 'HPLC' })).toBeChecked();
+    fireEvent.click(screen.getByText('Clear all filters'));
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+
+    // The next opening applies the default again
+    unmount();
+    render(<StaffView embedded />);
+    expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
+  });
+
+  it('starts unfiltered when none of the default skills exists any more', () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { staff_panel_default_skills: '[99]' } });
+    render(<StaffView embedded />);
+    expect(screen.getByText('Filter')).toBeInTheDocument();
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+  });
+
+  it('starts the standalone view unfiltered with default skills set', () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { staff_panel_default_skills: '[7]' } });
+    render(<StaffView />);
+    expect(screen.getByText('Filter')).toBeInTheDocument();
+    expect(screen.getByText('Alice Ames')).toBeInTheDocument();
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+  });
+
   it('opens the filter as a dialog that Escape closes, focus back on the trigger', () => {
     seed();
     render(<StaffView />);
@@ -201,6 +308,18 @@ describe('StaffView panel', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Filter staff' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it('portals the filter panel out of the header; a mousedown in it keeps it open', () => {
+    seed();
+    render(<StaffView />);
+    const trigger = screen.getByRole('button', { name: /Filter/ });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole('dialog', { name: 'Filter staff' });
+    expect(trigger.parentElement).not.toContainElement(panel);
+    expect(panel).toHaveAttribute('data-align', 'start');
+    fireEvent.mouseDown(screen.getByText('Roles'));
+    expect(screen.getByRole('dialog', { name: 'Filter staff' })).toBeInTheDocument();
   });
 
   it('shows placeholders when no roles or skills exist', () => {
@@ -215,6 +334,42 @@ describe('StaffView panel', () => {
     expect(screen.getByText('No roles defined')).toBeInTheDocument();
     expect(screen.getByText('No skills defined')).toBeInTheDocument();
     expect(screen.getByText('No title')).toBeInTheDocument();
+  });
+
+  it('with an active team filter, hides non-matching staff and keeps matching ones', () => {
+    seed();
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 })],
+      staff: [{ ...alice, team_ids: [1] }, { ...bob, team_ids: [] }],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<StaffView />);
+    expect(screen.getByText('Alice Ames')).toBeInTheDocument();
+    expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
+  });
+
+  it('with an active team filter, drops company events of other teams from the timeline', () => {
+    seed();
+    const teamEvents: CompanyEvent[] = [
+      { id: 81, site_id: 1, site_ids: [1], date: isoOffset(2), end_date: null, name: 'Team B review', team_ids: [2] },
+      { id: 82, site_id: 1, site_ids: [1], date: isoOffset(3), end_date: null, name: 'Site audit', team_ids: [] },
+    ];
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: teamEvents,
+      companyEventDates: buildEventDateSet(teamEvents),
+    });
+    useViewStore.setState({
+      viewMode: 'month',
+      currentDate: new Date(),
+      teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
+    });
+    render(<StaffView />);
+    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+
+    act(() => useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [2], noTeam: false } } }));
+    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
   });
 });
 

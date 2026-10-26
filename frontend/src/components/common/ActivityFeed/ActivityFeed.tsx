@@ -13,6 +13,7 @@ import type { ChangePayload } from '@/hooks/useWebSocket';
 import { useAppStore } from '@/stores/appStore';
 import { avatarColorFor } from '@/utils/avatarColor';
 import styles from './ActivityFeed.module.css';
+import { Icon, CloseIcon } from '@/components/common/Icon';
 
 const TOAST_LIFETIME = 6000;
 const MAX_VISIBLE = 4;
@@ -47,6 +48,7 @@ const ENTITY_LABELS: Record<string, string> = {
   predefined_phase: 'phase template',
   bank_holiday: 'bank holiday',
   company_event: 'company event',
+  approval_request: 'approval request',
 };
 
 const ACTION_VERBS: Record<string, string> = {
@@ -133,7 +135,7 @@ const ActivityToast = memo(function ActivityToast({ toast, projectName, onDismis
         onClick={() => onDismiss(toast._key)}
         aria-label="Dismiss"
       >
-        ×
+        <Icon icon={CloseIcon} size={14} />
       </button>
     </div>
   );

@@ -1,9 +1,12 @@
 /**
  * FlashNotice shows `uiStore.flashNotice` bottom-right as an alert and clears
  * it after FLASH_DURATION_MS or on Dismiss; a newer flash is never cleared by
- * an older one's timer.
+ * an older one's timer. The slot is an opaque surface, so the Notice's
+ * translucent tint stays readable over the Staff heatmap in every theme.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { FlashNotice, FLASH_DURATION_MS } from '../FlashNotice';
@@ -61,5 +64,15 @@ describe('FlashNotice', () => {
     expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'Oops', tone: 'error' });
     useUIStore.getState().dismissFlash();
     expect(useUIStore.getState().flashNotice).toBeNull();
+  });
+
+  it('sits in the opaque slot', () => {
+    render(<FlashNotice />);
+    act(() => useUIStore.getState().showFlash('This person is already booked on this card for overlapping dates'));
+    expect(screen.getByRole('alert').parentElement?.className).toMatch(/slot/);
+    // Under Vitest a .module.css import is a stub: read the rule itself.
+    const css = readFileSync(join(__dirname, '..', 'FlashNotice.module.css'), 'utf8');
+    const slot = css.match(/\.slot\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(slot).toMatch(/background:\s*var\(--bg-secondary\);/);
   });
 });

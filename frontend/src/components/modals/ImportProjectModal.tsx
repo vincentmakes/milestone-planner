@@ -14,6 +14,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { loadAllProjects } from '@/api/endpoints/projects';
 import styles from './ImportProjectModal.module.css';
+import { Icon, CheckCircleIcon, ErrorIcon, UploadIcon, FileTextIcon, FileCsvIcon } from '@/components/common/Icon';
 
 interface ImportResult {
   success: boolean;
@@ -231,24 +232,12 @@ Note: Java must also be installed:
     const ext = filename.toLowerCase().split('.').pop();
     if (ext === 'csv') {
       return (
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="8" y1="13" x2="16" y2="13" />
-          <line x1="8" y1="17" x2="16" y2="17" />
-          <line x1="8" y1="9" x2="10" y2="9" />
-        </svg>
+        <Icon icon={FileCsvIcon} size={32} />
       );
     }
     // MPP/MPT/MPX/XML
     return (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <polyline points="10 9 9 9 8 9" />
-      </svg>
+      <Icon icon={FileTextIcon} size={32} />
     );
   };
   
@@ -290,11 +279,7 @@ Note: Java must also be installed:
                 </div>
               ) : (
                 <div className={styles.dropContent}>
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="17 8 12 3 7 8" />
-                    <line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
+                  <Icon icon={UploadIcon} size={48} />
                   <div className={styles.dropText}>
                     Drop file here or click to browse
                   </div>
@@ -335,11 +320,7 @@ Note: Java must also be installed:
         {result?.java_error && (
           <div className={styles.javaError}>
             <div className={styles.javaErrorHeader}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
+              <Icon icon={ErrorIcon} size={24} />
               <span>Java Required for MPP Import</span>
             </div>
             <div className={styles.javaErrorMessage}>
@@ -360,10 +341,7 @@ Note: Java must also be installed:
         {/* Success */}
         {result && result.success && !result.java_error && (
           <div className={styles.success}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-              <polyline points="22 4 12 14.01 9 11.01" />
-            </svg>
+            <Icon icon={CheckCircleIcon} size={24} />
             <div className={styles.successContent}>
               <div className={styles.successTitle}>Import Complete!</div>
               <div className={styles.successDetails}>

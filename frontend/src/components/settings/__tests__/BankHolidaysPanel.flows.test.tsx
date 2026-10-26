@@ -12,6 +12,7 @@ import { resetAllStores, useAppStore, useUIStore, useWhatIfStore } from '@/store
 import { downloadICS } from '@/utils/ics';
 import { makeSite, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
+import { dateValue, dayButton, openDateField, pickDate, pickEnd, showMonth } from '@/test/datePicker';
 import type { BankHoliday } from '@/types';
 
 const api = vi.hoisted(() => ({
@@ -149,18 +150,21 @@ describe('BankHolidaysPanel add and edit', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' Company Day ' } });
     submit();
     expect(screen.getByRole('alert')).toHaveTextContent('Please select a date');
-    fireEvent.change(screen.getByLabelText('Date'), { target: { value: `${YEAR}-06-10` } });
-    fireEvent.change(screen.getByLabelText('End date (optional)'), { target: { value: `${YEAR}-06-01` } });
-    // noValidate: the button reaches the panel's own check despite the end input's min
-    submit();
-    expect(screen.getByRole('alert')).toHaveTextContent('End date must be on or after the start date');
+    pickDate('Date', `${YEAR}-06-10`);
+    expect(dateValue('Date')).toBe(`${YEAR}-06-10`);
+    expect(dateValue('End date (optional)')).toBe('');
+    // The end cannot precede the start: an earlier end becomes the new start
+    pickEnd('End date (optional)', `${YEAR}-06-01`);
+    expect(dateValue('Date')).toBe(`${YEAR}-06-01`);
+    expect(dateValue('End date (optional)')).toBe('');
 
-    fireEvent.change(screen.getByLabelText('End date (optional)'), { target: { value: `${YEAR}-06-11` } });
+    pickEnd('End date (optional)', `${YEAR}-06-11`);
+    expect(dateValue('End date (optional)')).toBe(`${YEAR}-06-11`);
     submit();
     await waitFor(() =>
       expect(api.createBankHoliday).toHaveBeenCalledWith(1, {
         name: 'Company Day',
-        date: `${YEAR}-06-10`,
+        date: `${YEAR}-06-01`,
         end_date: `${YEAR}-06-11`,
       })
     );
@@ -186,11 +190,45 @@ describe('BankHolidaysPanel add and edit', () => {
     );
   });
 
+  it("does not mark the header site's holidays and closures in its calendar", async () => {
+    await renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Lab shutdown' }));
+    act(() =>
+      useAppStore.setState({
+        bankHolidays: [shutdown],
+        bankHolidayDates: new Set([`${YEAR}-12-24`, `${YEAR}-12-28`]),
+        closureIndex: new Map([[`${YEAR}-12-29`, [{ id: 7, name: 'Inventory' } as never]]]),
+      })
+    );
+    const panel = openDateField('Date');
+    showMonth(panel, `${YEAR}-12-01`);
+    expect(dayButton(panel, `${YEAR}-12-24`)).toBeInTheDocument();
+    expect(panel.querySelector('[class*="holiday"], [class*="closure"]')).toBeNull();
+  });
+
+  it('clears an end date from the calendar', async () => {
+    api.updateBankHoliday.mockResolvedValue({});
+    await renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Lab shutdown' }));
+    const panel = openDateField('End date (optional)');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Clear end date' }));
+    expect(dateValue('End date (optional)')).toBe('');
+    expect(screen.getByLabelText('End date (optional)')).toHaveAttribute('placeholder', 'Same day');
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() =>
+      expect(api.updateBankHoliday).toHaveBeenCalledWith(1, 2, {
+        name: 'Lab shutdown',
+        date: `${YEAR}-12-24`,
+        end_date: null,
+      })
+    );
+  });
+
   it('shows a save error and can be cancelled', async () => {
     api.updateBankHoliday.mockRejectedValue(new Error('Duplicate'));
     await renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Edit Lab shutdown' }));
-    expect(screen.getByLabelText('End date (optional)')).toHaveValue(`${YEAR}-12-31`);
+    expect(dateValue('End date (optional)')).toBe(`${YEAR}-12-31`);
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('Duplicate')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -283,6 +321,33 @@ describe('BankHolidaysPanel delete, refresh, export', () => {
     fireEvent.change(screen.getByLabelText('Year'), { target: { value: 'all' } });
     fireEvent.click(screen.getByRole('button', { name: /Export .ics/ }));
     expect(vi.mocked(downloadICS).mock.calls[1][1]).toBe('bank-holidays-Basel.ics');
+  });
+});
+
+describe('BankHolidaysPanel with the Nager import off', () => {
+  beforeEach(() => {
+    useAppStore.setState({ instanceSettings: { nager_enabled: 'false' } });
+  });
+
+  it('offers no refresh and no longer promises that a deleted Nager holiday returns', async () => {
+    const confirm = stubConfirm(false);
+    await renderPanel();
+    expect(screen.queryByRole('button', { name: /Refresh from Nager/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Fetching holidays from Nager is turned off/)).toBeInTheDocument();
+    // The source stays visible
+    expect(within(rowOf('National Day')).getByText('Nager')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete National Day' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(confirm.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ message: 'Delete the holiday "National Day"?', destructive: true })
+    );
+  });
+
+  it('does not suggest a refresh on an empty site', async () => {
+    api.getBankHolidays.mockResolvedValue([]);
+    render(<BankHolidaysPanel />);
+    expect(await screen.findByText('No holidays for this site yet. Add one or import an .ics file.')).toBeInTheDocument();
   });
 });
 

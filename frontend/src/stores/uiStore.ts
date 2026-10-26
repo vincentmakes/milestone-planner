@@ -64,7 +64,10 @@ export type ModalType =
 /** Sections of the Settings hub (see components/settings/sections.tsx) */
 export type SettingsSectionId =
   | 'general'
+  | 'defaults'
+  | 'roles'
   | 'sites'
+  | 'teams'
   | 'bank-holidays'
   | 'company-events'
   | 'users'
@@ -73,6 +76,7 @@ export type SettingsSectionId =
   | 'equipment'
   | 'equipment-types'
   | 'predefined-phases'
+  | 'project-fields'
   | 'tags'
   | 'sso';
 
@@ -270,6 +274,8 @@ interface UIState {
       allocation?: number;
       startDate?: string;
       endDate?: string;
+      /** Phase / subphase bookings: follows the card (true) or has its own dates */
+      linked?: boolean;
     };
   };
   
@@ -398,6 +404,7 @@ interface UIState {
       allocation?: number;
       startDate?: string;
       endDate?: string;
+      linked?: boolean;
     }
   ) => void;
   hideContextMenu: () => void;

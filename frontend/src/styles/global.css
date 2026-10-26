@@ -79,7 +79,6 @@ input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="number"],
-input[type="date"],
 textarea,
 select {
   width: 100%;
@@ -102,23 +101,6 @@ select:focus {
 input::placeholder,
 textarea::placeholder {
   color: var(--text-muted);
-}
-
-/* iOS Safari renders a date input as a native control with its own intrinsic
-   width (and centred text) and ignores `width` on it; two in a row then
-   overflow their grid tracks and overlap. Dropping the native appearance makes
-   it a plain box that honours width: 100% and can shrink to its track. */
-input[type="date"] {
-  -webkit-appearance: none;
-  appearance: none;
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-}
-
-input[type="date"]::-webkit-date-and-time-value {
-  text-align: left;
-  min-height: 1.4em; /* iOS collapses an empty value to zero height */
 }
 
 input:disabled,
@@ -432,6 +414,12 @@ body.phantom-sibling-mode * {
   /* The row around a checkbox or radio is the touch target, not the box */
   label:has(> input[type="checkbox"]),
   label:has(> input[type="radio"]) {
+    min-height: 44px;
+  }
+
+  /* Listbox rows (the picker dropdowns, mention and tag suggestions) are
+     touch targets too: a full-width row, so only the height grows */
+  [role="option"] {
     min-height: 44px;
   }
   

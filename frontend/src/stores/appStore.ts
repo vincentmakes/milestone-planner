@@ -25,12 +25,16 @@ import type {
   InstanceSettings,
   Skill,
   Tag,
-  TagGroup,
+  ProjectField,
+  Team,
+  Role,
+  ApprovalPolicy,
   AbsenceType,
 } from '@/types';
 import { buildClosureIndex } from '@/utils/siteClosure';
 import type { ClosureIndex } from '@/utils/siteClosure';
 import { indexAbsenceTypes } from '@/utils/recurringVacation';
+import { can } from '@/utils/permissions';
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
 
 // =============================================================================
@@ -63,7 +67,22 @@ interface AppState {
   instanceSettings: InstanceSettings | null;
   skills: Skill[];
   tags: Tag[];
-  tagGroups: TagGroup[];
+  /** Project field definitions with their items, in display order */
+  projectFields: ProjectField[];
+  /** Teams of every site, including inactive ones */
+  teams: Team[];
+  /**
+   * Roles with their matrices and user counts (tenant configuration). Loaded
+   * on first use by hooks/useRoles, refreshed by the `roles` WS slice; empty
+   * until then.
+   */
+  roles: Role[];
+  /**
+   * Who approves each own-booking action (tenant configuration). Loaded on
+   * first use by hooks/useApprovalPolicies (the pending badge's tooltip),
+   * refreshed by the `approvals` WS slice once loaded; empty until then.
+   */
+  approvalPolicies: ApprovalPolicy[];
   /** Tenant-wide absence categories, including inactive ones */
   absenceTypes: AbsenceType[];
 
@@ -101,7 +120,10 @@ interface AppState {
   setInstanceSettings: (settings: InstanceSettings | null) => void;
   setSkills: (skills: Skill[]) => void;
   setTags: (tags: Tag[]) => void;
-  setTagGroups: (tagGroups: TagGroup[]) => void;
+  setProjectFields: (projectFields: ProjectField[]) => void;
+  setTeams: (teams: Team[]) => void;
+  setRoles: (roles: Role[]) => void;
+  setApprovalPolicies: (approvalPolicies: ApprovalPolicy[]) => void;
   setAbsenceTypes: (absenceTypes: AbsenceType[]) => void;
 
   // ---------------------------------------------
@@ -155,7 +177,10 @@ const initialState = {
   instanceSettings: null as InstanceSettings | null,
   skills: [] as Skill[],
   tags: [] as Tag[],
-  tagGroups: [] as TagGroup[],
+  projectFields: [] as ProjectField[],
+  teams: [] as Team[],
+  roles: [] as Role[],
+  approvalPolicies: [] as ApprovalPolicy[],
   absenceTypes: [] as AbsenceType[],
 
   // Selections
@@ -211,7 +236,13 @@ export const useAppStore = create<AppState>()(
 
       setTags: (tags) => set({ tags }),
 
-      setTagGroups: (tagGroups) => set({ tagGroups }),
+      setProjectFields: (projectFields) => set({ projectFields }),
+
+      setTeams: (teams) => set({ teams }),
+
+      setRoles: (roles) => set({ roles }),
+
+      setApprovalPolicies: (approvalPolicies) => set({ approvalPolicies }),
 
       setAbsenceTypes: (absenceTypes) => set({ absenceTypes }),
 
@@ -362,6 +393,40 @@ export const selectStaffSiteIds = (state: AppState): Map<number, Set<number>> =>
 };
 
 /**
+ * Teams of every staff member across all their sites, keyed by staff id: the
+ * union of `team_ids` over the user's per-site rows. Memoised on the `staff`
+ * array like {@link selectStaffSiteIds}.
+ */
+let staffTeamIdsCache: { staff: Staff[]; map: Map<number, Set<number>> } | null = null;
+export const selectStaffTeamIds = (state: AppState): Map<number, Set<number>> => {
+  if (staffTeamIdsCache && staffTeamIdsCache.staff === state.staff) {
+    return staffTeamIdsCache.map;
+  }
+  const map = new Map<number, Set<number>>();
+  for (const row of state.staff) {
+    let teams = map.get(row.id);
+    if (!teams) {
+      teams = new Set();
+      map.set(row.id, teams);
+    }
+    for (const teamId of row.team_ids ?? []) teams.add(teamId);
+  }
+  staffTeamIdsCache = { staff: state.staff, map };
+  return map;
+};
+
+/** Team id → site id. Memoised on the `teams` array. */
+let teamSiteByIdCache: { teams: Team[]; map: Map<number, number> } | null = null;
+export const selectTeamSiteById = (state: AppState): Map<number, number> => {
+  if (teamSiteByIdCache && teamSiteByIdCache.teams === state.teams) {
+    return teamSiteByIdCache.map;
+  }
+  const map = new Map(state.teams.map((t) => [t.id, t.site_id]));
+  teamSiteByIdCache = { teams: state.teams, map };
+  return map;
+};
+
+/**
  * Absence types keyed by id. Memoised on the `absenceTypes` array, so every
  * assignment bar, resource card and staff row shares one Map instead of
  * rebuilding it per render.
@@ -377,8 +442,8 @@ export const selectAbsenceTypesById = (state: AppState): AbsenceTypesById => {
 };
 
 /**
- * Check if user can manage resources (admin or superuser)
+ * Whether the signed-in user may add and edit other people's absences
+ * (`absences.manage_others`): the absence dialog's staff picker.
  */
-export const selectCanManageResources = (state: AppState): boolean => {
-  return state.currentUser?.role === 'admin' || state.currentUser?.role === 'superuser';
-};
+export const selectCanManageOthersAbsences = (state: AppState): boolean =>
+  can(state.currentUser, 'absences.manage_others');

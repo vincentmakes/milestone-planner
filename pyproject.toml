@@ -33,8 +33,9 @@ relative_files = true
 # A floor just under the measured total, raised whenever a PR lifts it and
 # never lowered. pytest-cov picks it up when --cov-fail-under is not passed, so
 # `pytest --cov=app` fails below it locally and in CI.
-# Set from the CI total (87.4 % on 2026-10-16, Python 3.11), not a local run.
-fail_under = 88
+# Set from the CI total (87.4 % on 2026-10-16, Python 3.11); raised to 90 with
+# 1.13.0 from a local run (91 %, Python 3.13), not a CI total.
+fail_under = 91
 show_missing = true
 skip_covered = true
 

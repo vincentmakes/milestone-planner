@@ -53,6 +53,13 @@ export interface ServerMessage {
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+/** The payload of a per-user push (`approval:changed`): a hint, refetch for the state. */
+export interface UserEventPayload {
+  id?: number;
+  action?: string;
+  [key: string]: unknown;
+}
+
 interface UseWebSocketOptions {
   /** Called when online users list changes */
   onPresenceChange?: (users: PresenceUser[]) => void;
@@ -60,6 +67,8 @@ interface UseWebSocketOptions {
   onChangeReceived?: (change: ChangePayload) => void;
   /** Called when a notification addressed to this user arrives */
   onNotificationReceived?: (notification: AppNotification) => void;
+  /** Called when an approval request of or for this user changed (`approval:changed`) */
+  onApprovalChanged?: (payload: UserEventPayload) => void;
   /**
    * Called when the server closed the socket because the session may not be
    * valid any more: 4001 (no / invalid / expired / revoked session) or 4003
@@ -141,6 +150,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     onPresenceChange, 
     onChangeReceived,
     onNotificationReceived,
+    onApprovalChanged,
     onSessionInvalid,
     autoConnect = true,
   } = options;
@@ -172,6 +182,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const onPresenceChangeRef = useRef(onPresenceChange);
   const onChangeReceivedRef = useRef(onChangeReceived);
   const onNotificationReceivedRef = useRef(onNotificationReceived);
+  const onApprovalChangedRef = useRef(onApprovalChanged);
   const onSessionInvalidRef = useRef(onSessionInvalid);
   
   // Keep refs updated
@@ -186,6 +197,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   useEffect(() => {
     onNotificationReceivedRef.current = onNotificationReceived;
   }, [onNotificationReceived]);
+
+  useEffect(() => {
+    onApprovalChangedRef.current = onApprovalChanged;
+  }, [onApprovalChanged]);
 
   useEffect(() => {
     onSessionInvalidRef.current = onSessionInvalid;
@@ -257,6 +272,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           // NOT handled by the default branch below, which only recognises
           // "change:*" -- without this case the push is silently dropped.
           onNotificationReceivedRef.current?.(message.payload as AppNotification);
+          break;
+        }
+
+        // Per-user push, like notification:new: not "change:*", so the
+        // default branch would drop it.
+        case 'approval:changed': {
+          onApprovalChangedRef.current?.((message.payload ?? {}) as UserEventPayload);
           break;
         }
 

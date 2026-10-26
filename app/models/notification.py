@@ -31,7 +31,9 @@ class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('assigned', 'comment', 'mention', 'status_change')",
+            "type IN ('assigned', 'comment', 'mention', 'status_change', "
+            "'approval_requested', 'approval_decided', "
+            "'assignment_changed', 'project_changed')",
             name="notifications_type_check",
         ),
     )
@@ -51,7 +53,10 @@ class Notification(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    # Nullable so a future non-card notification fits without a schema change.
+    # 'phase' / 'subphase' / 'project' for comment and card notifications
+    # (a project thread's comments carry 'project'), 'approval_request' for
+    # approval notifications, 'project' / 'phase' / 'subphase' for change
+    # notifications (NULL for a deleted project). Nullable otherwise.
     entity_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     project_id: Mapped[int | None] = mapped_column(

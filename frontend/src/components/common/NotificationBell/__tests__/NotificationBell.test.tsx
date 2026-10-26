@@ -1,8 +1,9 @@
 /**
  * Notification bell: loads the inbox on mount and on window focus, merges
  * browser-derived due reminders, opens the card on click (marking a server
- * notification read, dismissing a derived one locally), mark-all, and closes
- * on outside click (a popover, not a modal).
+ * notification read, dismissing a derived one locally) — or the project on
+ * the Gantt, switching site, for a project or when the board is out of
+ * reach —, mark-all, and closes on outside click (a popover, not a modal).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -14,14 +15,16 @@ import {
   markNotificationRead,
 } from '@/api/endpoints/notifications';
 import { dismissDerivedNotification, useDerivedDueNotifications } from '@/hooks/useDerivedDueNotifications';
+import { selectSite } from '@/hooks/useDataLoader';
 import { useAppStore } from '@/stores/appStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
+import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import { makeUser } from '@/test/factories';
+import { makePhase, makeProject, makeSite, makeSubphase, makeUser } from '@/test/factories';
 import type { AppNotification } from '@/types';
 
 vi.mock('@/api/endpoints/notifications', () => ({
@@ -34,6 +37,11 @@ vi.mock('@/hooks/useDerivedDueNotifications', () => ({
   useDerivedDueNotifications: vi.fn(() => []),
   dismissDerivedNotification: vi.fn(),
 }));
+vi.mock('@/hooks/useDataLoader', () => ({ selectSite: vi.fn() }));
+
+const BASEL = makeSite({ id: 1, name: 'Basel' });
+const BERLIN = makeSite({ id: 2, name: 'Berlin' });
+const NO_KANBAN = ['projects.view'];
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
@@ -72,6 +80,7 @@ beforeEach(() => {
   vi.mocked(markAllNotificationsRead).mockReset().mockResolvedValue({ success: true });
   vi.mocked(useDerivedDueNotifications).mockReset().mockReturnValue([]);
   vi.mocked(dismissDerivedNotification).mockReset();
+  vi.mocked(selectSite).mockReset().mockResolvedValue();
 });
 
 afterEach(async () => {
@@ -171,6 +180,199 @@ describe('NotificationBell', () => {
     expect(useNotificationStore.getState().items[0].read_at).toBeTruthy();
   });
 
+  it('opens the card\'s project on the Gantt when views.kanban is missing', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'viewer', permissions: NO_KANBAN }),
+      sites: [BASEL],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 })],
+    });
+    useViewStore.getState().setCurrentView('work');
+    vi.mocked(getNotifications).mockResolvedValue([note({ type: 'assignment_changed', title: 'Alice moved Feasibility' })]);
+    vi.mocked(getUnreadCount).mockResolvedValue(1);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice moved Feasibility/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+    expect(useUIStore.getState().activeModal).not.toBe('kanbanCard');
+    expect(selectSite).not.toHaveBeenCalled();
+    expect(markNotificationRead).toHaveBeenCalledWith(1);
+  });
+
+  it('opens a project notification on the Gantt, on the current site', async () => {
+    useAppStore.setState({ sites: [BASEL], currentSite: BASEL, projects: [makeProject({ id: 1, site_id: 1 })] });
+    useViewStore.getState().setCurrentView('kanban');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 1, title: 'Alice changed Bioprocess' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice changed Bioprocess/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+    expect(useUIStore.getState().activeModal).toBeNull();
+    expect(selectSite).not.toHaveBeenCalled();
+    expect(useNotificationStore.getState().panelOpen).toBe(false);
+    expect(markNotificationRead).toHaveBeenCalledWith(5);
+  });
+
+  it('opens a comment on a project thread on the Gantt, even without views.kanban', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'viewer', permissions: NO_KANBAN }),
+      sites: [BASEL],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 })],
+    });
+    useViewStore.getState().setCurrentView('work');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'mention', entity_type: 'project', entity_id: 1, title: 'Alice mentioned you on Bioprocess' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice mentioned you on Bioprocess/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+    expect(useUIStore.getState().activeModal).toBeNull();
+    expect(markNotificationRead).toHaveBeenCalledWith(5);
+  });
+
+  it('opens a thread on a parent phase or subphase on the Gantt: a card is a leaf', async () => {
+    const leaf = makeSubphase({ id: 30, children: [] });
+    const parentSub = makeSubphase({ id: 20, children: [leaf] });
+    useAppStore.setState({
+      sites: [BASEL],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1, phases: [makePhase({ id: 10, children: [parentSub] })] })],
+    });
+    useViewStore.getState().setCurrentView('work');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 6, type: 'comment', entity_type: 'phase', entity_id: 10, title: 'Bob commented on Feasibility' }),
+      note({ id: 7, type: 'mention', entity_type: 'subphase', entity_id: 20, title: 'Bob mentioned you on Review' }),
+      note({ id: 8, type: 'comment', entity_type: 'subphase', entity_id: 30, title: 'Bob commented on Leaf' }),
+    ]);
+    await renderBell();
+    for (const name of [/Bob commented on Feasibility/, /Bob mentioned you on Review/]) {
+      useViewStore.getState().setCurrentView('work');
+      fireEvent.click(bell());
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name }));
+      });
+      expect(useViewStore.getState().currentView).toBe('gantt');
+      expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+      expect(useUIStore.getState().activeModal).not.toBe('kanbanCard');
+    }
+    // A leaf subphase is still a card.
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Bob commented on Leaf/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('kanban');
+    expect(useUIStore.getState().activeModal).toBe('kanbanCard');
+  });
+
+  it('switches to the project\'s site when it sits on another visible one', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'user', site_ids: [1, 2] }),
+      sites: [BASEL, BERLIN],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 }), makeProject({ id: 8, site_id: 2, name: 'Trial' })],
+    });
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 8, project_id: 8, title: 'Alice changed Trial' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice changed Trial/ }));
+    });
+    expect(selectSite).toHaveBeenCalledWith(BERLIN);
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(8)).toBe(true);
+  });
+
+  it.each([
+    ['deleted', [] as ReturnType<typeof makeProject>[], [BASEL]],
+    ['archived', [makeProject({ id: 1, site_id: 1, archived: true })], [BASEL]],
+    ['on a site the user cannot see', [makeProject({ id: 1, site_id: 2 })], [BASEL, BERLIN]],
+  ])('flashes when the project is %s, and still marks it read', async (_label, projects, sites) => {
+    // A plain user sees only their own site (1).
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }), sites, currentSite: BASEL, projects });
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 1, title: 'Alice changed Bioprocess' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice changed Bioprocess/ }));
+    });
+    expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'This project is no longer available' });
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(false);
+    expect(selectSite).not.toHaveBeenCalled();
+    expect(markNotificationRead).toHaveBeenCalledWith(5);
+  });
+
+  it('only marks read a notification without a project (a deleted project)', async () => {
+    useViewStore.getState().setCurrentView('work');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 6, type: 'assignment_changed', entity_type: null, entity_id: null, project_id: null, title: 'Alice deleted Trial' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    const row = screen.getByRole('button', { name: /Alice deleted Trial/ });
+    expect(row).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(row);
+    });
+    expect(markNotificationRead).toHaveBeenCalledWith(6);
+    expect(useViewStore.getState().currentView).toBe('work');
+    expect(useUIStore.getState().flashNotice).toBeNull();
+    expect(selectSite).not.toHaveBeenCalled();
+  });
+
+  it('during What-If, blocks a project on another site but opens one on the current site', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'user', site_ids: [1, 2] }),
+      sites: [BASEL, BERLIN],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 }), makeProject({ id: 8, site_id: 2, name: 'Trial' })],
+    });
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 8, project_id: 8, title: 'Alice changed Trial' }),
+      note({ id: 6, type: 'project_changed', entity_type: 'project', entity_id: 1, project_id: 1, title: 'Alice changed Bioprocess' }),
+    ]);
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    await renderBell();
+    fireEvent.click(bell());
+
+    const elsewhere = screen.getByRole('button', { name: /Alice changed Trial/ });
+    expect(elsewhere).toBeDisabled();
+    expect(elsewhere).toHaveAttribute(
+      'title',
+      whatIfUnavailableMessage('Opening a project on another site from a notification')
+    );
+    await act(async () => {
+      fireEvent.click(elsewhere);
+    });
+    expect(selectSite).not.toHaveBeenCalled();
+    expect(markNotificationRead).not.toHaveBeenCalled();
+
+    const here = screen.getByRole('button', { name: /Alice changed Bioprocess/ });
+    expect(here).toBeEnabled();
+    expect(here).not.toHaveAttribute('title');
+    await act(async () => {
+      fireEvent.click(here);
+    });
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+    expect(markNotificationRead).toHaveBeenCalledWith(6);
+  });
+
   it('refreshes when marking read fails, and skips already-read items', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(getNotifications).mockResolvedValue([note(), note({ id: 2, title: 'Old', read_at: minutesAgo(1), project_id: null })]);
@@ -231,6 +433,78 @@ describe('NotificationBell', () => {
     expect(markNotificationRead).toHaveBeenCalledWith(7);
     expect(useNotificationStore.getState().panelOpen).toBe(false);
     expect(useViewStore.getState().currentView).toBe('gantt');
+  });
+
+  it.each([
+    ['approval_requested', 'approval_request', 'approvals', 'Bob asks to join Feasibility'],
+    ['approval_decided', 'approval_request', 'requests', 'Your booking on Feasibility was approved by Alice'],
+  ] as const)('opens My Work on the right tab for %s', async (type, entityType, tab, title) => {
+    vi.mocked(getNotifications).mockResolvedValue([note({ id: 9, type, entity_type: entityType, entity_id: 31, title })]);
+    vi.mocked(getUnreadCount).mockResolvedValue(1);
+    // Even a role without views.kanban: My Work is always available.
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
+    await renderBell();
+    fireEvent.click(bell());
+    const item = screen.getByRole('button', { name: new RegExp(title) });
+    await act(async () => {
+      fireEvent.click(item);
+    });
+    expect(useViewStore.getState().currentView).toBe('work');
+    expect(useWorkStore.getState().activeTab).toBe(tab);
+    expect(useUIStore.getState().activeModal).toBeNull();
+    expect(markNotificationRead).toHaveBeenCalledWith(9);
+  });
+
+  it('gives each new type its own icon', async () => {
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 1, title: 'A comment' }),
+      note({ id: 2, type: 'approval_requested', title: 'A request' }),
+      note({ id: 3, type: 'approval_decided', title: 'A decision' }),
+      note({ id: 5, type: 'assignment_changed', title: 'A booking change' }),
+      note({ id: 6, type: 'project_changed', title: 'A project change' }),
+      note({ id: 7, type: 'assigned', title: 'An assignment' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    const titles = ['A comment', 'A request', 'A decision', 'A booking change', 'A project change', 'An assignment'];
+    const icons = titles.map((t) =>
+      screen.getByRole('button', { name: new RegExp(t) }).querySelector('svg path')?.getAttribute('d')
+    );
+    expect(new Set(icons).size).toBe(titles.length);
+    const iconClass = (t: string) =>
+      screen.getByRole('button', { name: new RegExp(t) }).querySelector('span')?.className ?? '';
+    expect(iconClass('A booking change')).toMatch(/assignmentChanged/);
+    expect(iconClass('A project change')).toMatch(/projectChanged/);
+  });
+
+  it('opens the card of a decision that names one', async () => {
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 9, type: 'approval_decided', entity_type: 'subphase', entity_id: 20, title: 'Your booking was approved' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Your booking was approved/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('kanban');
+    expect(useUIStore.getState().modalContext).toMatchObject({ cardEntityType: 'subphase', cardEntityId: 20 });
+  });
+
+  it('does not open My Work while What-If is active', async () => {
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 9, type: 'approval_requested', entity_type: 'approval_request', entity_id: 3, title: 'Alice asks to join' }),
+    ]);
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    await renderBell();
+    fireEvent.click(bell());
+    const item = screen.getByRole('button', { name: /Alice asks to join/ });
+    expect(item).toBeDisabled();
+    expect(item).toHaveAttribute('title', whatIfUnavailableMessage('Opening My Work from a notification'));
+    await act(async () => {
+      fireEvent.click(item);
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(markNotificationRead).not.toHaveBeenCalled();
   });
 
   it('shows no What-If note outside What-If', async () => {

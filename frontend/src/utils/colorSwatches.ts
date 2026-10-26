@@ -38,3 +38,7 @@ export const SKILL_COLOR_SWATCHES: ColorSwatch[] = [
   { value: '#6366f1', label: 'Indigo' },
 ];
 export const DEFAULT_SKILL_COLOR = SKILL_COLOR_SWATCHES[0].value;
+
+/** Colours offered for a team (Settings → Teams): the skill palette. */
+export const TEAM_COLOR_SWATCHES = SKILL_COLOR_SWATCHES;
+export const DEFAULT_TEAM_COLOR = TEAM_COLOR_SWATCHES[0].value;

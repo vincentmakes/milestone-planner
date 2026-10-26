@@ -1,17 +1,18 @@
 """
-Follow-ups from the review of the tags feature (tag groups, site-scoped tags).
+Follow-ups from the review of the tags feature (site-scoped tags; the tag
+groups of that release became project fields in 2.0.0).
 
 - PUT/POST /tags: an omitted ``all_sites`` with a non-empty ``site_ids`` means
   ``all_sites = false`` (was silently dropped on a global tag).
 - Commit-time IntegrityErrors (concurrent duplicate name) are a 400 with a
   rollback, not an opaque 500.
-- GET /tags joins tag_groups once (contains_eager on the explicit join).
+- GET /tags reads one table (no group join since 2.0.0).
 - validate_project_tags loads Tag.sites explicitly.
 - Bounded id lists in the request schemas.
-- DELETE /tags/{id}, duplicate group rename, group + sites change in one PUT.
+- DELETE /tags/{id}.
 - A project's PM may set tag_ids; a plain non-PM user may not.
-- The tenant auto-migration step for tag groups (condition, order, rollback),
-  and the step dropping the pre-release tag_groups.colors_projects column.
+- The tenant auto-migration step for site-scoped tags (condition, order,
+  rollback); it no longer creates tag_groups.
 
 Mock-based, same style as tests/test_tags_groups.py.
 """
@@ -22,13 +23,12 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from app.schemas.tag import TagCreate, TagGroupReorder, TagReorder, TagUpdate
+from app.schemas.tag import TagCreate, TagReorder, TagUpdate
 from app.services import tenant_provisioner as tp
 from app.services.tag_rules import validate_project_tags
 from tests.conftest import FakeUser
 from tests.test_tags_groups import (
     STAMP,
-    _group,
     _scalar_result,
     _scalars_result,
     _site,
@@ -189,41 +189,13 @@ async def test_tag_update_race_on_the_name_is_a_400(authed_client, mock_db_sessi
     mock_db_session.rollback.assert_awaited()
 
 
-@pytest.mark.asyncio
-async def test_group_create_race_on_the_name_is_a_400(authed_client, mock_db_session):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    mock_db_session.execute.side_effect = [_scalar_result(None), _scalar_result(None)]
-    mock_db_session.commit.side_effect = _integrity_error("tag_groups_name_key")
-
-    response = await client.post("/api/tag-groups", json={"name": "Project type"})
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "A tag group with this name already exists"
-    mock_db_session.rollback.assert_awaited()
-
-
-@pytest.mark.asyncio
-async def test_group_update_race_on_the_name_is_a_400(authed_client, mock_db_session):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    mock_db_session.execute.side_effect = [_scalar_result(_group(5)), _scalar_result(None)]
-    mock_db_session.commit.side_effect = _integrity_error("tag_groups_name_key")
-
-    response = await client.put("/api/tag-groups/5", json={"name": "Taken meanwhile"})
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "A tag group with this name already exists"
-    mock_db_session.rollback.assert_awaited()
-
-
 # ---------------------------------------------------------
-# Finding 5: GET /tags joins tag_groups once
+# Finding 5: GET /tags reads one table
 # ---------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_tag_list_joins_tag_groups_once(authed_client, mock_db_session):
+async def test_tag_list_joins_nothing(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "user"))
     mock_db_session.execute.return_value = _scalars_result([])
@@ -232,8 +204,8 @@ async def test_tag_list_joins_tag_groups_once(authed_client, mock_db_session):
 
     assert response.status_code == 200
     sql = _sql(mock_db_session)[0]
-    assert sql.count("JOIN tag_groups") == 1
-    assert "tag_groups_1" not in sql
+    assert "JOIN" not in sql
+    assert "tag_groups" not in sql
 
 
 # ---------------------------------------------------------
@@ -268,9 +240,8 @@ async def test_validate_project_tags_selectin_loads_the_sites():
         (TagCreate, {"name": "X", "site_ids": list(range(201))}),
         (TagUpdate, {"site_ids": list(range(201))}),
         (TagReorder, {"tag_order": list(range(501))}),
-        (TagGroupReorder, {"group_order": list(range(501))}),
     ],
-    ids=["create-sites", "update-sites", "tag-reorder", "group-reorder"],
+    ids=["create-sites", "update-sites", "tag-reorder"],
 )
 def test_id_lists_are_bounded(model, kwargs):
     with pytest.raises(ValidationError):
@@ -281,7 +252,6 @@ def test_id_lists_at_the_bound_are_accepted():
     assert len(TagCreate(name="X", site_ids=list(range(200))).site_ids or []) == 200
     assert len(TagUpdate(site_ids=list(range(200))).site_ids or []) == 200
     assert len(TagReorder(tag_order=list(range(500))).tag_order) == 500
-    assert len(TagGroupReorder(group_order=list(range(500))).group_order) == 500
     assert TagUpdate().site_ids is None
 
 
@@ -314,88 +284,6 @@ async def test_superuser_cannot_delete_a_tag(authed_client, mock_db_session):
     assert response.status_code == 403
     mock_db_session.delete.assert_not_awaited()
     mock_db_session.commit.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_renaming_a_group_to_a_taken_name_is_a_400(authed_client, mock_db_session):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    group = _group(5, "Project type")
-    mock_db_session.execute.side_effect = [_scalar_result(group), _scalar_result(9)]
-
-    response = await client.put("/api/tag-groups/5", json={"name": " Topics "})
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "A tag group with this name already exists"
-    assert group.name == "Project type"
-    assert "tag_groups.id != 5" in _sql(mock_db_session)[1]
-    mock_db_session.commit.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_group_and_sites_change_runs_the_group_check_first(authed_client, mock_db_session):
-    """Group peers are checked before the site narrowing; a group 409 stops there."""
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    tag = _tag(1, all_sites=True)
-    mock_db_session.execute.side_effect = [
-        _scalar_result(tag),
-        _scalar_result(_group(5, single_select=True)),
-        _scalar_result(1),  # one project holds another tag of the group
-    ]
-
-    response = await client.put("/api/tags/1", json={"group_id": 5, "site_ids": [1]})
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "1 project already has another tag from this group"
-    assert mock_db_session.execute.await_count == 3  # no site lookup / count
-    assert (tag.group_id, tag.all_sites) == (None, True)
-
-
-@pytest.mark.asyncio
-async def test_group_and_sites_change_then_runs_the_site_check(authed_client, mock_db_session):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    tag = _tag(1, all_sites=True)
-    mock_db_session.execute.side_effect = [
-        _scalar_result(tag),
-        _scalar_result(_group(5, single_select=True)),
-        _scalar_result(0),  # no group peers
-        _scalars_result([_site(1)]),
-        _scalar_result(3),  # projects at other sites use the tag
-    ]
-
-    response = await client.put("/api/tags/1", json={"group_id": 5, "site_ids": [1]})
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "3 projects at other sites use this tag"
-    sql = _sql(mock_db_session)
-    assert "tags_1.group_id = 5" in sql[2]  # group peer count
-    assert "projects.site_id NOT IN (1)" in sql[4]  # then the site count
-    assert (tag.group_id, tag.all_sites) == (None, True)
-    mock_db_session.commit.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_group_and_sites_change_applies_both(authed_client, mock_db_session):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    tag = _tag(1, all_sites=True)
-    mock_db_session.execute.side_effect = [
-        _scalar_result(tag),
-        _scalar_result(_group(5, single_select=True)),
-        _scalar_result(0),
-        _scalars_result([_site(1)]),
-        _scalar_result(0),
-        _scalar_result(4),  # max sort_order in the group
-    ]
-
-    response = await client.put("/api/tags/1", json={"group_id": 5, "site_ids": [1]})
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert (body["group_id"], body["all_sites"], body["site_ids"]) == (5, False, [1])
-    assert tag.sort_order == 5
 
 
 # ---------------------------------------------------------
@@ -447,30 +335,24 @@ async def test_non_pm_user_cannot_set_project_tags(authed_client, mock_db_sessio
 
 
 # ---------------------------------------------------------
-# tenant_manager auto-migration: the tag-groups step
+# tenant_manager auto-migration: the site-scoped tags step
 # ---------------------------------------------------------
 
 TAG_STEP = [
-    tp.TAG_GROUPS_TABLE_SQL,
     *tp.TAGS_UPGRADE_STATEMENTS,
     tp.TAG_SITES_TABLE_SQL,
-    tp.TAGS_GROUP_INDEX_SQL,
     tp.TAG_SITES_SITE_INDEX_SQL,
 ]
-DROP_COLORS_STEP = list(tp.TAG_GROUPS_DROP_COLORS_STATEMENTS)
 TABLES_CHECK = "CHECK tag tables"
 COLUMNS_CHECK = "CHECK tag columns"
-COLORS_CHECK = "CHECK colors_projects column"
 
 
-def _migration_conn(
-    tables=(), columns=(), fail_on: str | None = None, has_colors_column: bool = False
-):
+def _migration_conn(tables=(), columns=(), fail_on: str | None = None):
     """
-    A connection on which only the tag-groups step's and the colors_projects
-    drop step's own SQL succeeds; every other auto-migration step fails (and is
-    contained by its own try/except). ``log`` records those steps' statements
-    interleaved with COMMIT / ROLLBACK.
+    A connection on which only the site-scoped tags step's own SQL succeeds;
+    every other auto-migration step fails (and is contained by its own
+    try/except). ``log`` records the step's statements interleaved with
+    COMMIT / ROLLBACK.
     """
     log: list[str] = []
 
@@ -481,22 +363,19 @@ def _migration_conn(
 
     async def execute(clause, *args, **kwargs):
         sql = str(clause)
-        if "'tag_groups', 'tag_sites'" in sql:
+        if "table_name IN ('tag_sites')" in sql:
             log.append(TABLES_CHECK)
             return rows(tables)
-        if "'group_id', 'all_sites', 'sort_order'" in sql:
+        if "column_name IN ('all_sites', 'sort_order')" in sql:
             log.append(COLUMNS_CHECK)
             return rows(columns)
-        if "column_name = 'colors_projects'" in sql:
-            log.append(COLORS_CHECK)
-            result = MagicMock()
-            result.fetchone.return_value = ("colors_projects",) if has_colors_column else None
-            return result
-        if sql in TAG_STEP or sql in DROP_COLORS_STEP:
+        if sql in TAG_STEP:
             log.append(sql)
             if sql == fail_on:
                 raise RuntimeError("statement failed")
             return MagicMock()
+        if "tag_groups" in sql and "CREATE TABLE" in sql:
+            log.append(sql)
         raise RuntimeError("another step")
 
     conn = MagicMock()
@@ -526,24 +405,24 @@ def _tag_step(log: list[str], first: str = TABLES_CHECK) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_tag_groups_auto_migration_runs_in_order_on_a_legacy_tenant():
+async def test_tag_sites_auto_migration_runs_in_order_on_a_legacy_tenant():
     conn, log = _migration_conn(tables=(), columns=())
 
     await _run_auto_migrations(conn)
 
     assert _tag_step(log) == [TABLES_CHECK, COLUMNS_CHECK, *TAG_STEP, "COMMIT"]
-    # tag_groups -> ALTER tags -> tag_sites -> indexes
-    assert "CREATE TABLE IF NOT EXISTS tag_groups" in TAG_STEP[0]
-    assert all("ALTER TABLE tags ADD COLUMN" in s for s in TAG_STEP[1:4])
-    assert "CREATE TABLE IF NOT EXISTS tag_sites" in TAG_STEP[4]
-    assert all("INDEX" in s for s in TAG_STEP[5:])
+    # ALTER tags (group_id only while tag_groups exists) -> tag_sites -> index
+    assert all("ALTER TABLE tags ADD COLUMN" in s for s in TAG_STEP[0:3])
+    assert "to_regclass('public.tag_groups') IS NOT NULL" in TAG_STEP[0]
+    assert "CREATE TABLE IF NOT EXISTS tag_sites" in TAG_STEP[3]
+    assert "INDEX" in TAG_STEP[4]
+    # Tag groups are project fields since 2.0.0: never created again.
+    assert not any("tag_groups (" in entry for entry in log)
 
 
 @pytest.mark.asyncio
-async def test_tag_groups_auto_migration_runs_when_one_column_is_missing():
-    conn, log = _migration_conn(
-        tables=("tag_groups", "tag_sites"), columns=("group_id", "all_sites")
-    )
+async def test_tag_sites_auto_migration_runs_when_one_column_is_missing():
+    conn, log = _migration_conn(tables=("tag_sites",), columns=("all_sites",))
 
     await _run_auto_migrations(conn)
 
@@ -551,10 +430,9 @@ async def test_tag_groups_auto_migration_runs_when_one_column_is_missing():
 
 
 @pytest.mark.asyncio
-async def test_tag_groups_auto_migration_skips_an_up_to_date_tenant():
-    conn, log = _migration_conn(
-        tables=("tag_groups", "tag_sites"), columns=("group_id", "all_sites", "sort_order")
-    )
+async def test_tag_sites_auto_migration_skips_an_up_to_date_tenant():
+    # A converted 2.0.0 tenant: no tag_groups, no tags.group_id.
+    conn, log = _migration_conn(tables=("tag_sites",), columns=("all_sites", "sort_order"))
 
     await _run_auto_migrations(conn)
 
@@ -564,8 +442,8 @@ async def test_tag_groups_auto_migration_skips_an_up_to_date_tenant():
 
 
 @pytest.mark.asyncio
-async def test_tag_groups_auto_migration_rolls_back_quietly_on_failure():
-    failing = tp.TAGS_UPGRADE_STATEMENTS[0]
+async def test_tag_sites_auto_migration_rolls_back_quietly_on_failure():
+    failing = tp.TAGS_UPGRADE_STATEMENTS[1]
     conn, log = _migration_conn(fail_on=failing)
 
     await _run_auto_migrations(conn)  # never raises
@@ -573,7 +451,7 @@ async def test_tag_groups_auto_migration_rolls_back_quietly_on_failure():
     assert _tag_step(log) == [
         TABLES_CHECK,
         COLUMNS_CHECK,
-        tp.TAG_GROUPS_TABLE_SQL,
+        tp.TAGS_UPGRADE_STATEMENTS[0],
         failing,
         "ROLLBACK",
     ]
@@ -582,52 +460,8 @@ async def test_tag_groups_auto_migration_rolls_back_quietly_on_failure():
     assert conn.execute.await_count > len(_tag_step(log))
 
 
-# ---------------------------------------------------------
-# tenant_manager auto-migration: dropping tag_groups.colors_projects
-# ---------------------------------------------------------
-
-UP_TO_DATE_TAGS = {
-    "tables": ("tag_groups", "tag_sites"),
-    "columns": ("group_id", "all_sites", "sort_order"),
-}
-
-
-@pytest.mark.asyncio
-async def test_colors_projects_is_dropped_when_the_column_exists():
-    conn, log = _migration_conn(**UP_TO_DATE_TAGS, has_colors_column=True)
-
-    await _run_auto_migrations(conn)
-
-    assert _tag_step(log, COLORS_CHECK) == [COLORS_CHECK, *DROP_COLORS_STEP, "COMMIT"]
-    # Index first, then the column; both guarded so a re-run is a no-op.
-    assert DROP_COLORS_STEP == [
-        "DROP INDEX IF EXISTS idx_tag_groups_colors_projects",
-        "ALTER TABLE tag_groups DROP COLUMN IF EXISTS colors_projects",
-    ]
-    # Runs after the tag-groups step.
-    assert log.index(TABLES_CHECK) < log.index(COLORS_CHECK)
-
-
-@pytest.mark.asyncio
-async def test_colors_projects_drop_is_skipped_without_the_column():
-    conn, log = _migration_conn(**UP_TO_DATE_TAGS, has_colors_column=False)
-
-    await _run_auto_migrations(conn)
-
-    assert COLORS_CHECK in log
-    assert not any(entry in DROP_COLORS_STEP for entry in log)
-    conn.commit.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_colors_projects_drop_rolls_back_quietly_on_failure():
-    failing = DROP_COLORS_STEP[0]
-    conn, log = _migration_conn(**UP_TO_DATE_TAGS, fail_on=failing, has_colors_column=True)
-
-    await _run_auto_migrations(conn)  # never raises
-
-    assert _tag_step(log, COLORS_CHECK) == [COLORS_CHECK, failing, "ROLLBACK"]
-    assert DROP_COLORS_STEP[1] not in log
-    assert "COMMIT" not in log
-    # Later steps still ran.
-    assert conn.execute.await_count > len(_tag_step(log, COLORS_CHECK))
+def test_the_colors_projects_step_is_gone():
+    """Dropping tag_groups (2.0.0) drops the pre-release colors_projects column with it."""
+    assert not hasattr(tp, "TAG_GROUPS_DROP_COLORS_STATEMENTS")
+    assert not hasattr(tp, "TAG_GROUPS_TABLE_SQL")
+    assert not hasattr(tp, "TAGS_GROUP_INDEX_SQL")

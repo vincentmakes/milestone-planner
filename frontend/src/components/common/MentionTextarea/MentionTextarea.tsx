@@ -41,6 +41,10 @@ interface MentionTextareaProps {
   placeholder?: string;
   disabled?: boolean;
   'aria-label'?: string;
+  /** id of the textarea, so a visible `<label htmlFor>` can name and focus it */
+  id?: string;
+  /** Heading of the people on the thread's target ("On this project" on a project thread) */
+  targetGroupLabel?: string;
 }
 
 /** Flip the list above the field when it would otherwise run off-screen. */
@@ -75,6 +79,8 @@ export function MentionTextarea({
   placeholder,
   disabled,
   'aria-label': ariaLabel,
+  id,
+  targetGroupLabel = 'On this card',
 }: MentionTextareaProps) {
   const listId = useId();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -320,6 +326,7 @@ export function MentionTextarea({
 
       <textarea
         ref={textareaRef}
+        id={id}
         className={styles.textarea}
         value={value}
         rows={rows}
@@ -361,7 +368,7 @@ export function MentionTextarea({
                   or highlightIndex would drift whenever a group is non-empty. */}
               {(i === 0 || filtered[i - 1].onCard !== candidate.onCard) && (
                 <span className={styles.groupHeading} role="presentation">
-                  {candidate.onCard ? 'On this card' : 'Everyone else'}
+                  {candidate.onCard ? targetGroupLabel : 'Everyone else'}
                 </span>
               )}
               <span

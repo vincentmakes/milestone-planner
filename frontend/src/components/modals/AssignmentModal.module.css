@@ -6,6 +6,16 @@
   gap: 1rem;
 }
 
+/*
+ * Create mode: room for the open resource picker under its trigger. The panel
+ * (search box + a 14rem list, ~16rem) opens ~8rem down the form, so 26rem
+ * keeps it whole inside the dialog body without scrolling it. On a short
+ * window the Modal's max-height still wins and the body scrolls.
+ */
+.formTall {
+  min-height: 26rem;
+}
+
 .formGroup {
   display: flex;
   flex-direction: column;
@@ -18,6 +28,18 @@
   /* minmax(0, …): a track must be able to shrink below a date input's intrinsic width */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
+}
+
+/* A field without a shared Input (the comment's MentionTextarea): the Input's label and hint look */
+.fieldLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.fieldHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
 }
 
 /* A grid cell wrapping a shared Input: lets a date field shrink below its intrinsic width */
@@ -93,4 +115,18 @@
 
 .infoBox p {
   margin: 0;
+}
+
+/* The pin in front of the linked-dates note */
+.infoLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The edited booking's comment thread, below the form (outside it) */
+.comments {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
 }

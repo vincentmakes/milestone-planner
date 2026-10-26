@@ -102,3 +102,10 @@
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
 }
+
+.testNote {
+  margin: -0.5rem 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-align: right;
+}

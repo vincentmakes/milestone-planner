@@ -15,6 +15,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
@@ -35,9 +36,9 @@ import {
 import { buildICS, downloadICS, clampText } from '@/utils/ics';
 import type { ParsedICSEvent } from '@/utils/ics';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
+import { teamIdsWithinSites } from '@/utils/teams';
 import type { CalendarImportResult, CompanyEvent, Site } from '@/types';
 import {
-  useManageableSites,
   pickDefaultSiteId,
   refreshCurrentSiteEvents,
   formatCalendarDate,
@@ -46,20 +47,14 @@ import {
   nameKey,
 } from './calendarUtils';
 import { SiteChecklist } from './SiteChecklist';
+import { TeamScope } from './TeamScope';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
-import {
-  EditIcon,
-  TrashIcon,
-  PlusIcon,
-  DownloadIcon,
-  UploadIcon,
-  BackIcon,
-  UnlinkIcon,
-} from './PanelIcons';
+import { Icon, EditIcon, TrashIcon, PlusIcon, DownloadIcon, UploadIcon, BackIcon, UnlinkIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './CalendarPanel.module.css';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
 
 /** Sites an event is linked to (older servers only send site_id) */
 function eventSiteIds(event: CompanyEvent): number[] {
@@ -82,7 +77,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const currentSite = useAppStore((s) => s.currentSite);
   const sites = useAppStore((s) => s.sites);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
-  const manageableSites = useManageableSites();
+  const manageableSites = useVisibleSites();
 
   const [siteFilter, setSiteFilter] = useState<number | 'all'>(
     () => pickDefaultSiteId(manageableSites, currentSite?.id, settingsIntent?.siteId) ?? 'all'
@@ -103,14 +98,16 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const deleteGuard = useSubmitGuard();
 
   const siteNames = useMemo(() => new Map(sites.map((s) => [s.id, s.name])), [sites]);
+  const teams = useAppStore((s) => s.teams);
+  const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
   const manageableIds = useMemo(() => manageableSites.map((s) => s.id), [manageableSites]);
-  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  const canSeeAllSites = useAppStore((s) => s.currentUser?.can_see_all_sites ?? false);
 
-  /** Linked sites the user can't manage (always none for admins) */
+  /** Linked sites the user can't see (always none with sites.view_all) */
   const foreignSiteIds = useCallback(
     (event: CompanyEvent) =>
-      isAdmin ? [] : eventSiteIds(event).filter((id) => !manageableIds.includes(id)),
-    [isAdmin, manageableIds]
+      canSeeAllSites ? [] : eventSiteIds(event).filter((id) => !manageableIds.includes(id)),
+    [canSeeAllSites, manageableIds]
   );
 
   // Events of every site the user manages, merged (an event spans sites)
@@ -326,7 +323,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
     return (
       <div className={styles.container}>
         <div className={styles.importHeader}>
-          <Button variant="ghost" icon={<BackIcon />} onClick={() => setView('list')}>
+          <Button variant="ghost" icon={<Icon icon={BackIcon} />} onClick={() => setView('list')}>
             Back to events
           </Button>
         </div>
@@ -400,16 +397,16 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
           <>
             <Button
               variant="secondary"
-              icon={<DownloadIcon />}
+              icon={<Icon icon={DownloadIcon} />}
               onClick={handleExport}
               disabled={visibleEvents.length === 0}
             >
               Export .ics
             </Button>
-            <Button variant="secondary" icon={<UploadIcon />} onClick={openImport}>
+            <Button variant="secondary" icon={<Icon icon={UploadIcon} />} onClick={openImport}>
               Import .ics
             </Button>
-            <Button icon={<PlusIcon />} onClick={() => setForm({ mode: 'add' })}>
+            <Button icon={<Icon icon={PlusIcon} />} onClick={() => setForm({ mode: 'add' })}>
               Add event
             </Button>
           </>
@@ -455,6 +452,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                 <th>Name</th>
                 <th>Color</th>
                 <th>Sites</th>
+                <th>Teams</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -463,6 +461,9 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                 const isEditing = form?.mode === 'edit' && form.event.id === event.id;
                 const isShared = foreignSiteIds(event).length > 0;
                 const hasEnd = event.end_date && !sameDay(event.end_date, event.date);
+                const teamIds = event.team_ids ?? [];
+                // Unknown ids are skipped; when none is loaded, count them
+                const eventTeams = teamIds.flatMap((id) => teamById.get(id) ?? []);
                 return (
                   <tr key={event.id} className={isEditing ? styles.highlight : undefined}>
                     <td className={styles.dateCell}>{formatCalendarDate(event.date)}</td>
@@ -492,6 +493,32 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                         ))}
                       </div>
                     </td>
+                    <td>
+                      {teamIds.length === 0 ? (
+                        <span className={styles.muted}>Whole site</span>
+                      ) : eventTeams.length === 0 ? (
+                        <span className={styles.muted}>
+                          {teamIds.length} {teamIds.length === 1 ? 'team' : 'teams'}
+                        </span>
+                      ) : (
+                        <div className={styles.chips}>
+                          {eventTeams.map((team) => (
+                            <span
+                              key={team.id}
+                              className={`${styles.chip} ${styles.teamChip}`}
+                              title={`${team.name} · ${siteNames.get(team.site_id) ?? `#${team.site_id}`}`}
+                            >
+                              <span
+                                className={styles.teamDot}
+                                style={team.color ? { backgroundColor: team.color } : undefined}
+                                aria-hidden="true"
+                              />
+                              {team.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className={styles.actionsCell}>
                       {/* Disabled buttons swallow hover, so the tooltip sits on a wrapper */}
                       <span title={isShared ? SHARED_EVENT_TITLE : 'Edit event'}>
@@ -502,7 +529,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           disabled={isShared}
                           aria-label={`Edit ${event.name}`}
                         >
-                          <EditIcon />
+                          <Icon icon={EditIcon} size={15} />
                         </button>
                       </span>
                       {isShared && (
@@ -514,7 +541,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           title="Remove from my sites"
                           aria-label={`Remove ${event.name} from my sites`}
                         >
-                          <UnlinkIcon />
+                          <Icon icon={UnlinkIcon} size={15} />
                         </button>
                       )}
                       <span title={isShared ? SHARED_EVENT_TITLE : 'Delete event'}>
@@ -525,7 +552,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           disabled={isShared || deleteGuard.isSubmitting}
                           aria-label={`Delete ${event.name}`}
                         >
-                          <TrashIcon />
+                          <Icon icon={TrashIcon} size={15} />
                         </button>
                       </span>
                     </td>
@@ -579,6 +606,7 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
     color: event?.color || DEFAULT_EVENT_COLOR,
     countsAsUnavailable: event?.counts_as_unavailable ?? false,
     siteIds: event ? originalSiteIds.filter((id) => manageable.has(id)) : defaultSiteIds,
+    teamIds: event?.team_ids ?? [],
   }));
   const [name, setName] = useState(initial.name);
   const [date, setDate] = useState(initial.date);
@@ -586,6 +614,12 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
   const [color, setColor] = useState(initial.color);
   const [countsAsUnavailable, setCountsAsUnavailable] = useState(initial.countsAsUnavailable);
   const [siteIds, setSiteIds] = useState<number[]>(initial.siteIds);
+  // Teams it is limited to, flat across sites (none = everyone on each site)
+  const teams = useAppStore((s) => s.teams);
+  const [teamIds, setTeamIds] = useState<number[]>(initial.teamIds);
+  const selectedSites = manageableSites.filter((s) => siteIds.includes(s.id));
+  // What is saved: teams of sites no longer selected are dropped
+  const effectiveTeamIds = teamIdsWithinSites(teamIds, teams, siteIds);
   const { isSubmitting: isSaving, begin: beginSave, end: endSave } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
@@ -596,7 +630,8 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
       endDate !== initial.endDate ||
       color !== initial.color ||
       countsAsUnavailable !== initial.countsAsUnavailable ||
-      !sameIds(siteIds, initial.siteIds)
+      !sameIds(siteIds, initial.siteIds) ||
+      !sameIds(teamIds, initial.teamIds)
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -607,10 +642,6 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
     }
     if (!date) {
       setError('Please select a start date');
-      return;
-    }
-    if (endDate && endDate < date) {
-      setError('End date must be on or after the start date');
       return;
     }
     const allSiteIds = siteIds;
@@ -628,6 +659,7 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
         color,
         site_ids: allSiteIds,
         counts_as_unavailable: countsAsUnavailable,
+        team_ids: effectiveTeamIds,
       };
       if (event) {
         await updateCompanyEvent(event.id, payload);
@@ -656,22 +688,22 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           placeholder="e.g., ISO Audit, All-Hands Meeting"
           autoFocus
         />
-        <Input
-          label="Start date"
-          className={styles.field}
-          id="event-date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <Input
-          label="End date (optional)"
-          className={styles.field}
-          id="event-end-date"
-          type="date"
-          value={endDate}
-          min={date || undefined}
-          onChange={(e) => setEndDate(e.target.value)}
+        <DateRangeField
+          startLabel="Start date"
+          endLabel="End date (optional)"
+          startId="event-date"
+          endId="event-end-date"
+          // This form defines the calendar: no hints from the header site's holidays and closures
+          markSiteCalendar={false}
+          fieldClassName={styles.field}
+          start={date}
+          end={endDate}
+          endOptional
+          endPlaceholder="Same day"
+          onChange={({ start, end }) => {
+            setDate(start);
+            setEndDate(end);
+          }}
         />
       </div>
       <div className={styles.field}>
@@ -682,6 +714,16 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           onChange={setSiteIds}
           label="Event sites"
         />
+        {selectedSites.map((site) => (
+          <TeamScope
+            key={site.id}
+            site={site}
+            teams={teams}
+            selected={teamIds}
+            onChange={setTeamIds}
+            multiSite={selectedSites.length > 1}
+          />
+        ))}
       </div>
       <div className={styles.field}>
         <span className={styles.label}>Color</span>
@@ -698,6 +740,9 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           Their capacity is 0% for the event's dates and their assignments are flagged as
           conflicts, like an absence.
         </p>
+        {countsAsUnavailable && effectiveTeamIds.length > 0 && (
+          <p className={styles.help}>Only members of the ticked teams are unavailable.</p>
+        )}
       </div>
       <div className={styles.formActions}>
         <Button type="button" variant="secondary" onClick={onCancel}>

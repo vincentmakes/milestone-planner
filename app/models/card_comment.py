@@ -1,10 +1,14 @@
 """
-CardComment model - comments on Kanban cards (leaf phases/subphases).
+CardComment model - comment threads on Kanban cards (leaf phases/subphases)
+and, since 2.0.0, on projects (the thread of a project's project-level
+bookings, shown in their booking dialog).
 
-The (entity_type, entity_id) pair mirrors custom_column_values: a card is a
-phase or a subphase, and there is no FK on entity_id because it is polymorphic.
-Deleting a phase/subphase must therefore delete its comments explicitly -
-see delete_phase / delete_subphase in app/routers/projects.py.
+The (entity_type, entity_id) pair mirrors custom_column_values: the target is
+a phase, a subphase or a project, and there is no FK on entity_id because it
+is polymorphic. Deleting a phase/subphase must therefore delete its comments
+explicitly - see delete_phase / delete_subphase in app/routers/projects.py; a
+project thread (entity_id = project_id) goes with the project through the
+project_id FK cascade.
 """
 
 import json
@@ -20,14 +24,19 @@ from app.utils import utcnow_naive
 if TYPE_CHECKING:
     from app.models.user import User
 
+# What a thread hangs on. The CHECK text below is spelled the same way in every
+# DDL source (tenant_provisioner.CARD_COMMENTS_ENTITY_TYPE_CHECK); the widening
+# for existing tables is tenant_provisioner.PROJECT_COMMENTS_CHECK_SQL.
+COMMENT_ENTITY_TYPES: tuple[str, ...] = ("phase", "subphase", "project")
+
 
 class CardComment(Base):
-    """A comment posted on a Kanban card."""
+    """A comment posted on a Kanban card or on a project's thread."""
 
     __tablename__ = "card_comments"
     __table_args__ = (
         CheckConstraint(
-            "entity_type IN ('phase', 'subphase')",
+            "entity_type IN (" + ", ".join(f"'{t}'" for t in COMMENT_ENTITY_TYPES) + ")",
             name="card_comments_entity_type_check",
         ),
     )

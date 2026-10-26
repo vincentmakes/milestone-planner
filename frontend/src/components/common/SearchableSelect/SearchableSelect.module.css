@@ -1,0 +1,18 @@
+/* SearchableSelect: the parts of a row the shell (dropdownShell.module.css) lacks */
+
+/* Room for the tick of the chosen row, kept on every row so the names align */
+.check {
+  display: flex;
+  flex-shrink: 0;
+  width: 16px;
+  color: var(--accent-blue);
+}
+
+.chosen {
+  font-weight: var(--font-weight-medium);
+}
+
+/* The "none" row (e.g. Select PM) reads like the placeholder */
+.noneRow {
+  color: var(--text-muted);
+}

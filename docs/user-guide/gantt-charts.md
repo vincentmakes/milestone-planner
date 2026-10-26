@@ -9,9 +9,9 @@ The Gantt Chart is the primary view and the default when you log in. It combines
 The left panel displays your projects in a tree structure. The header buttons sit at the right edge of the panel, after any custom columns:
 
 - **Staff & Equipment** — Show or hide the assignment rows
-- **Tags** — [Filter projects by tag](#filtering-projects-by-tag)
-- **Group by** — [Group projects by a tag group](#grouping-projects-by-tag-group) (shown once tag groups exist)
-- **Colour by** — [Colour the project bars by a tag group](#project-colours) (shown once tag groups exist)
+- **Filter** — [Filter projects by their dropdown fields and tags](#filtering-projects)
+- **Group by** — [Group projects by a dropdown field](#grouping-projects-by-a-field) (shown once a dropdown field has an item at the site)
+- **Colour by** — [Colour the project bars by a dropdown field or the tags](#project-colours) (shown once there is a dropdown field or a tag at the site)
 - **Column Visibility** — Show or hide custom columns
 - **+ New Project** — Create a new project
 - **Import** — Import from CSV, XML, or MPP
@@ -36,15 +36,19 @@ The right side shows horizontal bars representing duration of each project, phas
 
 ## Resource Panels
 
-Administrators, superusers and project managers (users who manage at least one project) can dock the **Staff Overview** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
+People who can edit any project (administrators and superusers by default) and project managers (users who manage at least one project) can dock the **Staff Overview** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
 
 This is the fastest way to see scheduling and capacity together: changes you make in the Gantt are reflected in the panel below in real time.
+
+An administrator can choose a panel that opens every time the Gantt chart is opened, and default skills or equipment types for the panels' filters, in [Settings → Features & defaults](settings.md#features-defaults). You can still close the panel or change the filter; the default applies again the next time you open the Gantt chart.
 
 ![Gantt chart with the Staff Overview panel docked below, showing assignments per person](../assets/screenshots/gantt-with-staff-panel.png){ loading=lazy }
 
 ![Gantt chart with the Equipment panel docked below, showing equipment availability](../assets/screenshots/gantt-with-equipment-panel.png){ loading=lazy }
 
 ## Who Can Edit a Project
+
+With the default roles (an administrator can change them in [Settings → Roles](settings.md#roles-permissions)), and only for projects at the sites you can see:
 
 | | Admin / Superuser | Project manager | Everyone else |
 |---|---|---|---|
@@ -53,102 +57,129 @@ This is the fastest way to see scheduling and capacity together: changes you mak
 | Edit details, dates, tags, archive; hand the project to another manager | Yes | Yes | No |
 | Add, edit, move, resize, reorder and delete phases and subphases; dependencies; completion | Yes | Yes | No |
 | Assign and edit anyone's staff assignments; book equipment | Yes | Yes | No |
-| Add themselves, change or remove their own assignment | Yes | Yes | Yes |
+| Add themselves, change or remove their own assignment | Yes | Yes | Yes — or by [request](staff-management.md#booking-yourself-when-approval-is-required) when their role needs approval |
 | Delete the project | Yes | No | No |
 
-The **project manager** is the person selected in the project's **Project Manager** field. They get these rights on that project only, even with the plain User role — controls they can't use on other projects stay disabled. Changing the Project Manager field hands the rights over to someone else. Moving a Kanban card is also open to the card's assignees (see [Kanban Board](kanban-board.md#moving-cards)).
+The **project manager** is the person selected in the project's **Project Manager** field. They get these rights on that project only, even with the plain User role, as long as their role can *act as project manager* — controls they can't use on other projects stay disabled. Changing the Project Manager field hands the rights over to someone else. Moving a Kanban card is also open to the card's assignees (see [Kanban Board](kanban-board.md#moving-cards)).
 
 ## Creating a Project
 
-Creating a project needs the Admin or Superuser role.
+Creating a project needs the *Create projects* permission (admins and superusers by default), at one of the sites you can see.
 
 1. Click **+ New Project** in the panel header
 2. Fill in required fields: **Project Name**, **Start Date**, **End Date**
-3. Optionally set: Project Manager, Customer, Sales PM, Project Volume
-4. Select which **predefined phases** to include (all active phases are pre-selected)
-5. Check **Project Confirmed** if the project is approved
-6. Click **Create Project**
+3. Optionally set: Project Manager (type a few letters of a name to [find the person](#picking-a-person)), Customer, Sales PM, Volume (an administrator may have [renamed or hidden](settings.md#project-fields) these)
+4. If the site has [teams](settings.md#teams), tick the **Teams** the project belongs to — the teams of the active [team filter](settings.md#team-filter) are ticked already, so the new project shows in the view you are on
+5. Fill in any [project fields](#project-fields) and tags
+6. Select which **predefined phases** to include (all active phases are pre-selected, unless an administrator [turned that off](settings.md#features-defaults) — then none is, and you pick them)
+7. Switch **Confirmed** on if the project is approved
+8. Click **Create Project**
 
 ## Editing Projects, Phases & Subphases
 
 - **Edit a project**: Click the **Edit** button or right-click and select "Edit"
 - **Add a phase**: Right-click on a project and select "Add Phase"
 - **Add a subphase**: Right-click on a phase and select "Add Subphase" (supports unlimited nesting)
-- **Delete**: Right-click on any item and select "Delete" (with confirmation). A project manager can delete phases and subphases, but deleting the project itself needs a superuser
+- **Delete**: Right-click on any item and select "Delete" (with confirmation). A project manager can delete phases and subphases, but deleting the project itself needs the *Delete projects* permission (superusers and admins by default)
 
 When editing a project, export buttons (CSV and XML) are available in the modal footer.
 
 ![Edit Project modal with name, dates, customer, tags, and CSV/XML export buttons](../assets/screenshots/project-modal.png){ loading=lazy }
 
+## Picking Dates
+
+Every date in Milestone is picked on the same calendar. Click the **Start Date** or **End Date** field — or press Enter, Space or the down arrow while it has focus — and two months open under the fields (one on a phone); the month and year dropdowns jump to a distant date. The first click sets the start, the second the end, and the calendar closes. The end can never fall before the start: picking a start after the current end moves the end along and keeps the duration, and picking an end before the start makes that day the new start, so you then pick the end. Weekends are greyed, and the current site's bank holidays and closures carry a dot — hover the day to see its name. They are only hints: every day can still be picked. A milestone has a single **Date** field on the same calendar.
+
+![Edit Phase dialog of Bioprocess Scale-Up with the two-month calendar open from the Start Date field, the phase's range highlighted](../assets/screenshots/date-range-picker.png){ loading=lazy }
+
+## Picking a Person
+
+Every list of people — the project's **Project Manager**, the booking dialog's **Staff Member** (and its **Equipment** list), the Kanban card's **Add someone…**, the absence dialog's **Staff Member** and a team's **Members** — opens with a search box that already has the focus: type to find a person, the list narrows from the first letter, on the name and, where the row shows one, the job title (the type for equipment). Use the arrow keys and Enter, or click, to pick; Escape closes the list and leaves the dialog open. Typing a letter while the closed field has the focus opens it with that letter already typed. A muted note on a row, such as *80% capacity* or *— already on this card*, is shown but not searched.
+
+## Project Fields
+
+Besides its name, dates and manager, a project carries **fields**. Four are built in — **Customer**, **Sales PM**, **Volume** and **Confirmed** — and an administrator can rename them (the new name then replaces the default wherever the field is named), hide the first three, and add fields of the workspace's own in **Settings → Project fields** (see [Project fields in Settings](settings.md#project-fields)). The project dialog shows the added fields in the order set there, followed by **Confirmed**, **Teams** and then **Tags** (**Archived**, when editing, stays at the bottom):
+
+- **Dropdown** — pick one item (for example *Project type* → Internal / Customer), or several items in a multi-select dropdown such as *Area*: open the dropdown and tick the items (click a row, or move with the arrow keys and press Space); it stays open until you click elsewhere or press Escape, the box lists the chosen items, and **Clear** unticks them all
+- **Text** — up to 2,000 characters
+- **Number** — any number, shown as typed
+- **Switch** — on or off
+
+No field is required. A dropdown item can be limited to some sites and to some [teams](settings.md#teams) of a site, so the dialog only offers the items that apply to the project's site and teams; unticking a project's last matching team removes such an item from the project when you save. People who can manage project fields (admins by default) see a **Manage fields…** link that opens Settings → Project fields.
+
 ## Tags
 
-Tags are coloured labels attached to projects to classify and filter them (e.g. *Critical*, *Internal*, *Customer*). The tag library is shared by the whole workspace: admins define the tags in **Settings → Tags** (see [Tags in Settings](settings.md#tags)), and anyone who can edit a project attaches them.
+Tags are coloured labels attached to projects to classify and filter them (e.g. *Critical*, *Tech Transfer*). The tag library is shared by the whole workspace: admins define the tags in **Settings → Tags** (see [Tags in Settings](settings.md#tags)), and anyone who can edit a project attaches them. Categories with fixed choices, such as a project type, are [dropdown project fields](#project-fields) rather than tags.
 
-Tags can be organised into **groups** such as *Project type* → Internal / Customer. A **single-select** group allows one of its tags per project. Each tag applies to **all sites** or only to the sites an admin picked, so the picker and the filter only offer the tags that apply to the project's site.
+Each tag applies to **all sites** or only to the sites an admin picked, so the picker and the filter only offer the tags that apply to the project's site. A tag can also be limited to some [teams](settings.md#teams) of a site: there, the picker offers it only on projects of one of those teams, and unticking a project's last matching team removes the tag from the project when you save.
 
-![Tag picker in the project modal](../assets/screenshots/project-tags.png){ loading=lazy }
+![The Edit Project dialog with its Project type and Area fields, and the tag picker's list open under the Tags field](../assets/screenshots/project-tags.png){ loading=lazy }
 
 ### Attaching a tag
 
 1. Open the project (Edit, or while creating a new one).
-2. Click the **Tags** field. The dropdown lists the available tags by group, with ungrouped tags under *Other*.
-3. Start typing to filter, then click a tag (or press Enter on a unique match) to attach it. It appears as a coloured pill above the field. In a single-select group, choosing a tag replaces the one already selected from that group.
+2. Click the **Tags** field (or start typing in it). The list shows the available tags in their order.
+3. Type to narrow the list, then click a tag (or press Enter on a unique match) to attach it. It appears as a coloured pill above the field.
 4. Click the **×** on a pill to detach the tag.
 
-Admins see a **Manage tags…** link in the picker that opens Settings → Tags.
+People who can manage tags (admins by default) see a **Manage tags…** link in the picker that opens Settings → Tags.
 
-### Project colours
+## Filtering, Grouping and Colouring Projects
 
-Each user can colour the project bars by a tag group:
+### Filtering projects
 
-1. Click the **Colour by** button in the project panel header (next to **Group by**).
-2. Pick a tag group — any group, single-select or not. **Default** returns to the standard bar colour.
+The **Filter** button in the project panel header (and in the Kanban toolbar) opens one section per dropdown field that has an item at the site, in field order, then a **Tags** section:
 
-The project bar on the timeline then takes the colour of the project's tag from that group — for example blue for internal projects and green for customer projects. A project carrying several tags of the group takes the colour of the first of them in the group's order (the same tag *Group by* files it under); a project without a tag from the group keeps the default colour. Unconfirmed projects keep their striped look on top of the colour.
-
-![The Colour by dropdown open above the Gantt chart, Project type selected](../assets/screenshots/gantt-color-by.png){ loading=lazy }
-
-The choice is yours alone: it is remembered per site in your browser, like the tag filter, and does not change what other users see. It is independent of **Group by** — you can group by one group and colour by another.
-
-### Filtering projects by tag
-
-The **Tags** button in the project panel header (and in the Kanban toolbar) opens a filter listed by group:
-
-- Tick one or more tags of a group to show projects carrying **any** of them.
-- Tick tags in several groups to show only projects matching **every** group.
-- **(No tag)** in a group matches projects without a tag from that group, and combines with the group's tags.
+- Tick one or more items of a field to show projects holding **any** of them.
+- Tick items in several fields, or tags as well, to show only projects matching **every** field (the tags count as one more field).
+- **(None)** in a field matches projects without an item of that field, and combines with the field's items.
 - **Clear** removes the whole filter.
 
-![Tag filter dropdown in the project panel, listed by group with a (No tag) option](../assets/screenshots/tag-filter-dropdown.png){ loading=lazy }
+![The Filter panel of the project panel, open: the Area field with its (None) option and items, then the Tags section](../assets/screenshots/project-filter.png){ loading=lazy }
 
-The button shows how many tags are selected, and the panel header shows *x of y* projects while a filter is active. The selection is remembered per site, so switching site or reloading brings it back. Tags that are deleted later are simply ignored.
+The panel opens under its button, or above it when there is more room there, and is never cut off by an open [Staff or Equipment Overview](#resource-panels). The button shows how many choices are ticked, and the panel header shows *x of y* projects while a filter is active. The selection is remembered per site, so switching site or reloading brings it back. Items and tags that are deleted later are simply ignored. With a [team filter](settings.md#team-filter) active, the panel only lists the items and tags available to the selected teams.
 
-### Grouping projects by tag group
+!!! note "Upgrading to 2.0.0"
+    A filter, grouping or colour choice saved in your browser before version 2.0.0 is reset once, because tag groups became project fields — pick it again.
 
-To see the portfolio at a glance, split the project list into sections, one per tag of a group — for example *Project type* → Internal / Customer:
+### Grouping projects by a field
 
-1. Click the **Group by** button in the project panel header (next to **Tags**).
-2. Pick a tag group. **No grouping** returns to the plain list.
+To see the portfolio at a glance, split the project list into sections, one per item of a dropdown field — for example *Project type* → Internal / Customer:
 
-Each section starts with a header showing the tag as a coloured pill and the number of projects in it; the timeline shows a matching band across the chart. Projects without a tag of that group are listed last under **No *group name***. Sections without projects are left out, and a project carrying several tags of the same group is listed once, under the first of them in the group's order.
+1. Click the **Group by** button in the project panel header (next to **Filter**).
+2. Pick a dropdown field. **No grouping** returns to the plain list.
+
+Each section starts with a header showing the item as a coloured pill and the number of projects in it; the timeline shows a matching band across the chart. Projects without an item of that field are listed last under **No *field name***. Sections without projects are left out, and a project holding several items of a multi-select field is listed once, under the first of them in the field's item order.
 
 ![Gantt project list grouped by Project type, with a pill header per section](../assets/screenshots/gantt-grouped.png){ loading=lazy }
 
 - Click a section header (or its arrow) to collapse or expand it. **Collapse all** / **Expand all** in the Group by panel act on every section at once.
-- The tag filter applies first, then the grouping: sections only hold the projects that pass the filter. The header count still counts projects.
+- The filter applies first, then the grouping: sections only hold the projects that pass the filter. The header count still counts projects.
 - Projects cannot be reordered by dragging while the list is grouped; choose **No grouping** to change the order.
-- A project you create, or re-tag, into a collapsed section stays hidden until you expand that section.
-- The grouping and the collapsed sections are remembered per site in your browser, like the tag filter.
+- A project you create, or change, into a collapsed section stays hidden until you expand that section.
+- The grouping and the collapsed sections are remembered per site in your browser, like the filter.
+
+### Project colours
+
+Each user can colour the project bars by a dropdown field or by the tags:
+
+1. Click the **Colour by** button in the project panel header (next to **Group by**).
+2. Pick a dropdown field, or **Tags**. **Default** returns to the standard bar colour.
+
+With a field, the project bar on the timeline takes the colour of the project's item of that field — for example blue for internal projects and green for customer projects. A project holding several items of a multi-select field takes the colour of the first of them in the field's item order (the same item *Group by* files it under). With **Tags**, the bar takes the colour of the project's first tag in the tag order. A project without an item of the field (or without a tag) keeps the default colour. Unconfirmed projects keep their striped look on top of the colour.
+
+![The Colour by dropdown open above the Gantt chart: Default, Project type (selected), Area and Tags](../assets/screenshots/gantt-color-by.png){ loading=lazy }
+
+The choice is yours alone: it is remembered per site in your browser, like the filter, and does not change what other users see. It is independent of **Group by** — you can group by one field and colour by another.
 
 ### Permissions
 
-| Action                              | Who can do it                                  |
-| ----------------------------------- | ---------------------------------------------- |
-| Attach / detach a tag               | Anyone who can edit the project                |
-| Filter by tag                       | Everyone                                       |
-| Group by a tag group                | Everyone                                       |
-| Colour by a tag group               | Everyone                                       |
-| Create, edit, group, delete tags    | Admins (Settings → Tags)                       |
+| Action                                      | Who can do it                                  |
+| ------------------------------------------- | ---------------------------------------------- |
+| Fill in project fields, attach / detach a tag | Anyone who can edit the project              |
+| Filter, group and colour projects           | Everyone                                       |
+| Create, edit, reorder, delete tags          | Admins (Settings → Tags)                       |
+| Create, edit, reorder, delete project fields; rename or hide built-in fields | Admins (Settings → Project fields) |
 
 ## Drag & Drop
 
@@ -157,10 +188,50 @@ The timeline supports direct manipulation (on projects you can edit; your own as
 - **Move a bar** — Drag left/right to change dates (phantom preview shows target position)
 - **Resize a bar** — Drag left/right edge to extend or shorten duration
 - **Reorder phases** — Drag within the project panel to reorder
+- **Move a booking inside its phase** — an [unlinked booking](#bookings-on-phases-and-subphases) on a phase or subphase can be dragged and resized, but never past the phase's start or end
 
 ### Touch screens
 
 On a tablet or phone, the same gestures work with a finger: press a bar and move it to change its dates, or press one of its edges to resize it (the edge handles are wider on touch screens). A tap opens the item's dialog; a small wobble of the finger during a tap never moves or resizes a bar. A swipe that starts **on a bar you can edit** moves the bar, so swipe on empty row space, the project panel or the header to scroll the chart (bars you cannot edit scroll as usual). If the system interrupts a drag (an incoming call, a gesture the browser takes over), the bar returns to where it was and nothing is saved.
+
+## Bookings on Phases and Subphases
+
+A person booked on a phase or subphase is **linked** to it by default: the booking covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged. The badge at the start of the booking's row in the project panel shows this: it holds a **pin** and the phase's name, and a filled pin means the booking follows the phase dates.
+
+To book someone for only part of a phase — a few days at the start, then a few days at the end — **unlink** the booking:
+
+- **Click the pin** on the booking's row. It turns into an outlined pin (*Own dates*), and the booking keeps the phase's dates for now. Click the outlined pin to make it follow the phase dates again.
+- Or turn off **Follow the phase dates** in the [assignment dialog](staff-management.md#assignment-modal) and pick the booking's own dates. The calendar only offers days inside the phase.
+
+An unlinked booking's bar can be moved and resized on the timeline like any other bar, but it stops at the phase's start and end. The pin can only be clicked by people who may change that booking; for everyone else, and while the booking or your change to it awaits approval, it is greyed out but still shows whether the booking follows the phase. An unlinked booking's pin is also greyed out while another booking of the same person on that phase covers part of the phase's dates (*Can't follow the phase dates while another booking of this person overlaps them*): following the phase would make the two overlap.
+
+Click the **phase name** in the badge to scroll the timeline to the booking: to its own start date when it is unlinked, to the phase's start when it follows the phase.
+
+A person can hold **several bookings on the same phase**, as long as their dates do not overlap (adjacent days are fine). Booking someone for days that overlap one of their bookings on that phase is refused with *This person is already booked on this card for overlapping dates*.
+
+Booking someone **again** without choosing dates — **Assign Staff** with *Follow the phase dates* on, **Assign me again…** with the switch left on, a drag from the resource panel or the Kanban card dialog — places the new booking for you:
+
+- If their one booking covers the **whole phase**, it is split in half: the existing booking keeps the first half (the longer one when the phase has an odd number of days) and the new booking gets the second half. Both get their own dates.
+- If their bookings leave **free days**, the new booking takes the **largest free stretch** (the earliest one on a tie).
+- If their bookings already **cover the whole phase**, the booking is refused with *This person's bookings already cover the whole card — shorten one of them first*.
+
+When your own booking [needs approval](staff-management.md#booking-yourself-when-approval-is-required), the request is sent with the planned dates and your existing booking is left alone until an approver approves it; the split or the free stretch is then worked out again and applied.
+
+When the phase itself changes:
+
+- **Moving the phase** (same duration) moves its unlinked bookings by the same number of days.
+- **Shortening it** fits them inside the new dates: a booking that sticks out is cut at the new edge, and a booking left entirely outside is placed against the nearest edge with its length kept (never longer than the phase).
+- **Lengthening it** leaves them where they are.
+
+Linked bookings simply keep following the phase. One limit: shortening a phase past two bookings of the same person can push both against the same edge so that they overlap. They are kept as they are until you edit one of them; move one of them apart to resolve it.
+
+### The overview row
+
+When someone has two or more bookings on the same phase or subphase, they are grouped under an **overview row** with the phase or subphase badge (without a pin), the person's name, the number of bookings and their allocation range (*100%*, or *20–60%* when they differ); the bookings under it are listed in date order. On the timeline the overview row shows every booking as a small block (hover one for its dates and allocation; a booking awaiting approval is hatched).
+
+Click the phase name in its badge to scroll the timeline to the person's first booking on that phase. Click the chevron to collapse the group to that one row, and again to expand it. Groups start expanded, and a collapsed group stays collapsed until you reload the page. The overview row itself has no menu: right-click one of the bookings under it to edit or remove it.
+
+![Gantt chart: Charlie Clark's overview row under the Analytics phase of Bioprocess Scale-Up, with his two bookings drawn as blocks, and the two booking rows with their own dates below it](../assets/screenshots/assignment-overview-row.png){ loading=lazy }
 
 ## Completion Tracking
 
@@ -203,7 +274,7 @@ Custom column values appear as editable cells in the project panel, next to each
 
 Values are saved automatically as you edit. Changes cascade — editing a phase's value also updates its child subphases. A cascade is saved as one request, so it either succeeds for the whole branch or, if saving fails, every cell it touched returns to its previous value.
 
-**Anyone signed in can edit custom-column values**, including users with the plain User role. Creating, editing, reordering and deleting the **columns themselves** stays admin-only. Values and column changes appear for other signed-in users straight away.
+**Every built-in role can edit custom-column values** (the *Set custom column values* permission), including the plain User role, on projects at the sites they can see. Creating, editing, reordering and deleting the **columns themselves** needs *Manage custom columns* (admins by default). Values and column changes appear for other signed-in users straight away.
 
 ### Managing Columns
 
@@ -321,13 +392,13 @@ Right-click on any item for context-appropriate actions:
 
 | Target | Actions |
 |--------|---------|
-| Project | Edit, Delete, Add Phase, Assign Staff, Assign me, Assign Equipment, View Details |
-| Phase | Edit, Delete, Add Subphase, Assign Staff, Assign me, Assign Equipment |
-| Subphase | Edit, Delete, Add Subphase, Assign Staff, Assign me, Assign Equipment |
+| Project | Edit, Delete, Add Phase, Assign Staff, Assign me…, Assign Equipment, View Details |
+| Phase | Edit, Delete, Add Subphase, Assign Staff, Assign me…, Assign Equipment |
+| Subphase | Edit, Delete, Add Subphase, Assign Staff, Assign me…, Assign Equipment |
 | Staff Assignment | Edit Assignment, Remove Assignment |
 | Equipment Assignment | Edit Assignment, Remove Assignment |
 
-Actions you are not allowed to perform on that project are shown disabled. **Assign me** only appears for people who can't edit the project: it books your own time on the item at your maximum capacity (see [Adding Yourself to a Project](staff-management.md#adding-yourself-to-a-project)) and reads **Assigned to me** once you are on it. On your own staff assignment, **Edit Assignment** and **Remove Assignment** are available to you on any project.
+Actions you are not allowed to perform on that project are shown disabled. **Assign me…** only appears for people who can't edit the project: it opens the assignment dialog with you and your maximum capacity preset, so you can change the allocation and the dates and add a comment — or, when your booking [needs approval](staff-management.md#booking-yourself-when-approval-is-required), a message for the approver (**Request to assign me…**) — before booking (see [Adding Yourself to a Project](staff-management.md#adding-yourself-to-a-project)). Once you are booked on a phase or subphase it reads **Assign me again…** and the dialog [places a second booking](#bookings-on-phases-and-subphases) unless you pick its dates; on a project it reads **Assigned to me**, and while a request of yours on the item awaits approval, **Assignment requested** (both greyed out). On your own staff assignment, **Edit Assignment** and **Remove Assignment** are available to you on any project. **Edit Assignment** is greyed out while the booking awaits approval or carries an open change request; the same booking opened from [My Work](my-work.md#my-assignments) shows its dialog read-only, with the reason. The dialog of a staff booking also holds its [comment thread](my-work.md#comments-on-a-booking) — the card's thread for a phase or subphase, the project's for a project-level booking.
 
 ## Archived Projects
 

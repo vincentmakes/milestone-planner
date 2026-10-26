@@ -1,7 +1,7 @@
 /**
  * viewStore: view-mode zoom defaults, overview mutual exclusion, Kanban
  * settings, tree expansion (toggle / ensure / all / level-by-level) and the
- * persist round-trip of the Set-valued expansion state. Tag filters, Gantt
+ * persist round-trip of the Set-valued expansion state. Project filters, Gantt
  * grouping/colouring and date navigation live in viewStore.test.ts.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -151,6 +151,39 @@ describe('expansion state', () => {
     expect(view().expandedProjects.size).toBe(0);
     expect(view().expandedSubphases.size).toBe(0);
     expect(view().expandedStaff.size).toBe(0);
+  });
+});
+
+describe('per-person booking groups', () => {
+  it('starts expanded and toggles a group collapsed and back', () => {
+    expect(view().collapsedStaffGroups.size).toBe(0);
+    view().toggleStaffGroup('phase:10:4');
+    view().toggleStaffGroup('subphase:21:5');
+    expect([...view().collapsedStaffGroups]).toEqual(['phase:10:4', 'subphase:21:5']);
+    view().toggleStaffGroup('phase:10:4');
+    expect([...view().collapsedStaffGroups]).toEqual(['subphase:21:5']);
+  });
+
+  it('collapseAll and expandAll both reopen every group', () => {
+    view().toggleStaffGroup('phase:10:4');
+    view().collapseAll();
+    expect(view().collapsedStaffGroups.size).toBe(0);
+
+    view().toggleStaffGroup('phase:10:4');
+    view().expandAll([makeProject({ id: 1 })]);
+    expect(view().collapsedStaffGroups.size).toBe(0);
+  });
+
+  it('is session-only: never persisted, never restored', async () => {
+    view().toggleStaffGroup('phase:10:4');
+    view().setExpandedProjects(new Set([1]));
+    const raw = JSON.parse(localStorage.getItem(KEY) as string);
+    expect(raw.state).not.toHaveProperty('collapsedStaffGroups');
+
+    localStorage.setItem(KEY, JSON.stringify({ state: { collapsedStaffGroups: ['phase:1:2'] }, version: 0 }));
+    view().resetView();
+    await useViewStore.persist.rehydrate();
+    expect(view().collapsedStaffGroups.size).toBe(0);
   });
 });
 

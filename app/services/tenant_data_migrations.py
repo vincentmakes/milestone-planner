@@ -16,12 +16,17 @@ import logging
 from sqlalchemy import text
 
 from app.services.tenant_provisioner import (
+    APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
     CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL,
     CARD_COMMENTS_AUTHOR_FK_SQL,
     CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
     CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
+    PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL,
     PROJECTS_SITE_FK_NEEDS_FIX_SQL,
     PROJECTS_SITE_FK_SQL,
+    RBAC_SEED_NEEDED_SQL,
+    RBAC_SEED_STATEMENTS,
+    STALE_APPROVAL_POINTER_CLEANUP_SQL,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,10 +45,29 @@ FK_STEPS: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
-# (label, statement) -- rowcount is logged when something was removed.
-CLEANUP_STEPS: tuple[tuple[str, str], ...] = (
-    ("orphaned custom-column value(s)", CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL),
-    ("orphaned card comment(s)", CARD_COMMENTS_ORPHAN_CLEANUP_SQL),
+# (label, "needed?" query, statements) -- RBAC (1.13.0), after the tables
+# the auto-migration creates: the system roles with their default permissions
+# (only for a role row created now, so an admin's edits are never re-seeded),
+# one approval policy per approvable action, unknown role values reset to
+# 'user', then users.role's CHECK replaced by the FK to roles.key. All
+# statements in one transaction: the FK never lands without the roles.
+RBAC_SEED_STEP: tuple[str, str, tuple[str, ...]] = (
+    "RBAC system roles, approval policies, users.role FK",
+    RBAC_SEED_NEEDED_SQL,
+    RBAC_SEED_STATEMENTS,
+)
+
+# (verb, label, statement) -- rowcount is logged when something changed.
+CLEANUP_STEPS: tuple[tuple[str, str, str], ...] = (
+    ("removed", "orphaned custom-column value(s)", CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL),
+    ("removed", "orphaned card comment(s)", CARD_COMMENTS_ORPHAN_CLEANUP_SQL),
+    ("expired", "orphaned approval request(s)", APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL),
+    # After the expiry above, so the rows of requests it just closed go too.
+    *(
+        ("removed", "orphaned pending booking(s)", sql)
+        for sql in PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL
+    ),
+    *(("cleared", "stale approval pointer(s)", sql) for sql in STALE_APPROVAL_POINTER_CLEANUP_SQL),
 )
 
 
@@ -63,7 +87,7 @@ async def _rollback_quietly(conn) -> None:
 
 
 async def run_data_migrations(conn) -> None:
-    """Apply the guarded FK rewrites and orphan cleanups. Never raises."""
+    """Apply the guarded FK rewrites, the RBAC seed and the orphan cleanups. Never raises."""
     db = _label(conn)
 
     for label, needs_fix_sql, fix_sql in FK_STEPS:
@@ -78,13 +102,25 @@ async def run_data_migrations(conn) -> None:
             logger.warning("Data migration (%s) warning for %s: %s", label, db, e)
             await _rollback_quietly(conn)
 
-    for label, cleanup_sql in CLEANUP_STEPS:
+    label, needed_sql, statements = RBAC_SEED_STEP
+    try:
+        if (await conn.execute(text(needed_sql))).scalar():
+            logger.info("Data migration: %s on %s...", label, db)
+            for statement in statements:
+                await conn.execute(text(statement))
+            await conn.commit()
+            logger.info("Data migration: %s done on %s", label, db)
+    except Exception as e:
+        logger.warning("Data migration (%s) warning for %s: %s", label, db, e)
+        await _rollback_quietly(conn)
+
+    for verb, label, cleanup_sql in CLEANUP_STEPS:
         try:
             result = await conn.execute(text(cleanup_sql))
             await conn.commit()
-            removed = getattr(result, "rowcount", 0) or 0
-            if removed:
-                logger.info("Data migration: removed %s %s on %s", removed, label, db)
+            changed = getattr(result, "rowcount", 0) or 0
+            if changed:
+                logger.info("Data migration: %s %s %s on %s", verb, changed, label, db)
         except Exception as e:
             logger.warning("Data migration (%s) warning for %s: %s", label, db, e)
             await _rollback_quietly(conn)

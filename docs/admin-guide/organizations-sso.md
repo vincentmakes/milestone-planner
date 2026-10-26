@@ -87,6 +87,16 @@ A tenant that does **not** belong to an organization can configure its own SSO f
 **Settings → SSO** section inside the application (admin only), using the same fields and
 the same shared redirect URI.
 
+**Test configuration** next to **Save Configuration** asks Microsoft about the values as they
+are entered in the form, before anything is saved (a blank secret field tests the stored
+secret) — see [Test configuration](#test-configuration).
+
+When SSO is already live, saving a change to the sign-in values — the Tenant ID, the Client ID,
+the client secret, the redirect URI, or switching SSO off — asks you to type **CHANGE** first.
+The dialog lists what you are changing. Only people who sign in with Microsoft only are
+affected by a wrong value: password sign-in always keeps working. Changing only the
+auto-create option or the default role saves without asking.
+
 !!! note "Organization SSO takes precedence"
     If a tenant belongs to an organization that has SSO enabled, the organization's
     configuration always applies and the tenant-level SSO form is shown read-only — a
@@ -162,15 +172,20 @@ Microsoft error for every failure.
 
 ### Test configuration
 
-The organization's **SSO Configuration** tab has a **Test configuration** button. It tests the
-*saved* configuration, so save your changes first.
+**Test configuration** is available for organization SSO and for tenant SSO:
+
+- the organization's **SSO Configuration** tab in the admin portal tests the *saved*
+  configuration, so save your changes first;
+- **Settings → SSO** in a workspace tests the values *as entered* in the form, before they are
+  saved; leave the secret field blank to test the stored secret. It is not available while
+  organization SSO manages the workspace.
 
 The test signs in as the application itself, which checks:
 
 - the Directory (tenant) ID, Application (client) ID and client secret look right and, where a
   secret was pasted from the wrong column, that it is not the Secret ID;
-- the redirect URI is an absolute `https://` URL ending in `/api/auth/sso/callback` with no
-  `/t/{slug}/` path;
+- the redirect URI is an absolute `https://` URL ending in `/api/auth/sso/callback` (and, for
+  organization SSO, has no `/t/{slug}/` path);
 - Microsoft recognises the directory, and accepts the client ID and secret;
 - how the server reaches the internet — whether a proxy is configured, and whether any proxy
   setting is one that sign-in does not use (see below).

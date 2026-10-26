@@ -12,6 +12,9 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createVacation, importVacations, getVacations } from '@/api/endpoints/vacations';
 import type { AbsenceType } from '@/types';
+import { asSignedIn } from '@/test/permissionFixtures';
+import { dateValue, openDateField, pickEnd, pickRange, showMonth } from '@/test/datePicker';
+import { optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
 
 vi.mock('@/api/endpoints/vacations', () => ({
   createVacation: vi.fn().mockResolvedValue({}),
@@ -47,7 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useWhatIfStore.setState({ whatIfMode: false });
   useAppStore.setState({
-    currentUser: {
+    currentUser: asSignedIn({
       id: 7,
       name: 'Una User',
       email: 'una@demo.local',
@@ -55,8 +58,9 @@ beforeEach(() => {
       last_name: 'User',
       role: 'user',
       active: true,
+      is_resource: true,
       site_ids: [1],
-    },
+    }),
     staff: [],
     vacations: [],
     absenceTypes: TYPES,
@@ -70,8 +74,8 @@ describe('VacationModal', () => {
 
     // Falls back to the signed-in user when they are not in the site's staff list
     expect(screen.getByText('Una User')).toBeInTheDocument();
-    expect(screen.getByLabelText('From')).toHaveAttribute('type', 'date');
-    expect(screen.getByLabelText('To')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('From')).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(screen.getByLabelText('To')).toHaveAttribute('aria-haspopup', 'dialog');
     const select = screen.getByLabelText('Absence type') as HTMLSelectElement;
     expect(select.value).toBe('1'); // Holidays, not the first-sorted Home Office
 
@@ -171,7 +175,7 @@ describe('VacationModal', () => {
   it('lists a person on several sites once in the staff picker', () => {
     // GET /staff returns one row per user-site pair
     useAppStore.setState({
-      currentUser: { ...useAppStore.getState().currentUser!, role: 'admin' },
+      currentUser: asSignedIn({ ...useAppStore.getState().currentUser!, role: 'admin', permissions: undefined }),
       staff: [
         { id: 4, name: 'Bob Brown', site_id: 1 },
         { id: 4, name: 'Bob Brown', site_id: 2 },
@@ -181,14 +185,12 @@ describe('VacationModal', () => {
     useUIStore.getState().openVacationModal(undefined, undefined);
     render(<VacationModal />);
 
-    const options = screen.getAllByRole('option').map((o) => o.textContent);
-    expect(options.filter((name) => name === 'Bob Brown')).toHaveLength(1);
-    expect(options).toContain('Cleo Chen');
+    expect(pickerOptions(/^Staff Member/).map(optionLabel)).toEqual(['Select staff member…', 'Bob Brown', 'Cleo Chen']);
   });
 
   it('books the picked staff member for the typed dates', async () => {
     useAppStore.setState({
-      currentUser: { ...useAppStore.getState().currentUser!, role: 'admin' },
+      currentUser: asSignedIn({ ...useAppStore.getState().currentUser!, role: 'admin', permissions: undefined }),
       staff: [
         { id: 4, name: 'Bob Brown', site_id: 1 },
         { id: 5, name: 'Cleo Chen', site_id: 1 },
@@ -197,13 +199,16 @@ describe('VacationModal', () => {
     useUIStore.getState().openVacationModal(undefined, undefined);
     render(<VacationModal />);
 
-    const picker = screen.getByLabelText('Staff Member');
-    fireEvent.change(picker, { target: { value: '5' } });
-    expect(picker).toHaveValue('5');
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-11-02' } });
-    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-11-06' } });
-    expect(screen.getByLabelText('From')).toHaveValue('2026-11-02');
-    expect(screen.getByLabelText('To')).toHaveValue('2026-11-06');
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Select staff member…');
+    fireEvent.click(pickerTrigger(/^Staff Member/));
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: 'cle' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Cleo Chen');
+    pickRange('From', '2026-11-02', '2026-11-06');
+    expect(dateValue('From')).toBe('2026-11-02');
+    expect(dateValue('To')).toBe('2026-11-06');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(createVacation).toHaveBeenCalled());
@@ -212,5 +217,50 @@ describe('VacationModal', () => {
       start_date: '2026-11-02',
       end_date: '2026-11-06',
     });
+  });
+
+  it('clears the staff member through the empty row', () => {
+    useAppStore.setState({
+      currentUser: asSignedIn({ ...useAppStore.getState().currentUser!, role: 'admin', permissions: undefined }),
+      staff: [{ id: 4, name: 'Bob Brown', site_id: 1 }] as never,
+    });
+    useUIStore.getState().openVacationModal(undefined, undefined);
+    render(<VacationModal />);
+    pickOption(/^Staff Member/, 'Bob Brown');
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Bob Brown');
+    pickOption(/^Staff Member/, 'Select staff member…');
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Select staff member…');
+  });
+
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
+  it('never lets the end precede the start', async () => {
+    render(<VacationModal />);
+    pickRange('From', '2026-11-02', '2026-11-06');
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('To', '2026-10-28');
+    expect(dateValue('From')).toBe('2026-10-28');
+    expect(dateValue('To')).toBe('2026-11-01');
+    expect(screen.getByText('5 days')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(createVacation).toHaveBeenCalled());
+    expect(vi.mocked(createVacation).mock.calls[0][0]).toMatchObject({
+      start_date: '2026-10-28',
+      end_date: '2026-11-01',
+    });
+  });
+
+  it('highlights the recurring weekdays in the calendar', () => {
+    render(<VacationModal />);
+    const cellOf = (iso: string) => document.querySelector(`td[data-day="${iso}"]:not([data-outside])`)!;
+
+    showMonth(openDateField('From'), '2026-11-02');
+    expect(cellOf('2026-11-02').className).not.toMatch(/recurring/);
+
+    // The open calendar follows the recurring days as they are picked
+    fireEvent.click(screen.getByRole('switch', { name: /Recurring Absence/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mon' }));
+    expect(cellOf('2026-11-02').className).toMatch(/recurring/); // Monday
+    expect(cellOf('2026-11-03').className).not.toMatch(/recurring/); // Tuesday
   });
 });

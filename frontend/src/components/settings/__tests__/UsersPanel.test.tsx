@@ -15,7 +15,9 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createUser, deleteUser } from '@/api/endpoints/users';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
+import { makeRole, makeSystemRoles, makeTeam } from '@/test/factories';
 import type { Site, User } from '@/types';
+import { asSignedIn, SUPERUSER_DEFAULTS } from '@/test/permissionFixtures';
 
 const getUsers = vi.fn();
 const updateUser = vi.fn();
@@ -25,6 +27,9 @@ vi.mock('@/api/endpoints/users', () => ({
   createUser: vi.fn(),
   deleteUser: vi.fn(),
 }));
+
+const rolesApi = vi.hoisted(() => ({ getAll: vi.fn() }));
+vi.mock('@/api/endpoints/roles', () => ({ rolesApi }));
 
 vi.mock('@/hooks/useDataLoader', () => ({
   useDataLoader: () => ({ refreshStaff: vi.fn() }),
@@ -41,6 +46,7 @@ const ada: User = {
   name: 'Ada Admin',
   role: 'admin',
   active: true,
+  is_resource: false,
   site_ids: [1, 2],
 };
 
@@ -52,6 +58,7 @@ const sam: User = {
   name: 'Sam Super',
   role: 'superuser',
   active: true,
+  is_resource: true,
   site_ids: [1],
 };
 
@@ -64,12 +71,23 @@ const bob: User = {
   name: 'Bob Brown',
   role: 'user',
   active: true,
+  is_resource: true,
   site_ids: [1, 2],
   job_title: 'Analyst',
 };
 
+/** A custom role within a team lead's keys, and the team lead's own role */
+const viewerRole = makeRole({ id: 5, key: 'viewer', name: 'Viewer', sort_order: 4 });
+const leadRole = makeRole({
+  id: 4,
+  key: 'team_lead',
+  name: 'Team Lead',
+  permissions: { 'projects.view': 'allow', 'users.view': 'allow', 'users.edit': 'allow', 'users.change_role': 'allow' },
+});
+const ROLES = makeSystemRoles(leadRole, viewerRole);
+
 function seed(currentUser: User, sites: Site[]) {
-  useAppStore.setState({ currentUser, sites, skills: [] });
+  useAppStore.setState({ currentUser: asSignedIn(currentUser), sites, skills: [], roles: ROLES, instanceSettings: null });
 }
 
 const rowOf = async (name: string) => (await screen.findByText(name)).closest('tr') as HTMLElement;
@@ -82,6 +100,7 @@ async function openEditor(name: string) {
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
 
 beforeEach(() => {
+  rolesApi.getAll.mockReset().mockResolvedValue(ROLES);
   getUsers.mockReset().mockResolvedValue([ada, sam, bob]);
   updateUser.mockReset().mockResolvedValue({});
 });
@@ -212,9 +231,14 @@ describe('UsersPanel filters and new user form (admin)', () => {
     pick('Status', 'active');
     count('3 users');
 
+    expect(
+      Array.from((screen.getByLabelText('Role') as HTMLSelectElement).options).map((o) => o.text)
+    ).toEqual(['All Roles', 'Admin', 'Superuser', 'User', 'Team Lead', 'Viewer']);
     pick('Role', 'superuser');
     count('1 user (filtered from 3)');
     expect(screen.getByText('Sam Super')).toBeInTheDocument();
+    pick('Role', 'viewer');
+    count('0 users (filtered from 3)');
     pick('Role', 'all');
 
     pick('Job Title', 'Analyst');
@@ -259,6 +283,7 @@ describe('UsersPanel filters and new user form (admin)', () => {
       email: 'cleo@demo.local',
       password: 'welcome-1',
       role: 'superuser',
+      is_resource: true,
     });
   });
 });
@@ -477,5 +502,263 @@ describe('UsersPanel during What-If', () => {
     const del = screen.getByRole('button', { name: 'Delete User' });
     expect(del).toBeDisabled();
     expect(del).toHaveAttribute('title', "You can't delete your own account");
+  });
+});
+
+describe('UsersPanel teams column', () => {
+  it("lists each person's teams by name, read-only", async () => {
+    seed(ada, [siteA, siteB]);
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, name: 'Analytics' }), makeTeam({ id: 2, site_id: 2, name: 'Zurich lab' })],
+    });
+    getUsers.mockResolvedValue([ada, { ...bob, team_ids: [1, 2, 99] }]);
+    render(<UsersPanel />);
+
+    const bobRow = await rowOf('Bob Brown');
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent);
+    const teamsCol = headers.indexOf('Teams');
+    expect(teamsCol).toBeGreaterThan(-1);
+    const teamsCell = (row: HTMLElement) => within(row).getAllByRole('cell')[teamsCol];
+    // An id no longer in the store (a deleted team) is skipped.
+    expect(teamsCell(bobRow)).toHaveTextContent('Analytics, Zurich lab');
+    expect(teamsCell(await rowOf('Ada Admin'))).toHaveTextContent(/^—$/);
+  });
+});
+
+describe('UsersPanel by permission key', () => {
+  const lead = (permissions: string[]): User => ({ ...sam, id: 9, name: 'Lee Lead', role: 'team_lead', permissions });
+
+  it('shows a custom role by its name', async () => {
+    getUsers.mockResolvedValue([ada, { ...bob, role: 'team_lead', role_name: 'Team Lead' }]);
+    seed(ada, [siteA, siteB]);
+    render(<UsersPanel />);
+    expect(within(await rowOf('Bob Brown')).getByText('Team Lead')).toBeInTheDocument();
+  });
+
+  it('offers Add User with users.create and Manage Skills with skills.manage, each alone', async () => {
+    seed(lead(['users.view', 'users.create']), [siteA]);
+    const { unmount } = render(<UsersPanel />);
+    await rowOf('Bob Brown');
+    expect(screen.getByRole('button', { name: 'Add User' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage Skills' })).not.toBeInTheDocument();
+    unmount();
+
+    seed(lead(['users.view', 'skills.manage']), [siteA]);
+    render(<UsersPanel />);
+    await rowOf('Bob Brown');
+    expect(screen.queryByRole('button', { name: 'Add User' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage Skills' })).toBeInTheDocument();
+  });
+
+  it('edits administrator accounts only with users.edit_admins', async () => {
+    seed(lead(['users.view', 'users.edit']), [siteA]);
+    const { unmount } = render(<UsersPanel />);
+    expect(within(await rowOf('Ada Admin')).queryByTitle('Edit user')).not.toBeInTheDocument();
+    expect(within(await rowOf('Bob Brown')).getByTitle('Edit user')).toBeInTheDocument();
+    unmount();
+
+    seed(lead(['users.view', 'users.edit', 'users.edit_admins']), [siteA]);
+    render(<UsersPanel />);
+    expect(within(await rowOf('Ada Admin')).getByTitle('Edit user')).toBeInTheDocument();
+  });
+
+  it('sends active with users.toggle_active, never the role without users.change_role', async () => {
+    seed(lead(['users.view', 'users.edit', 'users.toggle_active']), [siteA]);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByLabelText('Role *')).toBeDisabled();
+    expect(screen.getByText('Your role cannot change roles')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Active' }));
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    const payload = updateUser.mock.calls[0][1];
+    expect(payload).toMatchObject({ active: false });
+    expect(payload).not.toHaveProperty('role');
+  });
+
+  it('sends the role with users.change_role, offering only roles within the editor\'s own keys', async () => {
+    getUsers.mockResolvedValue([ada, sam, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    seed(lead(['projects.view', 'users.view', 'users.edit', 'users.change_role']), [siteA]);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByRole('switch', { name: 'Active' })).toBeDisabled();
+    expect(screen.getByText('Your role cannot enable or disable users')).toBeInTheDocument();
+
+    const role = screen.getByLabelText('Role *');
+    expect(role).toHaveValue('viewer');
+    expect(screen.getByRole('option', { name: 'Admin (admin only)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Superuser (more than your role)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'User (more than your role)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Team Lead' })).toBeEnabled();
+    expect(screen.getByRole('option', { name: 'Viewer' })).toBeEnabled();
+    expect(screen.getByText("Roles granting permissions you don't hold can't be assigned")).toBeInTheDocument();
+
+    fireEvent.change(role, { target: { value: 'team_lead' } });
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    const payload = updateUser.mock.calls[0][1];
+    expect(payload).toMatchObject({ role: 'team_lead' });
+    expect(payload).not.toHaveProperty('active');
+  });
+
+  it('lets a superuser give the user role while the Kanban board is off', async () => {
+    // /auth/me omits views.kanban while the board is off; the User role still holds it
+    const withoutBoard = SUPERUSER_DEFAULTS.filter((key) => key !== 'views.kanban');
+    getUsers.mockResolvedValue([ada, sam, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    seed({ ...sam, permissions: [...withoutBoard, 'users.change_role'] }, [siteA]);
+    useAppStore.setState({ instanceSettings: { kanban_enabled: 'false' } });
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+
+    const role = screen.getByLabelText('Role *');
+    expect(role).toBeEnabled();
+    expect(screen.getByRole('option', { name: 'User' })).toBeEnabled();
+    fireEvent.change(role, { target: { value: 'user' } });
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0][1]).toMatchObject({ role: 'user' });
+  });
+
+  it('keeps the user role out of reach of someone lacking views.kanban while the board is on', async () => {
+    const withoutBoard = SUPERUSER_DEFAULTS.filter((key) => key !== 'views.kanban');
+    getUsers.mockResolvedValue([ada, sam, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    seed({ ...sam, permissions: [...withoutBoard, 'users.change_role'] }, [siteA]);
+    useAppStore.setState({ instanceSettings: { kanban_enabled: 'true' } });
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByRole('option', { name: 'User (more than your role)' })).toBeDisabled();
+  });
+
+  it("keeps the role of someone whose role grants more than the editor's", async () => {
+    seed(lead(['projects.view', 'users.view', 'users.edit', 'users.change_role']), [siteA]);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByLabelText('Role *')).toBeDisabled();
+    expect(
+      screen.getByText('You can only change the role of users whose role grants no more than yours')
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Last Name *'), { target: { value: 'Browne' } });
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0][1]).not.toHaveProperty('role');
+  });
+
+  it('offers every role to an administrator, and loads the roles when the store has none', async () => {
+    seed(ada, [siteA, siteB]);
+    useAppStore.setState({ roles: [] });
+    render(<UsersPanel />);
+    await waitFor(() => expect(useAppStore.getState().roles).toHaveLength(5));
+    expect(rolesApi.getAll).toHaveBeenCalledTimes(1);
+    await openEditor('Bob Brown');
+    const options = Array.from((screen.getByLabelText('Role *') as HTMLSelectElement).options);
+    expect(options.map((o) => o.text)).toEqual(['Admin', 'Superuser', 'User', 'Team Lead', 'Viewer']);
+    expect(options.every((o) => !o.disabled)).toBe(true);
+    expect(screen.queryByText("Roles granting permissions you don't hold can't be assigned")).not.toBeInTheDocument();
+  });
+
+  it("still shows the user's role while the roles are unavailable", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    rolesApi.getAll.mockRejectedValue(new Error('500'));
+    seed(ada, [siteA, siteB]);
+    useAppStore.setState({ roles: [] });
+    getUsers.mockResolvedValue([ada, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByLabelText('Role *')).toHaveValue('viewer');
+    expect(screen.getByRole('option', { name: 'Viewer' })).toBeInTheDocument();
+  });
+});
+
+describe('UsersPanel bookable as a resource', () => {
+  beforeEach(() => {
+    seed(ada, [siteA, siteB]);
+    vi.mocked(createUser).mockReset().mockResolvedValue({} as never);
+  });
+
+  const bookable = () => screen.getByRole('switch', { name: 'Bookable as a resource' });
+
+  async function openCreate() {
+    render(<UsersPanel />);
+    await rowOf('Bob Brown');
+    fireEvent.click(screen.getByRole('button', { name: 'Add User' }));
+    fireEvent.change(screen.getByLabelText('First Name *'), { target: { value: 'Cleo' } });
+    fireEvent.change(screen.getByLabelText('Last Name *'), { target: { value: 'Chen' } });
+    fireEvent.change(screen.getByLabelText('Email *'), { target: { value: 'cleo@demo.local' } });
+    fireEvent.change(screen.getByLabelText('Password *'), { target: { value: 'welcome-1' } });
+  }
+
+  it('shows the switch with its hint, following the role on a new account', async () => {
+    await openCreate();
+    const toggle = bookable();
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeEnabled();
+    expect(toggle).toHaveAccessibleDescription(
+      'Appears in the Staff panel and can be booked on projects. Add the person to a site to list them there.'
+    );
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    expect(bookable()).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'superuser' } });
+    expect(bookable()).toBeChecked();
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    fireEvent.submit(screen.getByLabelText('Role *').closest('form')!);
+    await waitFor(() => expect(createUser).toHaveBeenCalled());
+    expect(vi.mocked(createUser).mock.calls[0][0]).toMatchObject({ role: 'admin', is_resource: false });
+  });
+
+  it('keeps a touched switch whatever role is picked afterwards', async () => {
+    await openCreate();
+    fireEvent.click(bookable());
+    expect(bookable()).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'superuser' } });
+    expect(bookable()).not.toBeChecked();
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    fireEvent.click(bookable());
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'user' } });
+    expect(bookable()).toBeChecked();
+
+    fireEvent.submit(screen.getByLabelText('Role *').closest('form')!);
+    await waitFor(() => expect(createUser).toHaveBeenCalled());
+    expect(vi.mocked(createUser).mock.calls[0][0]).toMatchObject({ role: 'user', is_resource: true });
+  });
+
+  it("shows an account's own flag, ignores role changes and sends it on update", async () => {
+    const onDirtyChange = vi.fn();
+    render(<UsersPanel onDirtyChange={onDirtyChange} />);
+    await openEditor('Bob Brown');
+    expect(bookable()).toBeChecked();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    expect(bookable()).toBeChecked();
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'user' } });
+
+    fireEvent.click(bookable());
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(bookable());
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(bookable());
+    save();
+
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0]).toEqual([4, expect.objectContaining({ is_resource: false })]);
+  });
+
+  it('sends the unchanged flag on every update', async () => {
+    render(<UsersPanel />);
+    await openEditor('Ada Admin');
+    expect(bookable()).not.toBeChecked();
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0]).toEqual([1, expect.objectContaining({ is_resource: false })]);
+  });
+
+  it('marks people who are not bookable in the list', async () => {
+    render(<UsersPanel />);
+    expect(within(await rowOf('Ada Admin')).getByText('Not bookable')).toBeInTheDocument();
+    expect(within(await rowOf('Bob Brown')).queryByText('Not bookable')).not.toBeInTheDocument();
+    expect(within(await rowOf('Sam Super')).queryByText('Not bookable')).not.toBeInTheDocument();
   });
 });

@@ -22,8 +22,8 @@ interface ProjectBarProps {
   endDate: string;
   onDragStart?: (e: React.MouseEvent) => void;
   /**
-   * Solid bar colour from the project's tag in the user's "Colour by" group
-   * (utils/tags.ts projectBarColor). Null/undefined = default gradient. The
+   * Solid bar colour from the user's "Colour by" choice: the project's item of
+   * a field, or its tag (utils/projectFilters.ts projectBarColor). Null/undefined = default gradient. The
    * unconfirmed stripes stay on top either way.
    */
   color?: string | null;

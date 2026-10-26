@@ -5,13 +5,13 @@ Handles notes operations.
 Matches the Node.js API at /api/notes exactly.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.note import Note
 from app.models.site import Site
 from app.models.user import User
@@ -20,6 +20,7 @@ from app.schemas.note import (
     NoteResponse,
 )
 from app.services.date_range import parse_day
+from app.services.site_access import ensure_site_visible
 
 router = APIRouter()
 
@@ -42,6 +43,7 @@ def build_note_response(note: Note) -> dict:
 
 @router.get("/notes", response_model=list[NoteResponse])
 async def get_notes(
+    request: Request,
     siteId: int = Query(...),
     startDate: str | None = Query(None),
     endDate: str | None = Query(None),
@@ -49,12 +51,13 @@ async def get_notes(
     user: User = Depends(get_current_user),
 ):
     """
-    Get notes for a site.
+    Get notes for a visible site (403 otherwise).
 
     Optionally filter by date range.
 
     Matches: GET /api/notes
     """
+    await ensure_site_visible(request, db, user, siteId)
     query = select(Note).where(Note.site_id == siteId).options(selectinload(Note.staff))
 
     # Parsed (400 on junk): a raw string compared to a DATE column used to
@@ -75,16 +78,18 @@ async def get_notes(
 @router.post("/notes", response_model=NoteResponse, status_code=201)
 async def create_note(
     data: NoteCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    superuser: User = Depends(require_superuser),
+    user: User = Depends(require_permission("staff_notes.manage")),
 ):
     """
     Create a new note.
 
-    Requires superuser authentication.
+    Requires ``staff_notes.manage``, at a visible site (403 otherwise).
 
     Matches: POST /api/notes
     """
+    await ensure_site_visible(request, db, user, data.site_id)
     # Unknown references are a 404, not an FK violation (500).
     site = await db.execute(select(Site.id).where(Site.id == data.site_id))
     if site.scalar_one_or_none() is None:
@@ -117,13 +122,14 @@ async def create_note(
 @router.delete("/notes/{note_id}")
 async def delete_note(
     note_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    superuser: User = Depends(require_superuser),
+    user: User = Depends(require_permission("staff_notes.manage")),
 ):
     """
     Delete a note.
 
-    Requires superuser authentication.
+    Requires ``staff_notes.manage``, on a note of a visible site (403 otherwise).
 
     Matches: DELETE /api/notes/:id
     """
@@ -132,6 +138,7 @@ async def delete_note(
 
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    await ensure_site_visible(request, db, user, note.site_id)
 
     await db.delete(note)
     await db.commit()

@@ -62,7 +62,7 @@ describe('SiteSelector', () => {
     expect(view.container).toBeEmptyDOMElement();
   });
 
-  it('offers only the user’s sites; admins see all', () => {
+  it('offers only the user’s sites; sites.view_all sees all', () => {
     useAppStore.setState({ sites: [basel, zurich, bern], currentSite: basel, currentUser: makeUser({ role: 'superuser', site_ids: [1, 2] }) });
     const view = render(<SiteSelector />);
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Basel', 'Zurich']);
@@ -110,7 +110,7 @@ describe('SiteSelector', () => {
     });
     expect(useAppStore.getState().currentSite?.id).toBe(2);
     expect(error).toHaveBeenCalledTimes(3);
-    expect(error).toHaveBeenCalledWith('[SiteSelector] Failed to load custom columns:', expect.any(Error));
+    expect(error).toHaveBeenCalledWith('[DataLoader] Failed to load custom columns:', expect.any(Error));
   });
 });
 

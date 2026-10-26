@@ -24,6 +24,7 @@ from app.utils import utcnow_naive
 if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.site import Site
+    from app.models.team import Team
 
 
 class Equipment(Base):
@@ -61,6 +62,16 @@ class Equipment(Base):
         order_by="Site.id",
     )
 
+    # Teams the equipment is linked to, loaded with it (selectin) so responses
+    # never trigger a lazy load. Rows go with the team / equipment (ON DELETE CASCADE).
+    teams: Mapped[list["Team"]] = relationship(
+        "Team",
+        secondary="equipment_teams",
+        lazy="selectin",
+        order_by="Team.id",
+        passive_deletes=True,
+    )
+
     assignments: Mapped[list["EquipmentAssignment"]] = relationship(
         "EquipmentAssignment",
         back_populates="equipment",
@@ -89,6 +100,11 @@ class Equipment(Base):
     def site_ids(self) -> list[int]:
         """Ids of every linked site, ascending (the first one is site_id)."""
         return [site.id for site in self.sites]
+
+    @property
+    def team_ids(self) -> list[int]:
+        """Ids of the teams the equipment is linked to, ascending."""
+        return sorted(team.id for team in self.teams)
 
     def __repr__(self) -> str:
         return f"<Equipment {self.name} ({self.type})>"
@@ -130,7 +146,9 @@ class EquipmentAssignment(Base):
     )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    # Note: 'notes' column not in Node.js schema for equipment_assignments
+    # Optional free text written with the booking (2.0.0): shown in the
+    # booking dialog, the PM's notification and the site export.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships

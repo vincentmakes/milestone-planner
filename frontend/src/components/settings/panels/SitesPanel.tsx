@@ -2,11 +2,15 @@
  * SitesPanel (Settings hub > Sites)
  * Lists all sites and allows adding new ones; the edit button swaps the list
  * for the site form (name, location, country/region, Nager holiday refresh).
+ * With `sites.export` alone the panel lists the visible sites with their
+ * Excel export and nothing else; editing and adding need `sites.manage`.
  */
 
 import { useState, useEffect } from 'react';
 import { Notice } from '@/components/common/Notice';
-import { useAppStore, selectCanManageResources } from '@/stores/appStore';
+import { useAppStore } from '@/stores/appStore';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
+import { can } from '@/utils/permissions';
 import { useUIStore } from '@/stores/uiStore';
 import { createSite, exportSiteToExcel } from '@/api';
 import { Button } from '@/components/common/Button';
@@ -16,7 +20,7 @@ import type { Site } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { SiteForm } from './SiteForm';
-import { CircleIcon, DownloadIcon, EditIcon, PlusIcon } from './PanelIcons';
+import { Icon, CircleIcon, DownloadIcon, EditIcon, PlusIcon } from '@/components/common/Icon';
 import styles from './SitesPanel.module.css';
 
 // Country lookup for display
@@ -40,9 +44,12 @@ function getCountryName(code: string | null | undefined): string {
 export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const settingsIntent = useUIStore((s) => s.settingsIntent);
   const clearSettingsIntent = useUIStore((s) => s.clearSettingsIntent);
-  const sites = useAppStore((s) => s.sites);
+  const allSites = useAppStore((s) => s.sites);
+  const visibleSites = useVisibleSites();
   const setSites = useAppStore((s) => s.setSites);
-  const canManageResources = useAppStore(selectCanManageResources);
+  const canManageSites = useAppStore((s) => can(s.currentUser, 'sites.manage'));
+  const canExport = useAppStore((s) => can(s.currentUser, 'sites.export'));
+  const sites = canManageSites ? allSites : visibleSites;
 
   // Site being edited (list view when null)
   const [editingSiteId, setEditingSiteId] = useState<number | null>(null);
@@ -51,10 +58,10 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   // Opened to edit a given site (legacy 'site' modal key)
   useEffect(() => {
     if (settingsIntent?.type === 'edit') {
-      setEditingSiteId(settingsIntent.id);
+      if (canManageSites) setEditingSiteId(settingsIntent.id);
       clearSettingsIntent();
     }
-  }, [settingsIntent, clearSettingsIntent]);
+  }, [settingsIntent, clearSettingsIntent, canManageSites]);
 
   // New site form
   const [newSiteName, setNewSiteName] = useState('');
@@ -77,7 +84,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     
     try {
       const newSite = await createSite({ name: newSiteName.trim() });
-      setSites([...sites, newSite]);
+      setSites([...allSites, newSite]);
       setNewSiteName('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add site');
@@ -125,7 +132,9 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
       {/* Site list */}
       <div className={styles.siteList}>
         {sites.length === 0 ? (
-          <div className={styles.empty}>No sites configured. Add one below.</div>
+          <div className={styles.empty}>
+            {canManageSites ? 'No sites configured. Add one below.' : 'No sites to export.'}
+          </div>
         ) : (
           sites.map((site) => (
             <div 
@@ -142,7 +151,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                 {!site.active && site.active !== undefined && (
                   <span className={styles.inactiveBadge}>Inactive</span>
                 )}
-                {canManageResources && (
+                {canExport && (
                   <button
                     className={styles.editBtn}
                     onClick={() => handleExportSite(site)}
@@ -150,17 +159,19 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                     title="Export site data as Excel"
                     aria-label={`Export ${site.name} as Excel`}
                   >
-                    {exportingSiteId === site.id ? <CircleIcon /> : <DownloadIcon />}
+                    {exportingSiteId === site.id ? <Icon icon={CircleIcon} size={14} /> : <Icon icon={DownloadIcon} size={14} />}
                   </button>
                 )}
-                <button
-                  className={styles.editBtn}
-                  onClick={() => handleEditSite(site)}
-                  title="Edit site"
-                  aria-label={`Edit ${site.name}`}
-                >
-                  <EditIcon />
-                </button>
+                {canManageSites && (
+                  <button
+                    className={styles.editBtn}
+                    onClick={() => handleEditSite(site)}
+                    title="Edit site"
+                    aria-label={`Edit ${site.name}`}
+                  >
+                    <Icon icon={EditIcon} size={15} />
+                  </button>
+                )}
               </div>
             </div>
           ))
@@ -168,6 +179,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
       </div>
       
       {/* Add new site section */}
+      {canManageSites && (
       <div className={styles.addSection}>
         <div className={styles.addForm}>
           <Input
@@ -179,7 +191,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
             onChange={(e) => setNewSiteName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddSite()}
           />
-          <Button icon={<PlusIcon />} onClick={handleAddSite} disabled={isSubmitting}>
+          <Button icon={<Icon icon={PlusIcon} />} onClick={handleAddSite} disabled={isSubmitting}>
             Add site
           </Button>
         </div>
@@ -187,6 +199,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           After adding, click the edit button to set country and region codes for automatic bank holidays.
         </p>
       </div>
+      )}
     </div>
   );
 }

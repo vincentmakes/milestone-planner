@@ -112,7 +112,7 @@ async def test_docs_gate_uses_the_tenant_db_and_the_live_role(live_role, expecte
 
     db = MagicMock()
     live = MagicMock()
-    live.one_or_none.return_value = (1, live_role)
+    live.all.return_value = [(1, live_role, None, None, None)]
     db.execute = AsyncMock(return_value=live)
 
     with (
@@ -131,6 +131,9 @@ async def test_docs_gate_uses_the_tenant_db_and_the_live_role(live_role, expecte
 
     tenant_lookup.assert_called_once_with("acme")
     assert user["role"] == expected
+    # The live role's permissions come with it (docs gate, broadcast fallback).
+    assert user["permissions"].role_key == expected
+    assert user["permissions"].has("system.api_docs") is (expected == "admin")
 
 
 @pytest.mark.asyncio
@@ -140,7 +143,7 @@ async def test_docs_gate_refuses_a_deactivated_admin():
 
     db = MagicMock()
     live = MagicMock()
-    live.one_or_none.return_value = (0, "admin")
+    live.all.return_value = [(0, "admin", None, None, None)]
     db.execute = AsyncMock(return_value=live)
 
     with (

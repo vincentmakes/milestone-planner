@@ -4,13 +4,13 @@
  * a card onto the Gantt (managers anything, everyone else only themselves).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { ResourcePanel } from '../ResourcePanel';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { resetAllStores } from '@/stores';
-import { formatDateISO } from '@/utils/date';
+import { addDaysToDateString, formatDateISO } from '@/utils/date';
 import {
   makeEquipment,
   makePhase,
@@ -18,10 +18,13 @@ import {
   makeSite,
   makeStaff,
   makeSubphase,
+  makeTeam,
   makeUser,
   makeVacation,
 } from '@/test/factories';
 import type { StaffAssignment } from '@/types';
+import { tagFilterKey } from '@/utils/tags';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 
 const today = formatDateISO(new Date());
 const assignment = (staffId: number, allocation: number): StaffAssignment => ({
@@ -113,6 +116,90 @@ describe('ResourcePanel', () => {
     expect(card('Full Time')).toHaveTextContent('40%');
   });
 
+  it("leaves bookings awaiting approval out of today's availability", () => {
+    const sub = makeSubphase({
+      start_date: today,
+      end_date: today,
+      staffAssignments: [{ ...assignment(4, 10), approval_status: 'pending' }],
+    });
+    const phase = makePhase({
+      start_date: today,
+      end_date: today,
+      staffAssignments: [{ ...assignment(4, 20), approval_status: 'pending' }],
+      children: [sub],
+    });
+    useAppStore.setState({
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+      projects: [
+        makeProject({
+          staffAssignments: [assignment(4, 30), { ...assignment(4, 50), approval_status: 'pending' }],
+          phases: [phase],
+        }),
+      ],
+    });
+    render(<ResourcePanel />);
+    // Only the approved 30 % counts.
+    expect(card('Bob Brown')).toHaveTextContent('70%');
+  });
+
+  it("counts an unlinked card booking on its own days only, a linked one over its card", () => {
+    // Phase and subphase span today; Bob's unlinked segments do not include it.
+    const yesterday = addDaysToDateString(today, -1);
+    const tomorrow = addDaysToDateString(today, 1);
+    const later = addDaysToDateString(today, 5);
+    const sub = makeSubphase({
+      start_date: yesterday,
+      end_date: later,
+      staffAssignments: [
+        { ...assignment(4, 10), linked: false, start_date: tomorrow, end_date: later },
+        { ...assignment(4, 5), linked: true, start_date: yesterday, end_date: later },
+      ],
+    });
+    const phase = makePhase({
+      start_date: yesterday,
+      end_date: later,
+      staffAssignments: [
+        { ...assignment(4, 20), linked: false, start_date: yesterday, end_date: yesterday },
+        { ...assignment(4, 25), linked: false, start_date: today, end_date: tomorrow },
+      ],
+      children: [sub],
+    });
+    useAppStore.setState({
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+      projects: [makeProject({ phases: [phase] })],
+    });
+    render(<ResourcePanel />);
+    // Today: the 25 % segment and the linked 5 % -> 70 % left
+    expect(card('Bob Brown')).toHaveTextContent('70%');
+  });
+
+  it('does not let a user without assignments.self_create drag their own card', () => {
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_create'),
+      }),
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+    });
+    render(<ResourcePanel />);
+    expect(card('Bob Brown')).toHaveAttribute('draggable', 'false');
+  });
+
+  it('lets a user whose own bookings need approval drag their own card', () => {
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_create'),
+        approval_required: ['assignments.self_create'],
+      }),
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+    });
+    render(<ResourcePanel />);
+    expect(card('Bob Brown')).toHaveAttribute('draggable', 'true');
+  });
+
   it('shows over-allocated staff as negative availability', () => {
     useAppStore.setState({
       staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
@@ -174,5 +261,50 @@ describe('ResourcePanel', () => {
     render(<ResourcePanel />);
     expect(card('Bob Brown')).toHaveAttribute('draggable', 'true');
     expect(card('Carol Chen')).toHaveAttribute('draggable', 'false');
+  });
+
+  it('with an active team filter, hides non-matching staff and equipment and keeps matching ones', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        makeStaff({ id: 4, name: 'Bob Brown', team_ids: [1] }),
+        makeStaff({ id: 5, name: 'Carol White', team_ids: [2] }),
+      ],
+      equipment: [
+        makeEquipment({ id: 1, name: 'Bioreactor 50L', team_ids: [1] }),
+        makeEquipment({ id: 2, name: 'HPLC', team_ids: [2] }),
+      ],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<ResourcePanel />);
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+    expect(screen.queryByText('Carol White')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Equipment' }));
+    expect(screen.getByText('Bioreactor 50L')).toBeInTheDocument();
+    expect(screen.queryByText('HPLC')).not.toBeInTheDocument();
+  });
+
+  it('applies a team-restricted closure to team members only, a whole-site closure to everyone', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        makeStaff({ id: 4, name: 'Bob Brown', team_ids: [1] }),
+        makeStaff({ id: 5, name: 'Carol White', team_ids: [2] }),
+        makeStaff({ id: 6, name: 'Dave Doe', team_ids: [] }),
+      ],
+    });
+    const event = { id: 3, site_id: 1, site_ids: [1], date: today, name: 'Team offsite', counts_as_unavailable: true };
+    act(() => useAppStore.getState().setCompanyEvents([{ ...event, team_ids: [1] }], new Set([today])));
+    render(<ResourcePanel />);
+    expect(within(card('Bob Brown')).getByText('0%')).toBeInTheDocument();
+    // Same site, not in the team
+    expect(within(card('Carol White')).getByText('100%')).toBeInTheDocument();
+    expect(within(card('Dave Doe')).getByText('100%')).toBeInTheDocument();
+
+    act(() => useAppStore.getState().setCompanyEvents([{ ...event, team_ids: [] }], new Set([today])));
+    for (const name of ['Bob Brown', 'Carol White', 'Dave Doe']) {
+      expect(within(card(name)).getByText('0%')).toBeInTheDocument();
+    }
   });
 });

@@ -1,12 +1,17 @@
 """
-Notification creation for Kanban events.
+Notification creation for comment, Kanban and approval events.
 
 Rules live here rather than in the routers so every trigger behaves the same:
   - the actor never notifies themselves
   - one notification per recipient per event (a user who is both assigned and
     @mentioned gets the mention, which is the more specific signal)
   - rows are staged before the caller's commit, so a notification and the
-    mutation that caused it land in the same transaction
+    mutation that caused it land in the same transaction -- except the change
+    notifications (``assignment_changed`` / ``project_changed``,
+    app/services/change_notifications.py), written after the caller's commit
+    in their own short transaction: they coalesce under an advisory lock that
+    must stay short, and the Gantt saves one drag as parallel PUTs whose
+    notifications must merge
 
 Due-soon/overdue reminders are deliberately absent: they are derived in the
 browser from already-loaded project data (there is no scheduler in this app),
@@ -16,12 +21,25 @@ which is why `notifications_type_check` has no `due_soon` value.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
+from app.models.assignment import (
+    PhaseStaffAssignment,
+    ProjectAssignment,
+    SubphaseStaffAssignment,
+)
 from app.models.notification import Notification
 
 # Ordered by specificity: the earlier type wins when one event would otherwise
 # produce two notifications for the same recipient.
-_TYPE_PRIORITY = ("mention", "assigned", "status_change", "comment")
+_TYPE_PRIORITY = (
+    "mention",
+    "approval_requested",
+    "approval_decided",
+    "assigned",
+    "assignment_changed",
+    "project_changed",
+    "status_change",
+    "comment",
+)
 
 
 async def card_assignee_ids(
@@ -29,15 +47,31 @@ async def card_assignee_ids(
     entity_type: str,
     entity_id: int,
 ) -> list[int]:
-    """Staff ids currently assigned to a card."""
+    """Staff ids with an approved assignment on a card, or for a project
+    thread (``entity_type == "project"``, ``entity_id`` = the project id) with
+    an approved project-level booking.
+
+    A pending self-booking (awaiting approval) is not an assignee yet: it is
+    not notified of moves or comments as one (mentions still reach anyone).
+    One branch per type: an unknown type is an error, never a subphase.
+    """
     if entity_type == "phase":
         query = select(PhaseStaffAssignment.staff_id).where(
-            PhaseStaffAssignment.phase_id == entity_id
+            PhaseStaffAssignment.phase_id == entity_id,
+            PhaseStaffAssignment.approval_status == "approved",
+        )
+    elif entity_type == "subphase":
+        query = select(SubphaseStaffAssignment.staff_id).where(
+            SubphaseStaffAssignment.subphase_id == entity_id,
+            SubphaseStaffAssignment.approval_status == "approved",
+        )
+    elif entity_type == "project":
+        query = select(ProjectAssignment.staff_id).where(
+            ProjectAssignment.project_id == entity_id,
+            ProjectAssignment.approval_status == "approved",
         )
     else:
-        query = select(SubphaseStaffAssignment.staff_id).where(
-            SubphaseStaffAssignment.subphase_id == entity_id
-        )
+        raise ValueError(f"Unknown comment entity type: {entity_type!r}")
 
     result = await db.execute(query)
     return list(dict.fromkeys(result.scalars().all()))

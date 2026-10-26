@@ -7,6 +7,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -19,15 +20,18 @@ import {
   useEquipmentTodayStatus,
 } from '@/hooks';
 import { useDataLoader } from '@/hooks/useDataLoader';
+import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
-import { canManageAnyProject, isPrivileged } from '@/utils/permissions';
+import { can, canBookEquipmentOnAny } from '@/utils/permissions';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
 import { confirmAction } from '@/utils/confirmDialog';
+import { parseNameList } from '@/utils/instanceSettings';
 import styles from './EquipmentView.module.css';
+import { Icon, PlusIcon, CloseIcon, ChevronRightIcon, DragDotsIcon, CheckIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
 
 // Shared row-height constants (used by EquipmentTimelineBody to keep rows in sync)
 export const BASE_ROW_HEIGHT = 44;
@@ -44,11 +48,17 @@ interface EquipmentViewProps {
   height?: number;
 }
 
+/** The admin's default types (stored JSON list) that exist among `siteTypes` */
+function defaultTypeSelection(stored: string | undefined, siteTypes: readonly string[]): Set<string> {
+  return new Set(parseNameList(stored).filter((type) => siteTypes.includes(type)));
+}
+
 export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange, height }: EquipmentViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   
   // Local panel width state for standalone mode only
@@ -67,8 +77,8 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
-  const companyEventDates = useAppStore((s) => s.companyEventDates);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Company events narrowed by the header team filter
+  const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
@@ -81,6 +91,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
   const currentUser = useAppStore((s) => s.currentUser);
+  const { equipmentMatches } = useTeamFilter();
 
   // Drag and drop for equipment assignment
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
@@ -94,12 +105,13 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const todayStatusMap = useEquipmentTodayStatus();
 
   // Dragging an equipment row onto the Gantt books it on the drop target's
-  // project, so it is open to anyone who manages at least one project; the
-  // drop overlay (ResourceDropOverlay.canDropOn) then accepts only projects
-  // the user may edit. Equipment blocks (maintenance / defect windows) are
-  // not project data and stay with admins and superusers.
-  const canBook = canManageAnyProject(currentUser, projects);
-  const canManageBlocks = isPrivileged(currentUser);
+  // project, so it is open to anyone who may book equipment on at least one
+  // project (equipment_bookings.manage, or managing one); the drop overlay
+  // (ResourceDropOverlay.canDropOn) then accepts only those projects.
+  // Equipment blocks (maintenance / defect windows) are not project data:
+  // they need equipment_blocks.manage.
+  const canBook = canBookEquipmentOnAny(currentUser, projects);
+  const canManageBlocks = can(currentUser, 'equipment_blocks.manage');
 
   // Per-row expansion state (mirrors StaffView)
   const [expandedEquipment, setExpandedEquipment] = useState<Set<number>>(new Set());
@@ -140,44 +152,17 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     embedded
   );
   
-  // Type filter state
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
-
-  // Position the position:fixed filter dropdown anchored below the trigger.
-  // The dropdown opens to the right edge of the wrapper, max-width 240.
-  useLayoutEffect(() => {
-    if (!isFilterOpen || !filterRef.current) return;
-    const update = () => {
-      const rect = filterRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const top = rect.bottom + 6;
-      const available = Math.max(160, window.innerHeight - top - 12);
-      const dropdownWidth = 240;
-      setFilterDropdownStyle({
-        top,
-        left: Math.max(8, Math.min(rect.right - dropdownWidth, window.innerWidth - dropdownWidth - 8)),
-        maxHeight: available,
-      });
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [isFilterOpen]);
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
   
-  // Get all equipment for current site (unfiltered for type extraction)
+  // Get all equipment for current site (unfiltered by type, for type
+  // extraction), narrowed by the header team filter
   const allSiteEquipment = useMemo(() => 
-    equipment.filter((e) => e.site_id === currentSite?.id)
+    equipment.filter((e) => e.site_id === currentSite?.id && equipmentMatches(e))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [equipment, currentSite]
+    [equipment, currentSite, equipmentMatches]
   );
   
   // Extract unique equipment types
@@ -188,6 +173,23 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     });
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [allSiteEquipment]);
+
+  // Type filter state. The Equipment panel below the Gantt (embedded) is
+  // seeded with the admin's default types (Settings → Features & defaults)
+  // found among the site's types each time it mounts, and again when the
+  // site changes (each site opens with its own defaults); the standalone
+  // Equipment view opens unfiltered (a site change clears its filter).
+  // Changes last the session.
+  const defaultTypes = useAppStore((s) => s.instanceSettings?.equipment_panel_default_types);
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(() =>
+    embedded ? defaultTypeSelection(defaultTypes, equipmentTypes) : new Set()
+  );
+  const seededSiteId = useRef(currentSite?.id);
+  useLayoutEffect(() => {
+    if (seededSiteId.current === currentSite?.id) return;
+    seededSiteId.current = currentSite?.id;
+    setSelectedTypes(embedded ? defaultTypeSelection(defaultTypes, equipmentTypes) : new Set());
+  }, [currentSite?.id, defaultTypes, equipmentTypes, embedded]);
   
   // Filter equipment based on selected types (show all if none selected)
   const siteEquipment = useMemo(() => {
@@ -200,6 +202,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     onClose: () => setIsFilterOpen(false),
     wrapperRef: filterRef,
     triggerRef: filterTriggerRef,
+    panelRef: filterPanelRef,
   });
   
   // Toggle a type selection
@@ -398,17 +401,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                 aria-expanded={isFilterOpen}
                 aria-haspopup="dialog"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                </svg>
+                <Icon icon={FilterIcon} size={14} />
                 <span className={styles.filterLabel}>
                   {selectedTypes.size === 0 
                     ? 'All Types' 
@@ -416,64 +409,50 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                       ? Array.from(selectedTypes)[0]
                       : `${selectedTypes.size} types`}
                 </span>
-                <svg
-                  className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`}
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
+                <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} />
               </button>
               
-              {isFilterOpen && (
-                <div className={styles.filterDropdown} style={filterDropdownStyle} role="dialog" aria-label="Filter equipment">
-                  <div className={styles.filterActions}>
-                    <button 
-                      className={styles.filterActionBtn}
-                      onClick={selectAllTypes}
-                    >
-                      Select All
-                    </button>
-                    <button 
-                      className={styles.filterActionBtn}
-                      onClick={clearAllTypes}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className={styles.filterDivider} />
-                  <div className={styles.filterOptions}>
-                    {equipmentTypes.map((type) => (
-                      <label key={type} className={styles.filterOption}>
-                        <input
-                          type="checkbox"
-                          checked={selectedTypes.has(type)}
-                          onChange={() => toggleType(type)}
-                          className={styles.filterCheckboxInput}
-                        />
-                        <span className={styles.filterCheckbox}>
-                          <svg
-                            className={styles.checkIcon}
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        </span>
-                        <span className={styles.filterOptionText}>{type}</span>
-                      </label>
-                    ))}
-                  </div>
+              <AnchoredPanel
+                ref={filterPanelRef}
+                open={isFilterOpen}
+                triggerRef={filterTriggerRef}
+                align="end"
+                className={styles.filterDropdown}
+                role="dialog"
+                aria-label="Filter equipment"
+              >
+                <div className={styles.filterActions}>
+                  <button 
+                    className={styles.filterActionBtn}
+                    onClick={selectAllTypes}
+                  >
+                    Select All
+                  </button>
+                  <button 
+                    className={styles.filterActionBtn}
+                    onClick={clearAllTypes}
+                  >
+                    Clear
+                  </button>
                 </div>
-              )}
+                <div className={styles.filterDivider} />
+                <div className={styles.filterOptions}>
+                  {equipmentTypes.map((type) => (
+                    <label key={type} className={styles.filterOption}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTypes.has(type)}
+                        onChange={() => toggleType(type)}
+                        className={styles.filterCheckboxInput}
+                      />
+                      <span className={styles.filterCheckbox}>
+                        <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
+                      </span>
+                      <span className={styles.filterOptionText}>{type}</span>
+                    </label>
+                  ))}
+                </div>
+              </AnchoredPanel>
             </div>
           )}
         </div>
@@ -503,20 +482,11 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                   >
                     {canBook && (
                       <div className={styles.dragHandle} title="Drag to assign">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                          <circle cx="9" cy="5" r="2" />
-                          <circle cx="9" cy="12" r="2" />
-                          <circle cx="9" cy="19" r="2" />
-                          <circle cx="15" cy="5" r="2" />
-                          <circle cx="15" cy="12" r="2" />
-                          <circle cx="15" cy="19" r="2" />
-                        </svg>
+                        <Icon icon={DragDotsIcon} size={12} />
                       </div>
                     )}
                     <div className={`${styles.expandIcon} ${isExpanded ? styles.expanded : ''}`}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
+                      <Icon icon={ChevronRightIcon} size={12} />
                     </div>
                     <div className={`${styles.status} ${styles[todayStatus]}`} title={STATUS_LABEL[todayStatus]} />
                     <div className={styles.equipmentInfo}>
@@ -566,10 +536,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                               }}
                               title="Delete block"
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <line x1="18" y1="6" x2="6" y2="18" />
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                              </svg>
+                              <Icon icon={CloseIcon} size={14} />
                             </span>
                           )}
                         </div>
@@ -582,10 +549,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                           onClick={() => openEquipmentBlockModal(undefined, equip.id)}
                         >
                           <span className={styles.addIcon}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="12" y1="5" x2="12" y2="19" />
-                              <line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
+                            <Icon icon={PlusIcon} size={14} />
                           </span>
                           <span className={styles.addText}>Add block (maintenance / defect)</span>
                         </div>

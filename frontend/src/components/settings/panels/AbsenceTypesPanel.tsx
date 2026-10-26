@@ -19,7 +19,7 @@ import { absenceTypesApi } from '@/api';
 import { EVENT_COLOR_SWATCHES } from '@/utils/colorSwatches';
 import type { AbsenceType } from '@/types';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
-import { DragHandleIcon, EditIcon, TrashIcon, PlusIcon } from './PanelIcons';
+import { Icon, DragHandleIcon, EditIcon, TrashIcon, PlusIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -256,7 +256,7 @@ export function AbsenceTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>
               >
                 <div className={styles.mainRow}>
                   <span className={styles.dragHandle} aria-hidden="true">
-                    <DragHandleIcon />
+                    <Icon icon={DragHandleIcon} size={16} />
                   </span>
                   <span
                     className={styles.colorDot}
@@ -299,7 +299,7 @@ export function AbsenceTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>
                       title="Edit name and color"
                       aria-label={`Edit ${type.name}`}
                     >
-                      <EditIcon />
+                      <Icon icon={EditIcon} size={15} />
                     </button>
                     <button
                       type="button"
@@ -308,7 +308,7 @@ export function AbsenceTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>
                       title="Delete"
                       aria-label={`Delete ${type.name}`}
                     >
-                      <TrashIcon />
+                      <Icon icon={TrashIcon} size={15} />
                     </button>
                   </div>
                 </div>
@@ -356,7 +356,7 @@ export function AbsenceTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>
             onChange={setNewUnavailable}
             label="Counts as unavailable"
           />
-          <Button type="submit" icon={<PlusIcon />} disabled={isAdding || !newName.trim()}>
+          <Button type="submit" icon={<Icon icon={PlusIcon} />} disabled={isAdding || !newName.trim()}>
             {isAdding ? 'Adding...' : 'Add type'}
           </Button>
         </div>

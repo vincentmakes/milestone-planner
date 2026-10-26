@@ -1,8 +1,10 @@
 """
 Route behaviour of the smaller domain fixes:
 
-- B2-19  GET /vacations without siteId: plain users see their own absences and
-         those of people sharing a site with them; superusers/admins see all.
+- B2-19  GET /vacations without siteId: their own absences and, with
+         absences.view_others, those of the members of their visible sites
+         (admins: all). With siteId: absences.view_others and a visible site
+         (RBAC Task 4; the cross-site details are in test_site_visibility.py).
 - B2-7   PUT /custom-columns/values/batch validates like the single write,
          is bounded, and loads one query per column.
 - B2-21  import uploads are capped (413) and the parse runs in a thread.
@@ -16,6 +18,7 @@ Mock-based, house style (tests/conftest.py).
 """
 
 from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,6 +27,7 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment
 from app.models.site import Site
 from tests.conftest import FakeUser
+from tests.support import card_target_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -55,9 +59,10 @@ def _sql(stmt) -> str:
 
 
 @pytest.mark.asyncio
-async def test_plain_user_vacation_list_is_limited_to_shared_sites(authed_client, mock_db_session):
+@pytest.mark.parametrize("role", ["user", "superuser"])
+async def test_vacation_list_is_limited_to_visible_colleagues(authed_client, mock_db_session, role):
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, role, site_ids=[1, 3]))
     mock_db_session.execute.return_value = _scalars_result([])
 
     response = await client.get("/api/vacations")
@@ -65,15 +70,14 @@ async def test_plain_user_vacation_list_is_limited_to_shared_sites(authed_client
     assert response.status_code == 200
     sql = _sql(mock_db_session.execute.await_args.args[0])
     assert "vacations.staff_id = 5" in sql
-    assert "user_sites.user_id = 5" in sql
     assert "vacations.staff_id IN (SELECT user_sites.user_id" in sql
+    assert "user_sites.site_id IN (1, 3)" in sql
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["superuser", "admin"])
-async def test_privileged_vacation_list_is_unchanged(authed_client, mock_db_session, role):
+async def test_admin_vacation_list_is_unchanged(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(5, role))
+    set_user(FakeUser(5, "admin"))
     mock_db_session.execute.return_value = _scalars_result([])
 
     response = await client.get("/api/vacations")
@@ -84,19 +88,24 @@ async def test_privileged_vacation_list_is_unchanged(authed_client, mock_db_sess
 
 
 @pytest.mark.asyncio
-async def test_vacation_list_for_a_site_is_unchanged_for_plain_users(
-    authed_client, mock_db_session
-):
+async def test_vacation_list_for_a_site_needs_a_visible_site(authed_client, mock_db_session):
+    # Behaviour change (RBAC decision 6): any user used to read any site's
+    # absences through ?siteId=; now only a visible site's, with
+    # absences.view_others (allowed for plain users by default).
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, "user", site_ids=[1]))
     mock_db_session.execute.return_value = _scalars_result([])
 
-    response = await client.get("/api/vacations?siteId=2")
+    response = await client.get("/api/vacations?siteId=1")
 
     assert response.status_code == 200
     sql = _sql(mock_db_session.execute.await_args.args[0])
-    assert "user_sites.site_id = 2" in sql
+    assert "user_sites.site_id = 1" in sql
     assert "vacations.staff_id = 5" not in sql
+
+    mock_db_session.execute.reset_mock()
+    assert (await client.get("/api/vacations?siteId=2")).status_code == 403
+    mock_db_session.execute.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +118,13 @@ def _column(column_id, column_type="text", options=None):
     if options is not None:
         col.set_list_options(options)
     return col
+
+
+def _phase_projects(*phase_ids):
+    """The phase -> project lookup behind the value writes' site check (all project 1)."""
+    result = MagicMock()
+    result.all.return_value = [(pid, 1) for pid in phase_ids]
+    return result
 
 
 def _update(column_id, entity_id, value, entity_type="phase"):
@@ -133,7 +149,7 @@ async def test_batch_rejects_invalid_values_before_writing(
 ):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
-    mock_db_session.execute.side_effect = [_scalars_result([column])]
+    mock_db_session.execute.side_effect = [_phase_projects(10, 11), _scalars_result([column])]
 
     response = await client.put(
         "/api/custom-columns/values/batch",
@@ -179,6 +195,7 @@ async def test_batch_queries_once_per_column_and_dedupes_keys(authed_client, moc
         updated_at=STAMP,
     )
     mock_db_session.execute.side_effect = [
+        _phase_projects(10, 11),  # the phases' projects (site visibility)
         _scalars_result([_column(1), _column(2)]),  # the columns (one query)
         _scalars_result([existing]),  # column 1's existing values
         _scalars_result([]),  # column 2's existing values
@@ -204,7 +221,7 @@ async def test_batch_queries_once_per_column_and_dedupes_keys(authed_client, moc
     )
 
     assert response.status_code == 200, response.text
-    assert mock_db_session.execute.await_count == 3
+    assert mock_db_session.execute.await_count == 4  # + the phases' projects
     assert existing.value == "second"
     added = [c.args[0] for c in mock_db_session.add.call_args_list]
     assert sorted((v.custom_column_id, v.entity_id) for v in added) == [(1, 11), (2, 10)]
@@ -215,7 +232,7 @@ async def test_batch_queries_once_per_column_and_dedupes_keys(authed_client, moc
         (1, 11, "a"),
         (2, 10, "b"),
     }
-    lookup = _sql(mock_db_session.execute.await_args_list[1].args[0])
+    lookup = _sql(mock_db_session.execute.await_args_list[2].args[0])
     assert "custom_column_values.custom_column_id = 1" in lookup
     assert "('phase', 10)" in lookup and "('phase', 11)" in lookup
 
@@ -257,7 +274,9 @@ async def test_oversized_import_upload_is_413(authed_client, mock_db_session, pa
 
     with patch("app.routers.mpp_import.MAX_IMPORT_UPLOAD_BYTES", 16):
         response = await client.post(
-            path, files={"file": ("plan.mpp", b"x" * 17, "application/octet-stream")}
+            path,
+            data={"site_id": "1"},
+            files={"file": ("plan.mpp", b"x" * 17, "application/octet-stream")},
         )
 
     assert response.status_code == 413, response.text
@@ -474,7 +493,8 @@ async def test_comment_of_a_deleted_author_has_null_author(authed_client, mock_d
     )
     rows = MagicMock()
     rows.all.return_value = [(orphan, None, None)]
-    mock_db_session.execute.return_value = rows
+    card = SimpleNamespace(id=1, project_id=1, name=None, type="Design")
+    mock_db_session.execute.side_effect = [card_target_result(card), rows]
 
     response = await client.get("/api/kanban/cards/phase/1/comments")
 

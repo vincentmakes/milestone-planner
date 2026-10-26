@@ -138,3 +138,49 @@ describe('localProjectTree', () => {
     expect(nested().equipmentAssignments).toHaveLength(1);
   });
 });
+
+describe('card date edits fit the card bookings locally', () => {
+  beforeEach(() => {
+    resetAllStores();
+    const project = makeProject({
+      id: 1,
+      phases: [
+        makePhase({
+          id: 10,
+          start_date: '2026-03-02',
+          end_date: '2026-03-13',
+          staffAssignments: [
+            staff(1, { linked: false, start_date: '2026-03-03', end_date: '2026-03-05' }),
+            staff(2, { linked: true, start_date: '2026-03-02', end_date: '2026-03-13' }),
+          ],
+          children: [
+            makeSubphase({
+              id: 11,
+              start_date: '2026-03-02',
+              end_date: '2026-03-06',
+              staffAssignments: [staff(1, { linked: false, start_date: '2026-03-05', end_date: '2026-03-06' })],
+            }),
+          ],
+        }),
+      ],
+    });
+    useAppStore.setState({ projects: [project] });
+  });
+  const phase = () => useAppStore.getState().projects[0].phases[0];
+
+  it('a phase move translates its segments and moves its linked rows', () => {
+    patchPhaseLocally(1, 10, { start_date: '2026-03-09', end_date: '2026-03-20' });
+    expect(phase().staffAssignments[0]).toMatchObject({ start_date: '2026-03-10', end_date: '2026-03-12' });
+    expect(phase().staffAssignments[1]).toMatchObject({ start_date: '2026-03-09', end_date: '2026-03-20' });
+  });
+
+  it('a subphase shrink clamps its segments', () => {
+    patchSubphaseLocally(1, 11, { start_date: '2026-03-02', end_date: '2026-03-04' });
+    expect(phase().children[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-03', end_date: '2026-03-04' });
+  });
+
+  it('a patch without dates leaves the bookings alone', () => {
+    patchPhaseLocally(1, 10, { name: 'Renamed' });
+    expect(phase().staffAssignments[0]).toMatchObject({ start_date: '2026-03-03', end_date: '2026-03-05' });
+  });
+});

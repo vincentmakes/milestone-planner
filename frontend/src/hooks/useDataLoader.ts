@@ -7,6 +7,12 @@ import { useState, useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
+import { isForbidden } from '@/api/client';
+import { clearMentionableUsersCache } from '@/api/endpoints/mentionableCache';
+import { can } from '@/utils/permissions';
+import { visibleSitesFor } from './useVisibleSites';
+import type { Site } from '@/types';
+import type { PermissionKey } from '@/types/permissions';
 import {
   getSites,
   getStaff,
@@ -22,7 +28,8 @@ import {
   getCustomColumnsWithValues,
   skillsApi,
   tagsApi,
-  tagGroupsApi,
+  projectFieldsApi,
+  teamsApi,
   absenceTypesApi,
 } from '@/api';
 
@@ -36,6 +43,56 @@ interface UseDataLoaderReturn {
   refreshStaff: () => Promise<void>;
   refreshEquipmentBlocks: () => Promise<void>;
   refreshAbsenceTypes: () => Promise<void>;
+  refreshTeams: () => Promise<void>;
+  selectSite: (site: Site) => Promise<void>;
+}
+
+/**
+ * A view-gated slice: requested only when the signed-in user holds `key`
+ * (else empty, no request), and a 403 (the role changed meanwhile) is an
+ * empty slice too. Any other failure propagates.
+ */
+export function loadGated<T>(key: PermissionKey, load: () => Promise<T[]>): Promise<T[]> {
+  if (!can(useAppStore.getState().currentUser, key)) return Promise.resolve([]);
+  return load().catch((err: unknown) => {
+    if (isForbidden(err)) return [];
+    throw err;
+  });
+}
+
+/**
+ * Make `site` the current site: clear the custom-column filters and load the
+ * site's bank holidays, company events and custom columns. Each load failing
+ * is logged and the others still run. Used by the header's site selector and
+ * by MainLayout when the current site stops being visible.
+ */
+export async function selectSite(site: Site): Promise<void> {
+  const app = useAppStore.getState();
+  const columns = useCustomColumnStore.getState();
+  app.setCurrentSite(site);
+  columns.clearAllCustomColumnFilters();
+
+  try {
+    const holidays = await getBankHolidays(site.id);
+    app.setBankHolidays(holidays, buildHolidayDateSet(holidays));
+  } catch (err) {
+    console.error('[DataLoader] Failed to load bank holidays:', err);
+  }
+
+  try {
+    const events = await getCompanyEvents(site.id);
+    app.setCompanyEvents(events, buildEventDateSet(events));
+  } catch (err) {
+    console.error('[DataLoader] Failed to load company events:', err);
+  }
+
+  try {
+    const customColumnsData = await getCustomColumnsWithValues(site.id);
+    columns.setCustomColumns(customColumnsData.columns);
+    columns.setCustomColumnValues(customColumnsData.values);
+  } catch (err) {
+    console.error('[DataLoader] Failed to load custom columns:', err);
+  }
 }
 
 export function useDataLoader(): UseDataLoaderReturn {
@@ -57,7 +114,8 @@ export function useDataLoader(): UseDataLoaderReturn {
     setInstanceSettings,
     setSkills,
     setTags,
-    setTagGroups,
+    setProjectFields,
+    setTeams,
     setAbsenceTypes,
   } = useAppStore(
     useShallow((s) => ({
@@ -73,7 +131,8 @@ export function useDataLoader(): UseDataLoaderReturn {
       setInstanceSettings: s.setInstanceSettings,
       setSkills: s.setSkills,
       setTags: s.setTags,
-      setTagGroups: s.setTagGroups,
+      setProjectFields: s.setProjectFields,
+      setTeams: s.setTeams,
       setAbsenceTypes: s.setAbsenceTypes,
     }))
   );
@@ -90,16 +149,18 @@ export function useDataLoader(): UseDataLoaderReturn {
 
     try {
       // Load core data in parallel
-      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags, tagGroups, absenceTypes] = await Promise.all([
+      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags, projectFields, teams, absenceTypes] = await Promise.all([
         getSites(),
         getStaff(true), // Include all sites
-        getEquipment(true), // Include all sites
-        getEquipmentBlocks().catch(() => []),
+        // Equipment is view-gated (views.equipment): empty without the key
+        loadGated('views.equipment', () => getEquipment(true)), // Include all sites
+        loadGated('views.equipment', () => getEquipmentBlocks()).catch(() => []),
         getVacations(),
         getInstanceSettings().catch(() => null), // Don't fail if settings not available
         skillsApi.getAll().catch(() => []), // Don't fail if skills not available
         tagsApi.getAll().catch(() => []), // Don't fail if tags not available
-        tagGroupsApi.getAll().catch(() => []),
+        projectFieldsApi.getAll().catch(() => []), // Don't fail on servers without project fields
+        teamsApi.getAll().catch(() => []), // Don't fail on servers without teams
         absenceTypesApi.getAll().catch(() => []), // Don't fail on servers without absence types
       ]);
 
@@ -111,16 +172,19 @@ export function useDataLoader(): UseDataLoaderReturn {
       setVacations(vacations);
       setSkills(skills);
       setTags(tags);
-      setTagGroups(tagGroups);
+      setProjectFields(projectFields);
+      setTeams(teams);
       setAbsenceTypes(absenceTypes);
       if (instanceSettings) {
         setInstanceSettings(instanceSettings);
       }
 
-      // Restore current site from persisted storage or use first site
-      if (sites.length > 0) {
+      // Restore current site from persisted storage or use the first visible
+      // site (sites.view_all: every site, else the user's own)
+      const visibleSites = visibleSitesFor(useAppStore.getState().currentUser, sites);
+      if (visibleSites.length > 0) {
         // Sort sites by ID for consistent ordering
-        const sortedSites = [...sites].sort((a, b) => a.id - b.id);
+        const sortedSites = [...visibleSites].sort((a, b) => a.id - b.id);
         
         // Read the persisted site ID now, not from a render-time selector:
         // this callback is memoised on stable setters only, so a captured
@@ -184,7 +248,8 @@ export function useDataLoader(): UseDataLoaderReturn {
     setInstanceSettings,
     setSkills,
     setTags,
-    setTagGroups,
+    setProjectFields,
+    setTeams,
     setAbsenceTypes,
     setCustomColumns,
     setCustomColumnValues,
@@ -236,6 +301,9 @@ export function useDataLoader(): UseDataLoaderReturn {
    * Refresh staff data (including their skills)
    */
   const refreshStaff = useCallback(async () => {
+    // People changed (often by this user, whom the broadcast excludes): the
+    // @-mention lists are stale too.
+    clearMentionableUsersCache();
     try {
       const staff = await getStaff(true);
       setStaff(staff);
@@ -249,7 +317,7 @@ export function useDataLoader(): UseDataLoaderReturn {
    */
   const refreshEquipmentBlocks = useCallback(async () => {
     try {
-      const blocks = await getEquipmentBlocks();
+      const blocks = await loadGated('views.equipment', () => getEquipmentBlocks());
       setEquipmentBlocks(blocks);
     } catch (err) {
       console.error('[DataLoader] Failed to refresh equipment blocks:', err);
@@ -268,6 +336,18 @@ export function useDataLoader(): UseDataLoaderReturn {
     }
   }, [setAbsenceTypes]);
 
+  /**
+   * Refresh teams (every site)
+   */
+  const refreshTeams = useCallback(async () => {
+    try {
+      const teams = await teamsApi.getAll();
+      setTeams(teams);
+    } catch (err) {
+      console.error('[DataLoader] Failed to refresh teams:', err);
+    }
+  }, [setTeams]);
+
   return {
     isLoading,
     error,
@@ -278,5 +358,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     refreshStaff,
     refreshEquipmentBlocks,
     refreshAbsenceTypes,
+    refreshTeams,
+    selectSite,
   };
 }

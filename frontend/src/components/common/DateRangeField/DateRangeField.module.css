@@ -1,0 +1,182 @@
+/*
+ * DateRangeField / DateField and their calendar panel.
+ *
+ * The library's own stylesheet (react-day-picker/style.css) declares its
+ * variables on .rdp-root; ours are set on `.panel .calendar` so they win
+ * whatever the load order. Only SET --rdp-* properties here, never read one:
+ * the token guard's regex stops at "_" and would report a read of
+ * --rdp-day_button-width as an undefined --rdp-day.
+ */
+
+/* The fields (and a consumer's separator) stay items of the consumer's grid row */
+.wrapper {
+  display: contents;
+}
+
+.field input {
+  cursor: pointer;
+}
+
+.field input:disabled {
+  cursor: not-allowed;
+}
+
+/* While the panel is open, the field the next click fills. `:not(:disabled)`
+   lifts it above the Input's own hover rule (0,3,0), so it holds under the
+   pointer too. */
+.field input[data-active]:not(:disabled) {
+  border-color: var(--accent-blue);
+}
+
+.panel {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  overflow-y: auto;
+  padding: 0.75rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.panel .calendar {
+  --rdp-accent-color: var(--accent-blue);
+  --rdp-accent-background-color: var(--accent-blue-alpha);
+  --rdp-range_middle-background-color: var(--accent-blue-alpha);
+  --rdp-range_middle-color: var(--text-primary);
+  --rdp-range_start-color: var(--text-on-accent);
+  --rdp-range_end-color: var(--text-on-accent);
+  --rdp-range_start-date-background-color: var(--accent-blue);
+  --rdp-range_end-date-background-color: var(--accent-blue);
+  --rdp-today-color: var(--accent-blue);
+  --rdp-selected-border: 2px solid var(--accent-blue);
+  --rdp-day-width: 36px;
+  --rdp-day-height: 36px;
+  --rdp-day_button-width: 34px;
+  --rdp-day_button-height: 34px;
+  --rdp-day_button-border-radius: var(--radius-md);
+  --rdp-nav_button-width: 2.25rem;
+  --rdp-nav_button-height: 2.25rem;
+  --rdp-nav-height: 2.75rem;
+  --rdp-months-gap: 1.5rem;
+  --rdp-dropdown-gap: 0.5rem;
+  --rdp-weekday-opacity: 1;
+  --rdp-weekday-text-transform: none;
+}
+
+/* The library sets `large` on selected days */
+.panel .calendar :global(.rdp-selected) {
+  font-size: inherit;
+}
+
+.panel .calendar :global(.rdp-month_caption) {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.panel .calendar :global(.rdp-weekday) {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* The month / year dropdowns are invisible <select>s over the caption label */
+.panel .calendar :global(.rdp-dropdown:focus-visible ~ .rdp-caption_label) {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.panel .calendar :global(.rdp-day:not(.rdp-selected) .rdp-day_button:hover:not(:disabled)) {
+  background: var(--bg-hover);
+}
+
+/* ---- day modifiers (classes on the day cell) ---- */
+
+.weekend {
+  color: var(--text-muted);
+}
+
+/* The range a click on the hovered day would produce */
+.preview {
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+}
+
+/* Weekdays a recurring absence repeats on */
+.recurring :global(.rdp-day_button) {
+  text-decoration: underline 2px var(--accent-blue);
+  text-underline-offset: 3px;
+}
+
+.holiday,
+.closure {
+  font-weight: var(--font-weight-medium);
+}
+
+.dayButton {
+  position: relative;
+}
+
+.dots {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  display: flex;
+  gap: 2px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.dot {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+}
+
+/* Holidays read orange and closures red, as on the Gantt and Staff timelines */
+.holidayDot {
+  background: var(--accent-orange);
+}
+
+.closureDot {
+  background: var(--accent-red);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Touch devices: the global 40 px button minimum would stretch 34 px buttons
+   (and the 36 px previous / next buttons) into ovals — make them 40 × 40 in
+   42 px cells. */
+@media (hover: none) and (pointer: coarse) {
+  .panel .calendar {
+    --rdp-day-width: 42px;
+    --rdp-day-height: 42px;
+    --rdp-day_button-width: 40px;
+    --rdp-day_button-height: 40px;
+    --rdp-nav_button-width: 40px;
+    --rdp-nav_button-height: 40px;
+  }
+}
+
+/* Phones: one month (set in JS), 44 px cells, tight padding — fits 320 px */
+@media (max-width: 640px) {
+  .panel {
+    padding: 0.25rem;
+  }
+
+  .panel .calendar {
+    --rdp-day-width: 44px;
+    --rdp-day-height: 44px;
+    --rdp-day_button-width: 44px;
+    --rdp-day_button-height: 44px;
+    --rdp-nav_button-width: 44px;
+    --rdp-nav_button-height: 44px;
+  }
+}

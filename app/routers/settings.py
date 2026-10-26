@@ -8,18 +8,26 @@ It matches the Node.js API at /api/settings exactly.
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import require_admin
+from app.middleware.auth import get_current_user, require_permission
 from app.models.settings import Settings, SSOConfig
 from app.models.user import User
 from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
-from app.services.sso import apply_secret_update
+from app.services.instance_settings import (
+    KNOWN_SETTINGS,
+    PROJECT_FIELD_SETTING_KEYS,
+    canonicalise,
+    default_for,
+    with_defaults,
+)
+from app.services.permissions import permission_required_detail
+from app.services.sso import apply_secret_update, ensure_sso_default_role
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +45,8 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings))
     settings = result.scalars().all()
 
-    return {s.key: s.value for s in settings}
+    # The known keys without a row read as their default (nothing is written).
+    return with_defaults({s.key: s.value for s in settings})
 
 
 # ---------------------------------------------------------
@@ -89,12 +98,12 @@ async def update_sso_settings(
     data: SSOConfigUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Update SSO configuration.
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: PUT /api/settings/sso
     """
     _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
@@ -121,7 +130,7 @@ async def update_sso_settings(
     if data.auto_create_users is not None:
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_role is not None:
-        config.default_role = data.default_role
+        config.default_role = await ensure_sso_default_role(db, data.default_role)
 
     await db.commit()
     await db.refresh(config)
@@ -148,7 +157,7 @@ async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
     """
     Get a specific setting by key.
 
-    This endpoint is public.
+    This endpoint is public. A known key without a row reads as its default.
     Matches: GET /api/settings/:key
     """
     result = await db.execute(select(Settings).where(Settings.key == key))
@@ -157,7 +166,7 @@ async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
     if setting:
         return SettingsResponse(key=key, value=setting.value)
     else:
-        return SettingsResponse(key=key, value=None)
+        return SettingsResponse(key=key, value=default_for(key))
 
 
 @router.put("/settings/{key}", response_model=SettingsResponse)
@@ -165,24 +174,55 @@ async def update_setting(
     key: str,
     data: SettingUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a setting (create if not exists).
 
-    Requires admin authentication.
+    Requires ``settings.general``; the project-field keys
+    (``PROJECT_FIELD_SETTING_KEYS``, saved by Settings -> Project fields) also
+    accept ``project_fields.manage``. A known key (``KNOWN_SETTINGS``) stores its
+    canonical form (422 ``Invalid value for <key>`` otherwise), and ``null``
+    deletes its row so the default applies again (answered as the value).
+    Any other key stores the value as given.
     Matches: PUT /api/settings/:key
     """
+    allowed = user.permissions.has("settings.general") or (
+        key in PROJECT_FIELD_SETTING_KEYS and user.permissions.has("project_fields.manage")
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=permission_required_detail("settings.general"),
+        )
+
+    known = key in KNOWN_SETTINGS
+    value = data.value
+    if known and value is not None:
+        try:
+            value = canonicalise(key, value)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid value for {key}",
+            ) from exc
+
     # Check if setting exists
     result = await db.execute(select(Settings).where(Settings.key == key))
     setting = result.scalar_one_or_none()
 
+    if known and value is None:
+        if setting:
+            await db.delete(setting)
+            await db.commit()
+        return SettingsResponse(key=key, value=default_for(key))
+
     if setting:
         # Update existing
-        setting.value = data.value
+        setting.value = value
     else:
         # Create new
-        setting = Settings(key=key, value=data.value)
+        setting = Settings(key=key, value=value)
         db.add(setting)
 
     await db.commit()

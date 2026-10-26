@@ -12,6 +12,11 @@ on:
     # that doesn't depend on someone opening a PR.
     - cron: "17 6 * * 2"
 
+# Least privilege by default: every job reads the repository only, and a job
+# that needs more (the coverage badge push) asks for it itself.
+permissions:
+  contents: read
+
 # A new push to a pull request supersedes the run still going for the previous
 # one. Pushes to main are never cancelled: each one publishes the coverage
 # badge, and a cancelled run would leave it behind.
@@ -71,6 +76,7 @@ jobs:
               - 'requirements*.txt'
               - 'pyproject.toml'
               - 'migrations/**'
+              - 'shared/**'
               - 'VERSION'
             ci:
               - '.github/workflows/backend.yml'

@@ -372,6 +372,9 @@
 
 .changedByBadge {
   position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   top: -18px;
   left: 50%;
   transform: translateX(-50%);

@@ -12,9 +12,10 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
-import { createStaffAssignment } from '@/api/endpoints/projects';
+import { createEquipmentAssignment, createStaffAssignment } from '@/api/endpoints/projects';
 import { generateTimelineCells, calculateBarPosition } from '../../utils';
 import type { Project, ViewMode } from '@/types';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn().mockResolvedValue({}),
@@ -71,7 +72,7 @@ beforeEach(() => {
   useAppStore.setState({
     projects: [project],
     staff: [{ id: 7, name: 'Alice Anderson', site_id: 1, active: true, max_capacity: 80 }] as never,
-    currentUser: { id: 1, name: 'Ada Admin', role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, name: 'Ada Admin', role: 'admin' }),
   });
   act(() => useUIStore.getState().startResourceDrag('staff', 7, 'Alice Anderson'));
 });
@@ -117,11 +118,39 @@ describe('ResourceDropOverlay in quarter view', () => {
     await act(async () => {});
 
     const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    expect(body.start_date.startsWith('2026-03-1')).toBe(true);
+    expect(body.start_date!.startsWith('2026-03-1')).toBe(true);
     const days =
-      (Date.UTC(...(body.end_date.split('-').map(Number) as [number, number, number])) -
-        Date.UTC(...(body.start_date.split('-').map(Number) as [number, number, number]))) /
+      (Date.UTC(...(body.end_date!.split('-').map(Number) as [number, number, number])) -
+        Date.UTC(...(body.start_date!.split('-').map(Number) as [number, number, number]))) /
       86400000;
     expect(days).toBe(4);
+  });
+});
+
+describe('ResourceDropOverlay equipment drops', () => {
+  function dropEquipment() {
+    act(() => useUIStore.getState().startResourceDrag('equipment', 3, 'Bioreactor'));
+    const { overlay, cells } = renderOverlay('quarter');
+    const x = cells.findIndex((c) => c.dateStr === '2026-03-09') * CELL_WIDTH + CELL_WIDTH / 2;
+    fireDrag('dragOver', overlay, x, 10);
+    fireDrag('drop', overlay, x, 10);
+  }
+
+  it('books with equipment_bookings.manage, without projects.edit_any', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }),
+    });
+    dropEquipment();
+    await act(async () => {});
+    expect(createEquipmentAssignment).toHaveBeenCalled();
+  });
+
+  it('refuses the drop with projects.edit_any alone', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }),
+    });
+    dropEquipment();
+    await act(async () => {});
+    expect(createEquipmentAssignment).not.toHaveBeenCalled();
   });
 });

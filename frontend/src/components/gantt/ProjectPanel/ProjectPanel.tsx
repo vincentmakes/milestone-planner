@@ -15,18 +15,21 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
+import { can } from '@/utils/permissions';
 import { useDataLoader } from '@/hooks';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { CustomColumnModal, CustomColumnsManagerModal } from '@/components/modals';
 import { CustomColumnHeader } from '@/components/gantt/CustomColumns';
-import { TagFilterDropdown } from '@/components/common/TagFilterDropdown';
+import { ProjectFilterDropdown } from '@/components/common/ProjectFilterDropdown';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 import type { Project, CustomColumn } from '@/types';
 import styles from './ProjectPanel.module.css';
+import { Icon, PlusIcon, UploadIcon, ColumnsIcon, CheckIcon, UsersIcon, EyeIcon, EyeOffIcon } from '@/components/common/Icon';
 
 interface ProjectPanelProps {
-  /** Projects to show (already narrowed by the tag filter). */
+  /** Projects to show (already narrowed by the project filter). */
   projects: Project[];
-  /** Site projects before the tag filter; the count reads "X of Y" when they differ. */
+  /** Site projects before the filters; the count reads "X of Y" when they differ. */
   totalCount?: number;
   /**
    * Rows to render (Group-by sections + projects, see projectSections.ts);
@@ -65,16 +68,19 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
     const visibilityDropdownRef = useRef<HTMLDivElement>(null);
     const visibilityTriggerRef = useRef<HTMLButtonElement>(null);
+    const visibilityPanelRef = useRef<HTMLDivElement>(null);
     const { onBlur: onVisibilityBlur } = useDismissableOverlay({
       open: showVisibilityDropdown,
       onClose: () => setShowVisibilityDropdown(false),
       wrapperRef: visibilityDropdownRef,
       triggerRef: visibilityTriggerRef,
+      panelRef: visibilityPanelRef,
     });
     
-    const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-    // Custom-column definitions are admin-only on the backend (require_admin)
-    const canManageColumns = currentUser?.role === 'admin';
+    const canCreate = can(currentUser, 'projects.create');
+    const canImport = can(currentUser, 'projects.import');
+    // Custom-column definitions (custom_columns.manage on the backend)
+    const canManageColumns = can(currentUser, 'custom_columns.manage');
     
     // Filter columns based on visibility settings
     const visibleColumns = showAllCustomColumns
@@ -117,7 +123,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const hiddenCount = customColumns.length - visibleColumns.length;
 
     const total = totalCount ?? projects.length;
-    const isTagFiltered = total !== projects.length;
+    const isFiltered = total !== projects.length;
 
     const flatRows = useMemo(() => flatGanttRows(projects), [projects]);
     const visibleRows = rows ?? flatRows;
@@ -133,9 +139,9 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                 <span className={styles.headerTitle}>Projects</span>
                 <span
                   className={styles.headerCount}
-                  title={isTagFiltered ? 'Projects matching the tag filter' : undefined}
+                  title={isFiltered ? 'Projects matching the filter' : undefined}
                 >
-                  {isTagFiltered ? `${projects.length} of ${total}` : projects.length}
+                  {isFiltered ? `${projects.length} of ${total}` : projects.length}
                 </span>
               </div>
               <div className={styles.headerActions}>
@@ -149,21 +155,16 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                     aria-label="Show staff and equipment"
                     aria-pressed={showAssignments}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </svg>
+                    <Icon icon={UsersIcon} size={14} />
                   </button>
                 
-                  {/* Tag filter (shared with the Kanban board, per site) */}
-                  <TagFilterDropdown compact align="right" anchor="container" />
+                  {/* Project filter: fields and tags (shared with the Kanban board, per site) */}
+                  <ProjectFilterDropdown compact align="right" />
 
-                  {/* Group the project list by a tag group (only when groups exist) */}
+                  {/* Group the project list by a project field (only when one applies) */}
                   <GroupByDropdown />
 
-                  {/* Colour the project bars by a tag group (only when groups exist) */}
+                  {/* Colour the project bars by a field or the tags (only when one applies) */}
                   <ColorByDropdown />
 
                   {/* Column visibility dropdown (only if columns exist) */}
@@ -179,71 +180,61 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         aria-expanded={showVisibilityDropdown}
                         aria-haspopup="dialog"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          {showAllCustomColumns && hiddenCount === 0 ? (
-                            <>
-                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                              <circle cx="12" cy="12" r="3" />
-                            </>
-                          ) : (
-                            <>
-                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                              <line x1="1" y1="1" x2="23" y2="23" />
-                            </>
-                          )}
-                        </svg>
+                        <Icon icon={showAllCustomColumns && hiddenCount === 0 ? EyeIcon : EyeOffIcon} size={14} />
                       </button>
                     
-                      {showVisibilityDropdown && (
-                        <div className={styles.visibilityDropdown} role="dialog" aria-label="Column visibility">
-                          <div className={styles.visibilityHeader}>
-                            <span>Column Visibility</span>
-                          </div>
-                        
-                          {/* Master toggle */}
-                          <label className={`${styles.visibilityOption} ${styles.masterToggle}`}>
-                            <input
-                              type="checkbox"
-                              checked={showAllCustomColumns}
-                              onChange={handleToggleAll}
-                            />
-                            <span className={styles.visibilityCheckbox}>
-                              <svg className={styles.visibilityCheckIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            </span>
-                            <span>Show All Columns</span>
-                          </label>
-                        
-                          {showAllCustomColumns && customColumns.length > 0 && (
-                            <>
-                              <div className={styles.visibilityDivider} />
-                              <div className={styles.visibilityList}>
-                                {customColumns.map(col => (
-                                  <label key={col.id} className={styles.visibilityOption}>
-                                    <input
-                                      type="checkbox"
-                                      checked={!hiddenCustomColumns.has(col.id)}
-                                      onChange={() => toggleCustomColumnVisibility(col.id)}
-                                    />
-                                    <span className={styles.visibilityCheckbox}>
-                                      <svg className={styles.visibilityCheckIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                        <polyline points="20 6 9 17 4 12" />
-                                      </svg>
-                                    </span>
-                                    <span>{col.name}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </>
-                          )}
+                      <AnchoredPanel
+                        ref={visibilityPanelRef}
+                        open={showVisibilityDropdown}
+                        triggerRef={visibilityTriggerRef}
+                        align="end"
+                        className={styles.visibilityDropdown}
+                        role="dialog"
+                        aria-label="Column visibility"
+                      >
+                        <div className={styles.visibilityHeader}>
+                          <span>Column Visibility</span>
                         </div>
-                      )}
+                      
+                        {/* Master toggle */}
+                        <label className={`${styles.visibilityOption} ${styles.masterToggle}`}>
+                          <input
+                            type="checkbox"
+                            checked={showAllCustomColumns}
+                            onChange={handleToggleAll}
+                          />
+                          <span className={styles.visibilityCheckbox}>
+                            <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
+                          </span>
+                          <span>Show All Columns</span>
+                        </label>
+                      
+                        {showAllCustomColumns && customColumns.length > 0 && (
+                          <>
+                            <div className={styles.visibilityDivider} />
+                            <div className={styles.visibilityList}>
+                              {customColumns.map(col => (
+                                <label key={col.id} className={styles.visibilityOption}>
+                                  <input
+                                    type="checkbox"
+                                    checked={!hiddenCustomColumns.has(col.id)}
+                                    onChange={() => toggleCustomColumnVisibility(col.id)}
+                                  />
+                                  <span className={styles.visibilityCheckbox}>
+                                    <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
+                                  </span>
+                                  <span>{col.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </AnchoredPanel>
                     </div>
                   )}
                 </div>
                 
-                {canEdit && (
+                {(canCreate || canImport || canManageColumns) && (
                   <>
                     <span className={styles.headerDivider} aria-hidden="true" data-testid="header-divider" />
                     {/* Actions */}
@@ -256,37 +247,30 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                           aria-label="Manage custom columns"
                         >
                           {/* Table/spreadsheet icon - more explicit for columns */}
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                            <line x1="3" y1="9" x2="21" y2="9" />
-                            <line x1="9" y1="21" x2="9" y2="9" />
-                          </svg>
+                          <Icon icon={ColumnsIcon} size={14} />
                         </button>
                       )}
+                      {canImport && (
                       <button 
                         className={styles.importBtn}
                         onClick={() => setActiveModal('importProject')}
                         title="Import Project"
                         aria-label="Import project"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
+                        <Icon icon={UploadIcon} size={14} />
                       </button>
+                      )}
+                      {canCreate && (
                       <button 
                         className={styles.newProjectBtn}
                         onClick={() => openProjectModal()}
                         title="New Project"
                         aria-label="New project"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <line x1="12" y1="5" x2="12" y2="19" />
-                          <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
+                        <Icon icon={PlusIcon} size={14} />
                         <span>New</span>
                       </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -313,11 +297,11 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
           <div ref={ref} className={styles.body}>
             {projects.length === 0 ? (
               <div className={styles.empty}>
-                <p>{isTagFiltered ? 'No projects match the tag filter' : 'No projects found'}</p>
+                <p>{isFiltered ? 'No projects match the filter' : 'No projects found'}</p>
                 <p className={styles.emptyHint}>
-                  {isTagFiltered
-                    ? 'Change or clear the tag filter to see more projects'
-                    : canEdit ? 'Click "New" to create a project' : 'No projects available for this site'}
+                  {isFiltered
+                    ? 'Change or clear the filter to see more projects'
+                    : canCreate ? 'Click "New" to create a project' : 'No projects available for this site'}
                 </p>
               </div>
             ) : (

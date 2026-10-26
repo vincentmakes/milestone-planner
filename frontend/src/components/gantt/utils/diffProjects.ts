@@ -10,10 +10,45 @@
  */
 import type { Project, Phase, Subphase, Dependency } from '@/types';
 import type { PendingUpdate } from './autoCalculation';
+import { isPendingAssignment } from '@/utils/kanbanCards';
+import { isUnlinkedBooking } from '@/utils/bookingSegments';
+import { toDateOnly } from '@/utils/date';
 
 /** Order-sensitive comparison; a missing list equals an empty one. */
 function sameDependencies(a: Dependency[] | undefined, b: Dependency[] | undefined): boolean {
   return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+}
+
+/**
+ * Card bookings to restore: an unlinked segment whose dates (or linked state)
+ * differ from the current row, and a linked row that is unlinked now (a
+ * relink). Linked rows otherwise have no dates of their own, and pending rows
+ * are requests awaiting approval, never re-PUT by undo. savePendingUpdates
+ * sends these after the card updates (whose server-side fit they override).
+ */
+function diffCardBookings(
+  level: 'phase' | 'subphase',
+  prev: Phase | Subphase,
+  next: Phase | Subphase,
+  updates: PendingUpdate[],
+): void {
+  const oldRows = new Map((prev.staffAssignments ?? []).map((a) => [a.id, a]));
+  for (const a of next.staffAssignments ?? []) {
+    if (isPendingAssignment(a)) continue;
+    const o = oldRows.get(a.id);
+    if (!o) continue;
+    const base = { type: 'staffAssignment' as const, id: a.id, level, allocation: a.allocation };
+    if (isUnlinkedBooking(a)) {
+      // Compared and sent as calendar days (the API sends the midnight ISO form)
+      const start = toDateOnly(a.start_date);
+      const end = toDateOnly(a.end_date);
+      if (!isUnlinkedBooking(o) || toDateOnly(o.start_date) !== start || toDateOnly(o.end_date) !== end) {
+        updates.push({ ...base, start_date: start, end_date: end });
+      }
+    } else if (isUnlinkedBooking(o)) {
+      updates.push({ ...base, start_date: next.start_date, end_date: next.end_date, relink: true });
+    }
+  }
 }
 
 /** The update for a phase/subphase whose dates and/or links changed, or null. */
@@ -44,6 +79,7 @@ function diffSubphases(
     const prev = oldMap.get(next.id);
     const update = prev ? scheduleItemUpdate('subphase', prev, next) : null;
     if (update) updates.push(update);
+    if (prev) diffCardBookings('subphase', prev, next, updates);
     if (next.children?.length || prev?.children?.length) {
       diffSubphases(prev?.children ?? [], next.children ?? [], updates);
     }
@@ -56,6 +92,7 @@ function diffPhases(oldList: Phase[], newList: Phase[], updates: PendingUpdate[]
     const prev = oldMap.get(next.id);
     const update = prev ? scheduleItemUpdate('phase', prev, next) : null;
     if (update) updates.push(update);
+    if (prev) diffCardBookings('phase', prev, next, updates);
     diffSubphases(prev?.children ?? [], next.children ?? [], updates);
   }
 }
@@ -88,13 +125,17 @@ export function diffProjects(oldProjects: Project[], newProjects: Project[]): Pe
 
     diffPhases(prev.phases ?? [], next.phases ?? [], updates);
 
+    // Project-level rows (card rows are diffed with their card above); a
+    // pending row is a request awaiting approval, never re-PUT by undo.
     const oldStaff = new Map((prev.staffAssignments ?? []).map((a) => [a.id, a]));
     for (const a of next.staffAssignments ?? []) {
+      if (isPendingAssignment(a)) continue;
       const o = oldStaff.get(a.id);
       if (o && (o.start_date !== a.start_date || o.end_date !== a.end_date)) {
         updates.push({
           type: 'staffAssignment',
           id: a.id,
+          level: 'project',
           start_date: a.start_date,
           end_date: a.end_date,
           allocation: a.allocation,

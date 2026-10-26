@@ -6,9 +6,12 @@
 import { memo, useMemo, useCallback, Fragment } from 'react';
 import { ProjectBar } from './ProjectBar';
 import { PhaseBar } from './PhaseBar';
-import { calculateBarPosition } from '../utils';
+import { calculateBarPosition, cardStaffItems } from '../utils';
+import { SegmentsBar } from './SegmentsBar';
 import type { TimelineCell } from '../utils';
-import type { Project, Phase, Subphase, ViewMode, StaffAssignment, EquipmentAssignment } from '@/types';
+import type { Project, Phase, Subphase, ViewMode, StaffAssignment, EquipmentAssignment, AssignmentApproval } from '@/types';
+import { bookingSpan, isUnlinkedBooking } from '@/utils/bookingSegments';
+import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -18,7 +21,7 @@ import { useResize } from '@/hooks/useResize';
 import { useDependencyLinking } from '@/hooks/useDependencyLinking';
 import { usePhantomSibling } from '@/hooks/usePhantomSibling';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
-import { canEditProject, canEditAssignment } from '@/utils/permissions';
+import { canBookEquipment, canEditProject, canEditAssignment } from '@/utils/permissions';
 import {
   parseRecurringPattern,
   getAbsenceOn,
@@ -26,14 +29,20 @@ import {
   absenceColor,
   cleanVacationDescription,
 } from '@/utils/recurringVacation';
-import { getClosureOn } from '@/utils/siteClosure';
-import { indexTags, projectBarColor } from '@/utils/tags';
+import { EMPTY_TEAM_SET, getClosureOn } from '@/utils/siteClosure';
+import { projectBarColor } from '@/utils/projectFilters';
 import { useGanttColorBy } from '@/hooks/useGanttColorBy';
-import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import {
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+} from '@/stores/appStore';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
-import { daysBetweenDateStrings } from '@/utils/date';
+import { daysBetweenDateStrings, toDateOnly } from '@/utils/date';
 import { armTouchGesture, isTouchEvent } from '@/utils/touchEvents';
+import { Icon, SparklesIcon } from '@/components/common/Icon';
 
 interface ProjectTimelineProps {
   project: Project;
@@ -183,19 +192,23 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   const criticalPathEnabled = useAppStore((s) => s.criticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
 
-  // Permission gate: admins, superusers and the project's manager may move
+  // Permission gate (canEditProject): `projects.edit_any`, or managing this
+  // project (`projects.manage_as_pm` + its pm_id, the PM bundle), may move
   // and resize schedule items.
   const currentUser = useAppStore((s) => s.currentUser);
   const canEdit = canEditProject(currentUser, project);
+  // Equipment bookings: equipment_bookings.manage (or managing the project)
+  const canBook = canBookEquipment(currentUser, project);
 
-  // Bar colour from the project's tag in the user's "Colour by" group,
-  // resolved through the store (inline project.tags can be stale in What-If).
-  // indexTags is cached per tags array, so rows share one map.
+  // Bar colour from the user's "Colour by" choice (a project field's item or
+  // a tag), resolved through the store (inline project.tags can be stale in
+  // What-If). The tag index is cached per tags array, so rows share one map.
   const tags = useAppStore((s) => s.tags);
-  const { group: colorByGroup } = useGanttColorBy();
+  const { colorBy, fields: colorByFields } = useGanttColorBy();
+  const colorByChoice = colorBy === 'tags' ? 'tags' : colorBy?.id ?? null;
   const barColor = useMemo(
-    () => projectBarColor(project, indexTags(tags), colorByGroup),
-    [project, tags, colorByGroup]
+    () => projectBarColor(project, colorByFields, tags, colorByChoice),
+    [project, colorByFields, tags, colorByChoice]
   );
 
   // Get critical path items for this project (empty set if not enabled)
@@ -329,6 +342,23 @@ export const ProjectTimeline = memo(function ProjectTimeline({
     startStaffAssignmentResize(e, assignmentId, project.id, edge, startDate, endDate, undefined, staffId);
   }, [startStaffAssignmentResize, project.id]);
 
+  // Phase / subphase bookings: only unlinked segments move, within their card
+  const handleCardBookingDragStart = useCallback<CardBookingDragStart>((e, assignment, level, card) => {
+    const span = bookingSpan(assignment, card);
+    startStaffAssignmentDrag(e, assignment.id, project.id, span.start, span.end, undefined, assignment.staff_id, {
+      level,
+      bounds: { start: toDateOnly(card.start_date), end: toDateOnly(card.end_date) },
+    });
+  }, [startStaffAssignmentDrag, project.id]);
+
+  const handleCardBookingResizeStart = useCallback<CardBookingResizeStart>((e, edge, assignment, level, card) => {
+    const span = bookingSpan(assignment, card);
+    startStaffAssignmentResize(e, assignment.id, project.id, edge, span.start, span.end, undefined, assignment.staff_id, {
+      level,
+      bounds: { start: toDateOnly(card.start_date), end: toDateOnly(card.end_date) },
+    });
+  }, [startStaffAssignmentResize, project.id]);
+
   // Equipment assignment handlers (project-level)
   const handleEquipmentAssignmentDragStart = useCallback((e: React.MouseEvent, assignmentId: number, startDate: string, endDate: string) => {
     startEquipmentAssignmentDrag(e, assignmentId, project.id, startDate, endDate);
@@ -411,6 +441,8 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                   onSubphaseDragStart={handleSubphaseDragStart}
                   onSubphaseResizeStart={handleSubphaseResizeStart}
                   onSubphaseClick={handleSubphaseClick}
+                  onBookingDragStart={handleCardBookingDragStart}
+                  onBookingResizeStart={handleCardBookingResizeStart}
                   onLinkZoneClick={handleLinkZone}
                   isLinkingDependency={isLinkingDependency}
                   linkingFromId={linkingFromId}
@@ -447,6 +479,8 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                 name={assignment.staff_name}
                 allocation={assignment.allocation}
                 staffId={assignment.staff_id}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
                 interactive={canEditThis}
                 onDragStart={canEditThis ? (e) => handleStaffAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date, assignment.staff_id) : undefined}
                 onResizeStart={canEditThis ? (e, edge) => handleStaffAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date, assignment.staff_id) : undefined}
@@ -470,14 +504,133 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                 type="equipment"
                 name={assignment.equipment_name}
                 equipmentId={assignment.equipment_id}
-                interactive={canEdit}
-                onDragStart={canEdit ? (e) => handleEquipmentAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date) : undefined}
-                onResizeStart={canEdit ? (e, edge) => handleEquipmentAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date) : undefined}
+                interactive={canBook}
+                onDragStart={canBook ? (e) => handleEquipmentAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date) : undefined}
+                onResizeStart={canBook ? (e, edge) => handleEquipmentAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date) : undefined}
               />
             </div>
           ))}
         </>
       )}
+    </>
+  );
+});
+
+/** Start dragging / resizing an unlinked booking of a phase or subphase (kept inside the card). */
+type CardBookingDragStart = (
+  e: React.MouseEvent,
+  assignment: StaffAssignment,
+  level: 'phase' | 'subphase',
+  card: Phase | Subphase
+) => void;
+type CardBookingResizeStart = (
+  e: React.MouseEvent,
+  edge: 'left' | 'right',
+  assignment: StaffAssignment,
+  level: 'phase' | 'subphase',
+  card: Phase | Subphase
+) => void;
+
+interface CardBookingBarProps {
+  assignment: StaffAssignment;
+  level: 'phase' | 'subphase';
+  card: Phase | Subphase;
+  projectId: number;
+  phaseId: number;
+  pmId: number | null | undefined;
+  cells: TimelineCell[];
+  cellWidth: number;
+  viewMode: ViewMode;
+  onDragStart: CardBookingDragStart;
+  onResizeStart: CardBookingResizeStart;
+}
+
+/**
+ * One staff booking on a phase / subphase: a linked row spans its card and
+ * is read-only (it follows the card); an unlinked segment sits at its own
+ * dates and may be moved / resized within the card by whoever may change it.
+ */
+const CardBookingBar = memo(function CardBookingBar({
+  assignment,
+  level,
+  card,
+  projectId,
+  phaseId,
+  pmId,
+  cells,
+  cellWidth,
+  viewMode,
+  onDragStart,
+  onResizeStart,
+}: CardBookingBarProps) {
+  const currentUser = useAppStore((s) => s.currentUser);
+  const span = bookingSpan(assignment, card);
+  const canMoveThis = isUnlinkedBooking(assignment) && canEditAssignment(currentUser, { pm_id: pmId }, assignment.staff_id);
+  return (
+    <div className={styles.row}>
+      <AssignmentBar
+        assignmentId={assignment.id}
+        assignmentType="staff"
+        projectId={projectId}
+        phaseId={phaseId}
+        subphaseId={level === 'subphase' ? card.id : undefined}
+        startDate={span.start}
+        endDate={span.end}
+        cells={cells}
+        cellWidth={cellWidth}
+        viewMode={viewMode}
+        type={level === 'phase' ? 'phase-staff' : 'subphase-staff'}
+        name={assignment.staff_name}
+        allocation={assignment.allocation}
+        phaseColor={card.color}
+        staffId={assignment.staff_id}
+        approvalStatus={assignment.approval_status}
+        approval={assignment.approval}
+        interactive={canMoveThis}
+        onDragStart={canMoveThis ? (e) => onDragStart(e, assignment, level, card) : undefined}
+        onResizeStart={canMoveThis ? (e, edge) => onResizeStart(e, edge, assignment, level, card) : undefined}
+      />
+    </div>
+  );
+});
+
+interface CardStaffBarsProps extends Omit<CardBookingBarProps, 'assignment'> {
+  /** The staff bookings, as `card.staffAssignments` */
+  assignments: StaffAssignment[] | undefined;
+}
+
+/**
+ * The staff bookings of one phase / subphase, row for row like the panel's
+ * CardStaffRows (both lay out from `cardStaffItems`): a person with one
+ * booking gets its bar; a person with two or more a SegmentsBar overview row,
+ * then, while the group is expanded, one bar per booking.
+ */
+const CardStaffBars = memo(function CardStaffBars({ assignments, ...barProps }: CardStaffBarsProps) {
+  const { level, card, cells, cellWidth, viewMode } = barProps;
+  const collapsedStaffGroups = useViewStore((s) => s.collapsedStaffGroups);
+  const staff = useAppStore((s) => s.staff);
+  const items = useMemo(
+    () => cardStaffItems(assignments, level, card, collapsedStaffGroups),
+    [assignments, level, card, collapsedStaffGroups]
+  );
+  return (
+    <>
+      {items.map((item) => {
+        if (item.kind === 'single') {
+          return <CardBookingBar key={`staff-${item.assignment.id}`} assignment={item.assignment} {...barProps} />;
+        }
+        const first = item.rows[0];
+        const name = staff.find((s) => s.id === item.staffId)?.name || first.staff_name || 'Unknown';
+        return (
+          <Fragment key={`group-${item.key}`}>
+            <div className={styles.row}>
+              <SegmentsBar rows={item.rows} card={card} name={name} cells={cells} cellWidth={cellWidth} viewMode={viewMode} />
+            </div>
+            {!item.collapsed &&
+              item.rows.map((row) => <CardBookingBar key={`staff-${row.id}`} assignment={row} {...barProps} />)}
+          </Fragment>
+        );
+      })}
     </>
   );
 });
@@ -498,6 +651,8 @@ interface PhaseTimelineProps {
   onSubphaseDragStart: (e: React.MouseEvent, subphase: Subphase, phaseId: number, element: HTMLElement) => void;
   onSubphaseResizeStart: (e: React.MouseEvent, subphase: Subphase, edge: 'left' | 'right', element: HTMLElement) => void;
   onSubphaseClick: (subphase: Subphase, phaseId: number) => void;
+  onBookingDragStart: CardBookingDragStart;
+  onBookingResizeStart: CardBookingResizeStart;
   // Dependency linking
   onLinkZoneClick: (e: React.MouseEvent, itemId: number, itemType: 'phase' | 'subphase', zone: 'start' | 'end') => void;
   isLinkingDependency: boolean;
@@ -528,6 +683,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
   onSubphaseDragStart,
   onSubphaseResizeStart,
   onSubphaseClick,
+  onBookingDragStart,
+  onBookingResizeStart,
   onLinkZoneClick,
   isLinkingDependency,
   linkingFromId,
@@ -538,7 +695,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
   showAssignments,
   criticalPathItems,
 }: PhaseTimelineProps) {
-  // Permission gate: admins, superusers and the project's manager may
+  // Permission gate (canEditProject): `projects.edit_any`, or managing this
+  // project (`projects.manage_as_pm` + its pm_id, the PM bundle), may
   // move/resize, link dependencies and spawn phantom siblings.
   const currentUser = useAppStore((s) => s.currentUser);
   const pmId = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.pm_id);
@@ -657,6 +815,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
                   onSubphaseDragStart={onSubphaseDragStart}
                   onSubphaseResizeStart={onSubphaseResizeStart}
                   onSubphaseClick={onSubphaseClick}
+                  onBookingDragStart={onBookingDragStart}
+                  onBookingResizeStart={onBookingResizeStart}
                   onLinkZoneClick={onLinkZoneClick}
                   isLinkingDependency={isLinkingDependency}
                   linkingFromId={linkingFromId}
@@ -674,27 +834,22 @@ const PhaseTimeline = memo(function PhaseTimeline({
             );
           })}
 
-          {/* Phase-level assignments - use phase dates since phase assignments don't have their own - filtered */}
-          {showAssignments && (phase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
-            <div key={`staff-${assignment.id}`} className={styles.row}>
-              <AssignmentBar
-                assignmentId={assignment.id}
-                assignmentType="staff"
-                projectId={projectId}
-                phaseId={phase.id}
-                startDate={phase.start_date}
-                endDate={phase.end_date}
-                cells={cells}
-                cellWidth={cellWidth}
-                viewMode={viewMode}
-                type="phase-staff"
-                name={assignment.staff_name}
-                allocation={assignment.allocation}
-                phaseColor={phase.color}
-                staffId={assignment.staff_id}
-              />
-            </div>
-          ))}
+          {/* Phase-level bookings: linked rows span the phase, unlinked segments their own dates, a person with 2+ grouped - filtered */}
+          {showAssignments && (
+            <CardStaffBars
+              assignments={phase.staffAssignments}
+              level="phase"
+              card={phase}
+              projectId={projectId}
+              phaseId={phase.id}
+              pmId={pmId}
+              cells={cells}
+              cellWidth={cellWidth}
+              viewMode={viewMode}
+              onDragStart={onBookingDragStart}
+              onResizeStart={onBookingResizeStart}
+            />
+          )}
 
           {showAssignments && (phase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
             <div key={`equip-${assignment.id}`} className={styles.row}>
@@ -734,6 +889,8 @@ interface SubphaseTimelineProps {
   onSubphaseDragStart: (e: React.MouseEvent, subphase: Subphase, phaseId: number, element: HTMLElement) => void;
   onSubphaseResizeStart: (e: React.MouseEvent, subphase: Subphase, edge: 'left' | 'right', element: HTMLElement) => void;
   onSubphaseClick: (subphase: Subphase, phaseId: number) => void;
+  onBookingDragStart: CardBookingDragStart;
+  onBookingResizeStart: CardBookingResizeStart;
   // Dependency linking
   onLinkZoneClick: (e: React.MouseEvent, itemId: number, itemType: 'phase' | 'subphase', zone: 'start' | 'end') => void;
   isLinkingDependency: boolean;
@@ -762,6 +919,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
   onSubphaseDragStart,
   onSubphaseResizeStart,
   onSubphaseClick,
+  onBookingDragStart,
+  onBookingResizeStart,
   onLinkZoneClick,
   isLinkingDependency,
   linkingFromId,
@@ -772,7 +931,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
   showAssignments,
   criticalPathItems,
 }: SubphaseTimelineProps) {
-  // Permission gate: admins, superusers and the project's manager may
+  // Permission gate (canEditProject): `projects.edit_any`, or managing this
+  // project (`projects.manage_as_pm` + its pm_id, the PM bundle), may
   // move/resize, link dependencies and spawn phantom siblings.
   const currentUser = useAppStore((s) => s.currentUser);
   const pmId = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.pm_id);
@@ -889,6 +1049,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
                   onSubphaseDragStart={onSubphaseDragStart}
                   onSubphaseResizeStart={onSubphaseResizeStart}
                   onSubphaseClick={onSubphaseClick}
+                  onBookingDragStart={onBookingDragStart}
+                  onBookingResizeStart={onBookingResizeStart}
                   onLinkZoneClick={onLinkZoneClick}
                   isLinkingDependency={isLinkingDependency}
                   linkingFromId={linkingFromId}
@@ -906,28 +1068,22 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
             );
           })}
 
-          {/* Subphase-level assignments - use subphase dates - filtered */}
-          {showAssignments && (subphase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
-            <div key={`staff-${assignment.id}`} className={styles.row}>
-              <AssignmentBar
-                assignmentId={assignment.id}
-                assignmentType="staff"
-                projectId={projectId}
-                phaseId={phaseId}
-                subphaseId={subphase.id}
-                startDate={subphase.start_date}
-                endDate={subphase.end_date}
-                cells={cells}
-                cellWidth={cellWidth}
-                viewMode={viewMode}
-                type="subphase-staff"
-                name={assignment.staff_name}
-                allocation={assignment.allocation}
-                phaseColor={subphase.color}
-                staffId={assignment.staff_id}
-              />
-            </div>
-          ))}
+          {/* Subphase-level bookings: linked rows span the subphase, unlinked segments their own dates, a person with 2+ grouped - filtered */}
+          {showAssignments && (
+            <CardStaffBars
+              assignments={subphase.staffAssignments}
+              level="subphase"
+              card={subphase}
+              projectId={projectId}
+              phaseId={phaseId}
+              pmId={pmId}
+              cells={cells}
+              cellWidth={cellWidth}
+              viewMode={viewMode}
+              onDragStart={onBookingDragStart}
+              onResizeStart={onBookingResizeStart}
+            />
+          )}
 
           {showAssignments && (subphase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
             <div key={`equip-${assignment.id}`} className={styles.row}>
@@ -976,7 +1132,18 @@ interface AssignmentBarProps {
   onDragStart?: (e: React.MouseEvent) => void;
   onResizeStart?: (e: React.MouseEvent, edge: 'left' | 'right') => void;
   interactive?: boolean;
+  /** Staff bars: 'pending' = a booking awaiting approval */
+  approvalStatus?: StaffAssignment['approval_status'];
+  /** Staff bars: the open approval request (create, change or removal) */
+  approval?: AssignmentApproval | null;
 }
+
+/** Tooltip suffix of a bar with an open request. */
+const PENDING_SUFFIX: Record<string, string> = {
+  'assignments.self_create': 'pending approval',
+  'assignments.self_update': 'change pending approval',
+  'assignments.self_remove': 'removal pending approval',
+};
 
 const AssignmentBar = memo(function AssignmentBar({
   assignmentId,
@@ -997,14 +1164,22 @@ const AssignmentBar = memo(function AssignmentBar({
   equipmentId: _equipmentId,
   onDragStart,
   onResizeStart,
-  interactive = false,
+  interactive: interactiveProp = false,
+  approvalStatus,
+  approval,
 }: AssignmentBarProps) {
+  // A bar with an open request (a pending booking, change or removal) is
+  // frozen: its dates are a request, not a booking, until someone decides.
+  const pending = isPendingAssignment({ approval_status: approvalStatus }) || Boolean(approval);
+  const interactive = interactiveProp && !pending;
   // Get vacations from store to show vacation indicators
   const vacations = useAppStore((s) => s.vacations);
   const typesById = useAppStore(selectAbsenceTypesById);
   // Site closures (company events flagged as such) also mark the bar
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
+  const staffTeamIds = useAppStore(selectStaffTeamIds);
+  const teamSiteById = useAppStore(selectTeamSiteById);
 
   // Live attribution: show "✨ Vincent D." on this bar if another user just
   // changed THIS specific assignment. Staff and equipment assignments live
@@ -1042,6 +1217,7 @@ const AssignmentBar = memo(function AssignmentBar({
       (v) => v.staff_id === staffId && (dayCells || !parseRecurringPattern(v.description))
     );
     const sites = staffSiteIds.get(staffId);
+    const teams = staffTeamIds.get(staffId) ?? EMPTY_TEAM_SET;
     const hasClosures = closureIndex.size > 0 && !!sites;
     if (staffVacations.length === 0 && !hasClosures) return [];
 
@@ -1062,7 +1238,9 @@ const AssignmentBar = memo(function AssignmentBar({
           : description || typeName;
         color = absenceColor(absence.type);
       } else {
-        const closure = hasClosures && sites ? getClosureOn(sites, cell.dateStr, closureIndex) : null;
+        const closure = hasClosures && sites
+          ? getClosureOn(sites, cell.dateStr, closureIndex, teams, teamSiteById)
+          : null;
         if (!closure) return;
         title = `Site closed: ${closure.name}`;
         color = closure.color || DEFAULT_EVENT_COLOR;
@@ -1080,7 +1258,7 @@ const AssignmentBar = memo(function AssignmentBar({
     });
 
     return markers;
-  }, [staffId, assignmentType, vacations, typesById, closureIndex, staffSiteIds, cells, cellWidth, viewMode]);
+  }, [staffId, assignmentType, vacations, typesById, closureIndex, staffSiteIds, staffTeamIds, teamSiteById, cells, cellWidth, viewMode]);
 
   if (!barPosition) return null;
 
@@ -1112,10 +1290,17 @@ const AssignmentBar = memo(function AssignmentBar({
     }
   }
 
-  // Build label: "Name (allocation%)" for staff, just "Name" for equipment
+  // Build label: "Name (allocation%)" for staff, just "Name" for equipment;
+  // a pending change shows the requested value next to the current one.
+  const requested =
+    approval && allocation !== undefined ? requestedAllocation({ allocation, approval } as StaffAssignment) : null;
+  const allocationText = allocation ? (requested !== null ? `${allocation}% → ${requested}%` : `${allocation}%`) : '';
   const label = name 
-    ? (allocation ? `${name} (${allocation}%)` : name)
-    : (allocation ? `${allocation}%` : '');
+    ? (allocationText ? `${name} (${allocationText})` : name)
+    : allocationText;
+  const pendingSuffix = pending
+    ? ` — ${PENDING_SUFFIX[approval?.action ?? 'assignments.self_create'] ?? PENDING_SUFFIX['assignments.self_create']}`
+    : '';
 
   // Mouse and touch share these. A touch is armed with armTouchGesture and
   // handed on as a mouse-like event only once the finger has moved past the
@@ -1163,9 +1348,9 @@ const AssignmentBar = memo(function AssignmentBar({
       
       {/* Assignment bar */}
       <div
-        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''} ${changedBy ? styles.recentlyChanged : ''}`}
+        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''} ${pending ? styles.pendingBar : ''} ${changedBy ? styles.recentlyChanged : ''}`}
         style={barStyle}
-        title={changedBy ? `${label} — just edited by ${changedBy}` : label}
+        title={changedBy ? `${label}${pendingSuffix} — just edited by ${changedBy}` : `${label}${pendingSuffix}`}
         data-assignment-id={assignmentId}
         data-assignment-type={assignmentType}
         data-start={startDate}
@@ -1194,7 +1379,7 @@ const AssignmentBar = memo(function AssignmentBar({
         )}
       </div>
 
-      {/* Render the "✨ <name>" attribution as a sibling of the bar (not a
+      {/* Render the sparkles + name attribution as a sibling of the bar (not a
           child) so the bar's overflow: hidden doesn't clip it. Positioned
           relative to the row using the same left offset as the bar. */}
       {changedBy && (
@@ -1202,7 +1387,7 @@ const AssignmentBar = memo(function AssignmentBar({
           className={styles.changedByBadge}
           style={{ left: barPosition.left }}
         >
-          ✨ {changedBy}
+          <Icon icon={SparklesIcon} size={10} /> {changedBy}
         </div>
       )}
     </>

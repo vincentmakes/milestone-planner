@@ -10,6 +10,7 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 import styles from './Notice.module.css';
+import { Icon, CloseIcon } from '@/components/common/Icon';
 
 export type NoticeTone = 'error' | 'warning' | 'info' | 'success';
 
@@ -29,10 +30,7 @@ export function Notice({ tone = 'error', role, children, onDismiss, className, s
       <div className={styles.body}>{children}</div>
       {onDismiss && (
         <button type="button" className={styles.dismiss} onClick={onDismiss} aria-label="Dismiss">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
+          <Icon icon={CloseIcon} size={12} />
         </button>
       )}
     </div>

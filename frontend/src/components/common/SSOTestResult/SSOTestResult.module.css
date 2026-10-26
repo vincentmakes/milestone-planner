@@ -1,0 +1,54 @@
+/**
+ * SSOTestResult — the SSO test outcome (Settings → SSO, admin organization details)
+ */
+
+.result {
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+}
+
+.summary {
+  font-weight: var(--font-weight-medium);
+  margin-bottom: 0.75rem;
+}
+
+.check {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.check + .check {
+  margin-top: 0.6rem;
+}
+
+.mark {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.mark.pass {
+  color: var(--accent-green);
+}
+
+.mark.fail {
+  color: var(--accent-red);
+}
+
+.mark.warn {
+  color: var(--accent-orange);
+}
+
+.name {
+  font-weight: var(--font-weight-medium);
+}
+
+.code {
+  color: var(--text-muted);
+  font-weight: var(--font-weight-normal);
+}
+
+.message {
+  color: var(--text-muted);
+}

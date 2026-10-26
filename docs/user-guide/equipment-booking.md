@@ -17,6 +17,12 @@ Like staff, a piece of equipment can belong to **several sites** — a shared in
 
 Which sites an item belongs to is set in [Settings → Equipment](#managing-equipment). Deleting a site only removes its link: equipment still linked to another site is kept, and only equipment left with no site at all is deleted.
 
+## Equipment Limited to Teams
+
+At a site that has [teams](settings.md#teams), an item can be limited to some of them: in the equipment form, switch off **Whole site** under that site and tick the teams. The limit is per site — the shared **Mass Spectrometer** in the demo is limited to the *Analytical Lab* at Winterthur and open to everyone at Frankfurt.
+
+The limit is used by the header [team filter](settings.md#team-filter): with teams ticked there, the Equipment view, the Equipment panel and the booking and maintenance-block pickers show the site's open equipment plus the items limited to one of the ticked teams. With **Whole site**, everything is shown. Equipment limited only to an inactive team is hidden under any team filter. The limit does not stop anyone from booking the item.
+
 ## Equipment List Panel
 
 The left panel lists all equipment items for the selected site with:
@@ -42,8 +48,8 @@ The right side shows a horizontal timeline with booking bars:
 ### Method 1: Drag & Drop
 
 1. Grab an equipment item by the drag handle in the Equipment panel
-2. Drag it onto a project or phase bar on the Gantt timeline
-3. A five-day booking is created where you drop it — click it afterwards to adjust the dates
+2. Drag it onto a project, phase or subphase bar on the Gantt timeline
+3. A five-day booking is created where you drop it — click it afterwards to adjust the dates. Equipment is always booked on the **project**: dropped on a phase or subphase, the booking takes the dropped days and shows on the project's row
 
 ### Method 2: Context Menu
 
@@ -55,9 +61,10 @@ The right side shows a horizontal timeline with booking bars:
 
 ![Assign Equipment modal with equipment dropdown and booking dates](../assets/screenshots/equipment-assignment-modal.png){ loading=lazy }
 
-- Select the **equipment item** from a dropdown
+- Select the **equipment item** from the dropdown: it opens with a search box that finds an item by its name or its type ([how the pickers work](gantt-charts.md#picking-a-person))
 - Set **start and end dates** for the booking
-- Click **Save** to confirm
+- Add an optional **Note (optional)** — up to 2 000 characters, for example what to prepare. It is kept with the booking: shown when you edit it, in the project manager's notification of a new booking, and in the [site export](import-export.md). Empty the field and save to remove it; changing only the note notifies nobody
+- Click **Save** to confirm. Opened from a phase or subphase, the equipment is booked on its project
 
 ## Filtering by Type
 
@@ -67,6 +74,8 @@ Click the **filter button** in the Equipment panel header to filter by equipment
 2. Check types to show (e.g., Analytical, Pilot Plant, Safety)
 3. Use **Select All** / **Clear** for quick selection
 4. The filter button shows the active count when filtering (e.g., "3 types")
+
+If an administrator set default equipment types in [Settings → Features & defaults](settings.md#features-defaults), the Equipment panel below the Gantt chart opens with those types ticked (and again when you switch site); change them as usual. The Equipment view itself opens unfiltered.
 
 ## Managing Equipment
 
@@ -83,12 +92,13 @@ The list can be filtered by **Site** (or **All Sites**); an item linked to sever
    - **Name** (required, e.g., "Pilot Plant A", "Mass Spec 1")
    - **Type** — select an existing type or click **+ New type** to create one inline
    - **Sites** (required) — click every site where the equipment can be booked; at least one. The site you are filtering on (or viewing) is preselected
+   - **Teams** (optional) — under each selected site that has teams, leave **Whole site** on or limit the item to some teams (see [Equipment Limited to Teams](#equipment-limited-to-teams))
 3. Click **Create Equipment**
 
 ### Editing Equipment
 
 1. Click the **edit icon** on an equipment row
-2. Modify the name, type, description, sites, or active status — adding or removing a site links or unlinks the item there
+2. Modify the name, type, description, sites, teams, or active status — adding or removing a site links or unlinks the item there (removing a site also drops its teams)
 3. Click **Save Changes**
 
 !!! note "Superusers and shared equipment"
@@ -138,9 +148,11 @@ The duration is shown live as you change dates so you can confirm the window bef
 
 Only **Admins** and **Superusers** can create, edit, or delete equipment blocks. Regular users see them on the timeline but cannot modify them. Superusers are limited to equipment whose sites are all sites they belong to.
 
-A block (or booking) whose end date is before its start date is rejected. New blocks can't be added while [What-If mode](what-if-planning.md) is active; existing blocks can still be edited and deleted there. Equipment itself cannot be deleted while a What-If plan is open, and What-If is entered from the Gantt chart only.
+Block and booking dates are picked on the [shared calendar](gantt-charts.md#picking-dates), so an end date can never fall before the start date. New blocks can't be added while [What-If mode](what-if-planning.md) is active; existing blocks can still be edited and deleted there. Equipment itself cannot be deleted while a What-If plan is open, and What-If is entered from the Gantt chart only.
 
 ## Permissions
+
+With the default roles (see [Settings → Roles](settings.md#roles-permissions)), for equipment at the sites you can see:
 
 | Action | Admin | Superuser | User |
 |--------|-------|-----------|------|

@@ -121,8 +121,9 @@ describe('project menu', () => {
     render(<ContextMenuContainer />);
     expect(item('Edit Project')).not.toBeDisabled();
     expect(item('Delete Project')).toBeDisabled();
-    // editors get the dialog, not "Assign me"
-    expect(screen.queryByRole('button', { name: 'Assign me' })).not.toBeInTheDocument();
+    // editors get the dialog, not "Assign me…"
+    expect(item('Assign Staff')).toBeEnabled();
+    expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
   });
 
   it('blocks the create entries in What-If mode', () => {
@@ -136,35 +137,75 @@ describe('project menu', () => {
     expect(item('Edit Project')).not.toBeDisabled();
   });
 
-  it('lets a plain user assign themselves, with today as dates on an undated project', async () => {
+  it('"Assign me…" opens the assignment dialog on the project for me, and books nothing itself', () => {
     seed(makeUser({ id: 5, role: 'user', max_capacity: 100 }));
     useUIStore.getState().showContextMenu('project', 1, 0, 0);
     render(<ContextMenuContainer />);
     expect(item('Edit Project')).toBeDisabled();
-    fireEvent.click(item('Assign me'));
-    await waitFor(() => expect(refreshProjects).toHaveBeenCalled());
-    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    // the staff row's capacity wins over the user record
-    expect(body).toMatchObject({ staff_id: 5, allocation: 60, project_id: 1, phase_id: undefined });
-    expect(body.start_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(body.start_date).toBe(body.end_date);
+    fireEvent.click(item('Assign me…'));
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ projectId: 1, staffId: 5 });
+    expect(useUIStore.getState().contextMenu.visible).toBe(false);
+    expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 
-  it('logs a failed self-assignment', async () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error('409'));
+  it('"Assign me…" opens the dialog on a phase with the phase context', () => {
     seed(makeUser({ id: 5, role: 'user' }));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
-    fireEvent.click(item('Assign me'));
-    await waitFor(() => expect(err).toHaveBeenCalledWith('Failed to self-assign:', expect.any(Error)));
-    expect(refreshProjects).not.toHaveBeenCalled();
-    err.mockRestore();
+    fireEvent.click(item('Assign me…'));
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ phaseId: 10, projectId: 1, staffId: 5 });
+    expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 
-  it('shows "Assigned to me" once booked', () => {
-    seed(makeUser({ id: 4, role: 'user' }));
+  it('keeps "Assign me…" disabled in What-If mode, like "Assign Staff"', () => {
+    useWhatIfStore.setState({ whatIfMode: true });
+    seed(makeUser({ id: 5, role: 'user' }));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assign me…')).toBeDisabled();
+    expect(item('Assign me…').title).toMatch(/Adding items/);
+  });
+
+  it('hides "Assign me" from a user who is not bookable as a resource', () => {
+    seed(makeUser({ id: 5, role: 'user', is_resource: false }));
+    useUIStore.getState().showContextMenu('project', 1, 0, 0);
+    render(<ContextMenuContainer />);
+    expect(item('Edit Project')).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
+  });
+
+  it('offers "Assign me again…" once booked on a phase, and opens the dialog for the second booking', () => {
+    seed(makeUser({ id: 4, role: 'user', max_capacity: 100 }));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assign me again…')).toBeEnabled();
+    expect(screen.queryByRole('menuitem', { name: 'Assigned to me' })).not.toBeInTheDocument();
+    fireEvent.click(item('Assign me again…'));
+    // the dialog sends it without dates: the server places it
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+    expect(useUIStore.getState().modalContext).toEqual({ phaseId: 10, projectId: 1, staffId: 4 });
+    expect(createStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it('keeps "Assigned to me" disabled on a one-day phase already booked (no room for a second)', () => {
+    seed(makeUser({ id: 4, role: 'user' }));
+    useAppStore.setState((state) => ({
+      projects: state.projects.map((p) => ({
+        ...p,
+        phases: p.phases.map((ph) => (ph.id === 10 ? { ...ph, end_date: ph.start_date } : ph)),
+      })),
+    }));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assigned to me')).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: 'Assign me again…' })).not.toBeInTheDocument();
+  });
+
+  it('keeps "Assigned to me" disabled on a project already booked (project bookings carry dates)', () => {
+    seed(makeUser({ id: 4, role: 'user' }));
+    useUIStore.getState().showContextMenu('project', 1, 0, 0);
     render(<ContextMenuContainer />);
     expect(item('Assigned to me')).toBeDisabled();
   });
@@ -256,6 +297,26 @@ describe('assignment menus', () => {
     });
   });
 
+  it('edits a phase booking with its effective dates and whether it follows the phase', () => {
+    useUIStore.getState().showContextMenu('staffAssignment', 71, 0, 0, 1, 10, undefined, {
+      staffId: 4,
+      name: 'Bob Brown',
+      allocation: 30,
+      startDate: '2026-01-07',
+      endDate: '2026-01-08',
+      linked: false,
+    });
+    render(<ContextMenuContainer />);
+    fireEvent.click(item('Edit Assignment'));
+    expect(useUIStore.getState().editingStaffAssignment).toMatchObject({
+      id: 71,
+      phase_id: 10,
+      start_date: '2026-01-07',
+      end_date: '2026-01-08',
+      linked: false,
+    });
+  });
+
   it('deletes a phase-level staff booking through the phase route', async () => {
     const confirm = stubConfirm(true);
     useUIStore.getState().showContextMenu('staffAssignment', 71, 0, 0, 1, 10, undefined, { staffId: 4, name: 'Bob Brown' });
@@ -300,6 +361,30 @@ describe('assignment menus', () => {
     expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Remove Equipment Assignment from this assignment?', destructive: true }));
     await waitFor(() => expect(deleteEquipmentAssignment).toHaveBeenCalledWith(60));
     expect(useAppStore.getState().projects[0].equipmentAssignments).toEqual([]);
+  });
+
+  it('gates the equipment entries on equipment_bookings.manage, independently of project editing', () => {
+    seed(makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }));
+    useUIStore.getState().showContextMenu('project', 1, 30, 40);
+    const { rerender, unmount } = render(<ContextMenuContainer />);
+    expect(item('Assign Equipment')).not.toHaveAttribute('aria-disabled', 'true');
+    expect(item('Assign Equipment')).toBeEnabled();
+    expect(item('Edit Project')).toBeDisabled();
+    useUIStore.getState().showContextMenu('equipmentAssignment', 60, 0, 0, 1);
+    rerender(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeEnabled();
+    expect(item('Delete Assignment')).toBeEnabled();
+    unmount();
+
+    seed(makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }));
+    useUIStore.getState().showContextMenu('project', 1, 30, 40);
+    const second = render(<ContextMenuContainer />);
+    expect(item('Assign Equipment')).toBeDisabled();
+    expect(item('Edit Project')).toBeEnabled();
+    useUIStore.getState().showContextMenu('equipmentAssignment', 60, 0, 0, 1);
+    second.rerender(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeDisabled();
+    expect(item('Delete Assignment')).toBeDisabled();
   });
 
   it('renders nothing while hidden', () => {

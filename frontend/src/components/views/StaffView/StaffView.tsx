@@ -10,11 +10,13 @@
 
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
+import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { StaffTimelineBody } from './StaffTimelineBody';
@@ -31,12 +33,21 @@ import {
   isUnavailableOn,
 } from '@/utils/recurringVacation';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
-import { getClosureOn } from '@/utils/siteClosure';
-import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
-import { canManageAnyProject, isSelf } from '@/utils/permissions';
+import { EMPTY_TEAM_SET, getClosureOn } from '@/utils/siteClosure';
+import {
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+} from '@/stores/appStore';
+import { canBookSelf, canManageAbsencesOf, canManageAnyProject } from '@/utils/permissions';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
+import { parseIdList } from '@/utils/instanceSettings';
 import styles from './StaffView.module.css';
+import { bookingSpan } from '@/utils/bookingSegments';
+import { Icon, PlusIcon, CloseIcon, RepeatIcon, ChevronRightIcon, DragDotsIcon, CheckIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
 
 // Height constants matching Gantt rows
 const BASE_ROW_HEIGHT = 44;  // Minimum row height
@@ -62,6 +73,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   
   // Refs for measuring actual row heights (keyed by staff ID)
@@ -88,10 +100,13 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const skills = useAppStore((s) => s.skills);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
-  const companyEventDates = useAppStore((s) => s.companyEventDates);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Company events narrowed by the header team filter
+  const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
+  const staffTeamIds = useAppStore(selectStaffTeamIds);
+  const teamSiteById = useAppStore(selectTeamSiteById);
+  const { staffMatches } = useTeamFilter();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
@@ -124,41 +139,27 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   
   // Filter state
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
-  const [selectedSkills, setSelectedSkills] = useState<Set<number>>(new Set());
+  // The Staff panel below the Gantt (embedded) is seeded with the admin's
+  // default skills (Settings → Features & defaults) that still exist, each
+  // time it mounts; the standalone Staff view opens unfiltered. Changes last
+  // the session.
+  const defaultSkills = useAppStore((s) => s.instanceSettings?.staff_panel_default_skills);
+  const [selectedSkills, setSelectedSkills] = useState<Set<number>>(() => {
+    if (!embedded) return new Set();
+    const known = new Set(skills.map((skill) => skill.id));
+    return new Set(parseIdList(defaultSkills).filter((id) => known.has(id)));
+  });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
-
-  // Position the position:fixed filter dropdown anchored below the trigger.
-  useLayoutEffect(() => {
-    if (!isFilterOpen || !filterRef.current) return;
-    const update = () => {
-      const rect = filterRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const top = rect.bottom + 6;
-      const available = Math.max(160, window.innerHeight - top - 12);
-      setFilterDropdownStyle({
-        top,
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - 458)),
-        maxHeight: available,
-      });
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [isFilterOpen]);
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
   
-  // Get all staff for current site (unfiltered for role extraction)
+  // Get all staff for current site (unfiltered by role, for role extraction),
+  // narrowed by the header team filter
   const allSiteStaff = useMemo(() => 
-    staff.filter((s) => s.site_id === currentSite?.id && s.active !== false)
+    staff.filter((s) => s.site_id === currentSite?.id && s.active !== false && staffMatches(s))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [staff, currentSite]
+    [staff, currentSite, staffMatches]
   );
   
   // Extract unique roles from staff
@@ -194,6 +195,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     onClose: () => setIsFilterOpen(false),
     wrapperRef: filterRef,
     triggerRef: filterTriggerRef,
+    panelRef: filterPanelRef,
   });
   
   // Toggle role selection
@@ -303,8 +305,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           const existing = map.get(sa.staff_id) || [];
           existing.push({
             ...sa,
-            start_date: sa.start_date || subphase.start_date,
-            end_date: sa.end_date || subphase.end_date,
+            // Effective dates: an unlinked booking's own, else the subphase's
+            start_date: bookingSpan(sa, subphase).start,
+            end_date: bookingSpan(sa, subphase).end,
             projectName: project.name,
             projectId: project.id,
             phaseName: phase.name,
@@ -346,8 +349,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           const existing = map.get(sa.staff_id) || [];
           existing.push({
             ...sa,
-            start_date: sa.start_date || phase.start_date,
-            end_date: sa.end_date || phase.end_date,
+            // Effective dates: an unlinked booking's own, else the phase's
+            start_date: bookingSpan(sa, phase).start,
+            end_date: bookingSpan(sa, phase).end,
             projectName: project.name,
             projectId: project.id,
             phaseName: phase.name,
@@ -481,14 +485,16 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
       return { available: 0, maxCapacity }; // No availability during the absence
     }
     const sites = staffSiteIds.get(staffId) ?? new Set(currentSite ? [currentSite.id] : []);
-    if (getClosureOn(sites, todayStr, closureIndex)) {
+    const teams = staffTeamIds.get(staffId) ?? EMPTY_TEAM_SET;
+    if (getClosureOn(sites, todayStr, closureIndex, teams, teamSiteById)) {
       return { available: 0, maxCapacity }; // Site closed today
     }
     
     const assignments = staffAssignmentsMap.get(staffId) || [];
-    // Only sum allocations for assignments active TODAY
+    // Only sum allocations for assignments active TODAY; a booking awaiting
+    // approval books nothing yet.
     const totalAllocation = assignments
-      .filter(a => a.start_date && a.end_date && isActiveToday(a.start_date, a.end_date))
+      .filter(a => !isPendingAssignment(a) && a.start_date && a.end_date && isActiveToday(a.start_date, a.end_date))
       .reduce((sum, a) => sum + (a.allocation || 0), 0);
     return { available: maxCapacity - totalAllocation, maxCapacity };
   };
@@ -507,18 +513,16 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   }, []);
   
   // Check if user can manage vacation for a staff member
-  const canManageVacation = useCallback((staffId: number) => {
-    if (!currentUser) return false;
-    if (currentUser.role === 'admin' || currentUser.role === 'superuser') return true;
-    // Regular users can manage their own vacations
-    return currentUser.id === staffId;
-  }, [currentUser]);
+  const canManageVacation = useCallback(
+    (staffId: number) => canManageAbsencesOf(currentUser, staffId),
+    [currentUser]
+  );
   
   // Check if user can drag staff to assign: anyone who manages a project may
   // drag anyone, everyone may drag their own row.
   const canDragAny = canManageAnyProject(currentUser, projects);
   const canDragStaff = useCallback(
-    (staffId: number) => canDragAny || isSelf(currentUser, staffId),
+    (staffId: number) => canDragAny || canBookSelf(currentUser, staffId),
     [canDragAny, currentUser]
   );
   
@@ -621,108 +625,90 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
               aria-expanded={isFilterOpen}
               aria-haspopup="dialog"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-              </svg>
+              <Icon icon={FilterIcon} size={14} />
               <span className={styles.filterLabel}>{filterLabel()}</span>
-              <svg
-                className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`}
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
+              <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} />
             </button>
             
-            {isFilterOpen && (
-              <div className={styles.filterDropdown} style={filterDropdownStyle} role="dialog" aria-label="Filter staff">
-                {/* Clear all button */}
-                {hasActiveFilters && (
-                  <div className={styles.filterActions}>
-                    <button className={styles.filterActionBtn} onClick={clearAllFilters}>
-                      Clear all filters
-                    </button>
+            <AnchoredPanel
+              ref={filterPanelRef}
+              open={isFilterOpen}
+              triggerRef={filterTriggerRef}
+              align="start"
+              className={styles.filterDropdown}
+              role="dialog"
+              aria-label="Filter staff"
+            >
+              {/* Clear all button */}
+              {hasActiveFilters && (
+                <div className={styles.filterActions}>
+                  <button className={styles.filterActionBtn} onClick={clearAllFilters}>
+                    Clear all filters
+                  </button>
+                </div>
+              )}
+              
+              <div className={styles.filterColumns}>
+                {/* Role filters column */}
+                <div className={styles.filterColumn}>
+                  <div className={styles.filterSectionTitle}>Roles</div>
+                  <div className={styles.filterOptions}>
+                    {staffRoles.length > 0 ? (
+                      staffRoles.map((role) => (
+                        <label key={role} className={styles.filterOption}>
+                          <input
+                            type="checkbox"
+                            className={styles.filterCheckboxInput}
+                            checked={selectedRoles.has(role)}
+                            onChange={() => toggleRole(role)}
+                          />
+                          <span className={styles.filterCheckbox}>
+                            <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
+                          </span>
+                          <span className={styles.filterOptionText}>{role}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <div className={styles.filterEmptyColumn}>No roles defined</div>
+                    )}
                   </div>
-                )}
+                </div>
                 
-                <div className={styles.filterColumns}>
-                  {/* Role filters column */}
-                  <div className={styles.filterColumn}>
-                    <div className={styles.filterSectionTitle}>Roles</div>
-                    <div className={styles.filterOptions}>
-                      {staffRoles.length > 0 ? (
-                        staffRoles.map((role) => (
-                          <label key={role} className={styles.filterOption}>
-                            <input
-                              type="checkbox"
-                              className={styles.filterCheckboxInput}
-                              checked={selectedRoles.has(role)}
-                              onChange={() => toggleRole(role)}
-                            />
-                            <span className={styles.filterCheckbox}>
-                              <svg className={styles.checkIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            </span>
-                            <span className={styles.filterOptionText}>{role}</span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className={styles.filterEmptyColumn}>No roles defined</div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Skills filters column */}
-                  <div className={styles.filterColumn}>
-                    <div className={styles.filterSectionTitle}>Skills</div>
-                    <div className={styles.filterOptions}>
-                      {skills.length > 0 ? (
-                        skills.map((skill) => (
-                          <label key={skill.id} className={styles.filterOption}>
-                            <input
-                              type="checkbox"
-                              className={styles.filterCheckboxInput}
-                              checked={selectedSkills.has(skill.id)}
-                              onChange={() => toggleSkill(skill.id)}
-                            />
-                            <span className={styles.filterCheckbox}>
-                              <svg className={styles.checkIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            </span>
+                {/* Skills filters column */}
+                <div className={styles.filterColumn}>
+                  <div className={styles.filterSectionTitle}>Skills</div>
+                  <div className={styles.filterOptions}>
+                    {skills.length > 0 ? (
+                      skills.map((skill) => (
+                        <label key={skill.id} className={styles.filterOption}>
+                          <input
+                            type="checkbox"
+                            className={styles.filterCheckboxInput}
+                            checked={selectedSkills.has(skill.id)}
+                            onChange={() => toggleSkill(skill.id)}
+                          />
+                          <span className={styles.filterCheckbox}>
+                            <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
+                          </span>
+                          <span 
+                            className={styles.filterOptionText}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                          >
                             <span 
-                              className={styles.filterOptionText}
-                              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                            >
-                              <span 
-                                className={styles.skillDot} 
-                                style={{ backgroundColor: skill.color }}
-                              />
-                              {skill.name}
-                            </span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className={styles.filterEmptyColumn}>No skills defined</div>
-                      )}
-                    </div>
+                              className={styles.skillDot} 
+                              style={{ backgroundColor: skill.color }}
+                            />
+                            {skill.name}
+                          </span>
+                        </label>
+                      ))
+                    ) : (
+                      <div className={styles.filterEmptyColumn}>No skills defined</div>
+                    )}
                   </div>
                 </div>
               </div>
-            )}
+            </AnchoredPanel>
           </div>
         </div>
         <div className={styles.panelBody} ref={panelRef}>
@@ -758,20 +744,11 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                   >
                     {canDrag && (
                       <div className={styles.dragHandle} title="Drag to assign">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                          <circle cx="9" cy="5" r="2" />
-                          <circle cx="9" cy="12" r="2" />
-                          <circle cx="9" cy="19" r="2" />
-                          <circle cx="15" cy="5" r="2" />
-                          <circle cx="15" cy="12" r="2" />
-                          <circle cx="15" cy="19" r="2" />
-                        </svg>
+                        <Icon icon={DragDotsIcon} size={12} />
                       </div>
                     )}
                     <div className={`${styles.expandIcon} ${isExpanded ? styles.expanded : ''}`}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
+                      <Icon icon={ChevronRightIcon} size={12} />
                     </div>
                     <div 
                       className={`${styles.status} ${available > 0 ? styles.available : styles.overloaded} ${isPartTime ? styles.partTime : ''}`}
@@ -822,12 +799,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                             {recurringPattern && (
                               <span className={`${styles.detailType} ${styles.vacation}`}>
                                 <span className={styles.recurringBadge} title={getRecurringDaysDisplay(recurringPattern.daysOfWeek)}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M17 1l4 4-4 4" />
-                                    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                                    <path d="M7 23l-4-4 4-4" />
-                                    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                                  </svg>
+                                  <Icon icon={RepeatIcon} size={12} />
                                   Recurring
                                 </span>
                               </span>
@@ -854,10 +826,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                                 }}
                                 title="Delete vacation"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <line x1="18" y1="6" x2="6" y2="18" />
-                                  <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
+                                <Icon icon={CloseIcon} size={14} />
                               </span>
                             )}
                           </div>
@@ -871,10 +840,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                           onClick={() => openVacationModal(undefined, staffMember.id)}
                         >
                           <span className={styles.addIcon}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="12" y1="5" x2="12" y2="19" />
-                              <line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
+                            <Icon icon={PlusIcon} size={14} />
                           </span>
                           <span className={styles.addText}>Add vacation / time off</span>
                         </div>
@@ -1032,6 +998,8 @@ interface StaffAssignmentWithContext {
   subphaseName?: string;
   subphaseId?: number;
   level: 'project' | 'phase' | 'subphase';
+  /** 'pending' = a booking awaiting approval: listed, but books no capacity */
+  approval_status?: 'approved' | 'pending';
 }
 
 export type { StaffAssignmentWithContext };

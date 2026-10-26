@@ -6,9 +6,18 @@ import { useUndoStore } from './undoStore';
 import { useWhatIfStore } from './whatIfStore';
 import { useCustomColumnStore } from './customColumnStore';
 import { useNotificationStore } from './notificationStore';
+import { useWorkStore } from './workStore';
 import { useConfirmStore } from './confirmStore';
+import { clearMentionableUsersCache } from '@/api/endpoints/mentionableCache';
 
-export { useAppStore, selectStaffSiteIds, selectAbsenceTypesById, selectCanManageResources } from './appStore';
+export {
+  useAppStore,
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+  selectCanManageOthersAbsences,
+} from './appStore';
 export { useUIStore } from './uiStore';
 export { useUndoStore } from './undoStore';
 export { useViewStore } from './viewStore';
@@ -16,6 +25,8 @@ export { useWhatIfStore } from './whatIfStore';
 export type { WhatIfOperation } from './whatIfStore';
 export { useCustomColumnStore } from './customColumnStore';
 export { useNotificationStore } from './notificationStore';
+export { useWorkStore } from './workStore';
+export type { WorkTab, RequestsFilter, AssignmentsFilter } from './workStore';
 export { useConfirmStore } from './confirmStore';
 export type { ConfirmOptions } from './confirmStore';
 
@@ -35,7 +46,8 @@ const TRANSIENT_BODY_CLASSES = [
 /**
  * Forget everything that belongs to the signed-in tenant user (logout, or a
  * session that expired/was revoked): domain data, the What-If sandbox and its
- * queue, the undo history, the notification inbox, custom-column data, any
+ * queue, the undo history, the notification inbox, the approval requests
+ * (workStore), the cached @-mention lists, custom-column data, any
  * pending confirmation (answered `false`) and any open modal or in-progress
  * gesture (including its <body> class). Without this, the next user to sign in
  * on the same tab would inherit (and could Apply) the previous user's queue.
@@ -55,6 +67,8 @@ export function resetAllStores(): void {
   useWhatIfStore.getState().reset();
   useUndoStore.getState().clear();
   useNotificationStore.getState().reset();
+  useWorkStore.getState().reset();
+  clearMentionableUsersCache();
   useCustomColumnStore.setState({
     customColumns: [],
     customColumnValues: {},

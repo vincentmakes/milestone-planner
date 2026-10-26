@@ -11,6 +11,7 @@
  */
 
 import { useAppStore } from '@/stores/appStore';
+import { fitCardBookingRows } from './bookingSegments';
 import type { EquipmentAssignment, Phase, Project, StaffAssignment, Subphase } from '@/types';
 
 export type AssignmentLevel = 'project' | 'phase' | 'subphase';
@@ -44,10 +45,22 @@ function allSubphases(project: Project): Subphase[] {
   return out;
 }
 
+/**
+ * Apply a patch to a card; a date change also fits the card's bookings
+ * (linked rows follow, unlinked segments are translated or clamped), as the
+ * server does in the card PUT -- locally only, the server fits its own rows.
+ */
+function patchCard(card: Phase | Subphase, patch: Partial<Phase> | Partial<Subphase>): void {
+  const oldStart = card.start_date;
+  const oldEnd = card.end_date;
+  Object.assign(card, patch);
+  if (oldStart && oldEnd && card.start_date && card.end_date) fitCardBookingRows(card, oldStart, oldEnd);
+}
+
 export function patchPhaseLocally(projectId: number, phaseId: number, patch: Partial<Phase>): void {
   updateProjectLocally(projectId, (project) => {
     const phase = project.phases?.find((ph) => ph.id === phaseId);
-    if (phase) Object.assign(phase, patch);
+    if (phase) patchCard(phase, patch);
   });
 }
 
@@ -60,7 +73,7 @@ export function removePhaseLocally(projectId: number, phaseId: number): void {
 export function patchSubphaseLocally(projectId: number, subphaseId: number, patch: Partial<Subphase>): void {
   updateProjectLocally(projectId, (project) => {
     const subphase = allSubphases(project).find((sp) => sp.id === subphaseId);
-    if (subphase) Object.assign(subphase, patch);
+    if (subphase) patchCard(subphase, patch);
   });
 }
 
@@ -82,6 +95,20 @@ function staffListsAt(project: Project, level: AssignmentLevel): StaffAssignment
   if (level === 'project') return [project.staffAssignments ?? []];
   if (level === 'phase') return (project.phases ?? []).map((ph) => ph.staffAssignments ?? []);
   return allSubphases(project).map((sp) => sp.staffAssignments ?? []);
+}
+
+/** The staff assignment `id` at `level` in the project (ids are unique per level only). */
+export function findStaffAssignment(
+  project: Project | null | undefined,
+  level: AssignmentLevel,
+  id: number
+): StaffAssignment | undefined {
+  if (!project) return undefined;
+  for (const list of staffListsAt(project, level)) {
+    const found = list.find((a) => a.id === id);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 export function patchStaffAssignmentLocally(

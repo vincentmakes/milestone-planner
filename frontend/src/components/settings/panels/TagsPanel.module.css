@@ -27,21 +27,6 @@
   color: var(--text-primary);
 }
 
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.sectionTitle {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 .hint {
   margin: 0;
   font-size: var(--font-size-sm);
@@ -62,12 +47,6 @@
   padding: 2rem;
   text-align: center;
   font-size: var(--font-size-md);
-  color: var(--text-muted);
-}
-
-.emptySmall {
-  padding: 0.5rem 0.75rem;
-  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -161,14 +140,6 @@
   white-space: nowrap;
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-}
-
-.groupSelect {
-  flex: 0 0 11rem;
-}
-
-.toggleLabel {
-  flex-shrink: 0;
 }
 
 .actions {
@@ -268,9 +239,5 @@
 @media (max-width: 1024px) {
   .editRow {
     padding-left: 0;
-  }
-
-  .groupSelect {
-    flex: 1 1 100%;
   }
 }

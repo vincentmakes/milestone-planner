@@ -7,10 +7,12 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
     Integer,
+    String,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,11 +23,45 @@ if TYPE_CHECKING:
     from app.models.project import Project, ProjectPhase, ProjectSubphase
     from app.models.user import User
 
+# approval_status of a staff assignment: "pending" = a self-booking awaiting
+# approval (a real row, shown at once); "approved" = every other row.
+APPROVAL_STATUSES: tuple[str, ...] = ("approved", "pending")
+
+
+def _approval_status_check(table: str) -> CheckConstraint:
+    values = ", ".join(f"'{status}'" for status in APPROVAL_STATUSES)
+    return CheckConstraint(f"approval_status IN ({values})", name=f"{table}_approval_status_check")
+
+
+def _approval_status_column() -> Mapped[str]:
+    return mapped_column(String(10), default="approved", server_default="approved", nullable=False)
+
+
+def _segment_dates_check(table: str) -> CheckConstraint:
+    """Own booking dates come in pairs: both NULL (linked) or both set (a segment)."""
+    return CheckConstraint(
+        "((start_date IS NULL) = (end_date IS NULL))", name=f"{table}_segment_dates_check"
+    )
+
+
+def _approval_request_column(table: str) -> Mapped[int | None]:
+    """The open approval request on this row (pending create, change or removal)."""
+    return mapped_column(
+        Integer,
+        ForeignKey(
+            "approval_requests.id",
+            name=f"{table}_approval_request_id_fkey",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
 
 class ProjectAssignment(Base):
     """Project-level staff assignment - assigns staff directly to projects."""
 
     __tablename__ = "project_assignments"
+    __table_args__ = (_approval_status_check("project_assignments"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
@@ -44,6 +80,9 @@ class ProjectAssignment(Base):
     # Note: 'notes' column exists in some DBs but not Node.js schema
     # We'll query it dynamically only if needed
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
+
+    approval_status: Mapped[str] = _approval_status_column()
+    approval_request_id: Mapped[int | None] = _approval_request_column("project_assignments")
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="staff_assignments")
@@ -67,6 +106,10 @@ class PhaseStaffAssignment(Base):
     """Phase-level staff assignment - assigns staff to specific phases."""
 
     __tablename__ = "phase_staff_assignments"
+    __table_args__ = (
+        _approval_status_check("phase_staff_assignments"),
+        _segment_dates_check("phase_staff_assignments"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
@@ -85,7 +128,13 @@ class PhaseStaffAssignment(Base):
         nullable=False,
     )
     allocation: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
-    # Note: No start_date/end_date - dates come from the phase itself
+    # Own dates of an unlinked segment (moves within its phase); both NULL = linked:
+    # the booking follows the phase's dates, as before 1.17.
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    approval_status: Mapped[str] = _approval_status_column()
+    approval_request_id: Mapped[int | None] = _approval_request_column("phase_staff_assignments")
 
     # Relationships
     project: Mapped["Project"] = relationship("Project")
@@ -110,6 +159,10 @@ class SubphaseStaffAssignment(Base):
     """Subphase-level staff assignment - assigns staff to specific subphases."""
 
     __tablename__ = "subphase_staff_assignments"
+    __table_args__ = (
+        _approval_status_check("subphase_staff_assignments"),
+        _segment_dates_check("subphase_staff_assignments"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
@@ -128,7 +181,13 @@ class SubphaseStaffAssignment(Base):
         nullable=False,
     )
     allocation: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
-    # Note: No start_date/end_date - dates come from the subphase itself
+    # Own dates of an unlinked segment (moves within its subphase); both NULL = linked:
+    # the booking follows the subphase's dates, as before 1.17.
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    approval_status: Mapped[str] = _approval_status_column()
+    approval_request_id: Mapped[int | None] = _approval_request_column("subphase_staff_assignments")
 
     # Relationships
     project: Mapped["Project"] = relationship("Project")

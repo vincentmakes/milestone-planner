@@ -14,7 +14,7 @@ process.env.TZ = 'America/New_York';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import type React from 'react';
-import type { Project, User } from '@/types';
+import type { Project } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
   updatePhase: vi.fn(async () => ({})),
@@ -32,6 +32,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { updatePhase } from '@/api/endpoints/projects';
+import { makeUser } from '@/test/factories';
 
 afterAll(() => {
   if (ORIGINAL_TZ === undefined) delete process.env.TZ;
@@ -119,7 +120,7 @@ describe('Gantt drag & resize (America/New_York)', () => {
   beforeEach(() => {
     vi.mocked(updatePhase).mockClear();
     useAppStore.setState({
-      currentUser: { id: 1, role: 'admin' } as User,
+      currentUser: makeUser({ id: 1, role: 'admin' }),
       projects: [makeProject('2026-03-02', '2026-03-06')],
     });
     useViewStore.setState({ viewMode: 'month', cellWidth: 30, currentView: 'gantt' });

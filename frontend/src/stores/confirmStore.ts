@@ -27,6 +27,12 @@ export interface ConfirmOptions {
   cancelLabel?: string;
   /** Renders the confirm button as a `danger` Button. */
   destructive?: boolean;
+  /**
+   * A word the user must type before the confirm button enables (exact case,
+   * surrounding spaces ignored), for changes that are hard to undo. Enter in
+   * the field confirms once it matches; focus starts in the field.
+   */
+  confirmWord?: string;
 }
 
 export interface ConfirmRequest extends ConfirmOptions {

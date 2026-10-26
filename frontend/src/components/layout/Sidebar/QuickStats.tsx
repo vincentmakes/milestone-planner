@@ -1,4 +1,5 @@
 import { useAppStore } from '@/stores/appStore';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { uniqueById } from '@/utils/uniqueById';
 import styles from './QuickStats.module.css';
 
@@ -7,18 +8,19 @@ export function QuickStats() {
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentSite = useAppStore((s) => s.currentSite);
+  const { projectMatches, staffMatches, equipmentMatches } = useTeamFilter();
 
-  // Filter by current site
+  // Filter by current site and its header team filter
   const siteProjects = currentSite
-    ? projects.filter((p) => p.site_id === currentSite.id && !p.archived)
+    ? projects.filter((p) => p.site_id === currentSite.id && !p.archived && projectMatches(p))
     : projects.filter((p) => !p.archived);
 
   const siteStaff = currentSite
-    ? staff.filter((s) => s.site_id === currentSite.id && s.active)
+    ? staff.filter((s) => s.site_id === currentSite.id && s.active && staffMatches(s))
     : staff.filter((s) => s.active);
 
   const siteEquipment = currentSite
-    ? equipment.filter((e) => e.site_id === currentSite.id && e.active)
+    ? equipment.filter((e) => e.site_id === currentSite.id && e.active && equipmentMatches(e))
     : // One row per equipment-site pair: count each item once
       uniqueById(equipment.filter((e) => e.active));
 

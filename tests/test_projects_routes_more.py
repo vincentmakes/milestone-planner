@@ -40,6 +40,7 @@ def make_project(project_id=1, site_id=1, **overrides):
         "created_at": STAMP,
         "updated_at": STAMP,
         "tags": [SimpleNamespace(id=4, name="Priority", color="#ff0000", group_id=None)],
+        "team_ids": [],
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -80,6 +81,8 @@ async def test_list_projects_for_site(authed_client, mock_db_session):
     mock_db_session.execute.side_effect = [
         scalar_result(1),
         rows_result([(make_project(1), "Winterthur", "Alice Martin")]),
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects?siteId=1&limit=10")
@@ -94,7 +97,7 @@ async def test_list_projects_for_site(authed_client, mock_db_session):
         "Alice Martin",
         "ACME",
     )
-    assert item["tags"] == [{"id": 4, "name": "Priority", "color": "#ff0000", "group_id": None}]
+    assert item["tags"] == [{"id": 4, "name": "Priority", "color": "#ff0000"}]
     count_sql, list_sql = sql(mock_db_session, 0), sql(mock_db_session, 1)
     assert "projects.archived = 0 OR projects.archived IS NULL" in count_sql
     assert "projects.site_id = 1" in count_sql
@@ -105,7 +108,7 @@ async def test_list_projects_for_site(authed_client, mock_db_session):
 @pytest.mark.asyncio
 async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, "user", site_ids=[1, 2]))
     mock_db_session.execute.side_effect = [
         scalar_result(2),
         rows_result(
@@ -114,6 +117,8 @@ async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client,
                 (make_project(2, site_id=2), "Basel", "Bob"),
             ]
         ),
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects?siteId=1&includeOtherSites=true")
@@ -129,7 +134,9 @@ async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client,
     )
     assert (external["notes"], external["volume"], external["tags"]) == (None, None, [])
     assert external["site_name"] == "Basel"  # where it is stays visible
-    assert "projects.site_id" not in sql(mock_db_session, 0)  # no site filter
+    # Not limited to siteId, but to the visible sites (RBAC decision 6).
+    assert "projects.site_id = " not in sql(mock_db_session, 0)
+    assert "projects.site_id IN (1, 2)" in sql(mock_db_session, 0)
 
 
 @pytest.mark.asyncio
@@ -214,6 +221,11 @@ def _subphase(sp_id, parent_id, parent_type, depth, deps=None):
 
 
 def _assignment(aid, staff_id, **extra):
+    extra.setdefault("approval_status", "approved")
+    extra.setdefault("approval_request_id", None)
+    # Phase / subphase rows without own dates are linked (follow the card).
+    extra.setdefault("start_date", None)
+    extra.setdefault("end_date", None)
     return SimpleNamespace(id=aid, project_id=1, staff_id=staff_id, allocation=50, **extra)
 
 
@@ -252,6 +264,7 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
                         equipment_id=3,
                         start_date=date(2026, 1, 7),
                         end_date=date(2026, 1, 8),
+                        note="Bring the column",
                         created_at=STAMP,
                     ),
                     "HPLC",
@@ -259,6 +272,9 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
                 )
             ]
         ),
+        scalars_result([]),  # no pending approval requests
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects/1")
@@ -280,8 +296,124 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
     assert [(a["id"], a["staff_role"]) for a in body["staffAssignments"]] == [(32, "Chemist")]
     (equipment,) = body["equipmentAssignments"]
     assert (equipment["equipment_name"], equipment["equipment_type"]) == ("HPLC", "Analytical")
+    assert equipment["note"] == "Bring the column"
     assert body["tags"][0]["name"] == "Priority"
-    assert mock_db_session.execute.await_count == 7
+    # The 8th query: the project's pending approval requests (none here, so
+    # no policy lookup); then the two project-field queries.
+    assert mock_db_session.execute.await_count == 10
+    assert first["staffAssignments"][0]["approval_status"] == "approved"
+    assert first["staffAssignments"][0]["approval"] is None
+    assert body["staffAssignments"][0]["approval"] is None
+    # Card bookings without own dates are linked: their dates are the card's.
+    phase_booking = first["staffAssignments"][0]
+    assert phase_booking["linked"] is True
+    assert (phase_booking["start_date"], phase_booking["end_date"]) == (
+        "2026-01-05T00:00:00.000Z",
+        "2026-02-05T00:00:00.000Z",
+    )
+    child_booking = child["staffAssignments"][0]
+    assert child_booking["linked"] is True
+    assert (child_booking["start_date"], child_booking["end_date"]) == (
+        "2026-01-06T00:00:00.000Z",
+        "2026-01-09T00:00:00.000Z",
+    )
+    assert body["staffAssignments"][0]["linked"] is False
+
+
+@pytest.mark.asyncio
+async def test_project_detail_serialises_pending_bookings_and_requests(
+    authed_client, mock_db_session
+):
+    from app.models.rbac import ApprovalRequest
+
+    client, set_user = authed_client
+    set_user(FakeUser(7, "user"))  # the PM of the project (make_project pm_id)
+    phase = _phase(10, 0)
+    pending_create = ApprovalRequest(
+        id=50,
+        requester_id=5,
+        action="assignments.self_create",
+        project_id=1,
+        level="phase",
+        target_id=10,
+        assignment_id=30,
+        requested='{"allocation": 40}',
+        status="pending",
+        created_at=STAMP,
+    )
+    pending_update = ApprovalRequest(
+        id=51,
+        requester_id=7,  # the PM's own request: never theirs to decide
+        action="assignments.self_update",
+        project_id=1,
+        level="project",
+        target_id=1,
+        assignment_id=32,
+        requested='{"allocation": 80, "end_date": "2026-01-30", "start_date": "2026-01-05"}',
+        previous='{"allocation": 50, "end_date": "2026-01-30", "start_date": "2026-01-05"}',
+        status="pending",
+        created_at=STAMP,
+    )
+    mock_db_session.execute.side_effect = [
+        first_result((make_project(1, pm_id=7), "Winterthur", "Alice Martin")),
+        scalars_result([phase]),
+        scalars_result([_subphase(20, 10, "phase", 1)]),
+        rows_result(
+            [
+                (
+                    _assignment(
+                        30, 5, phase_id=10, approval_status="pending", approval_request_id=50
+                    ),
+                    "Eve",
+                    None,
+                )
+            ]
+        ),
+        rows_result([(_assignment(31, 8, subphase_id=20), "Bob Brown", None)]),
+        rows_result(
+            [
+                (
+                    _assignment(
+                        32,
+                        7,
+                        start_date=date(2026, 1, 5),
+                        end_date=date(2026, 1, 30),
+                        approval_request_id=51,
+                    ),
+                    "Alice Martin",
+                    "Chemist",
+                )
+            ]
+        ),
+        rows_result([]),
+        scalars_result([pending_create, pending_update]),
+        scalars_result([]),  # policies: the defaults (the PM approves)
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
+    ]
+
+    response = await client.get("/api/projects/1")
+
+    assert response.status_code == 200
+    body = response.json()
+    (phase_row,) = body["phases"][0]["staffAssignments"]
+    assert phase_row["approval_status"] == "pending"
+    assert phase_row["approval"] == {
+        "request_id": 50,
+        "action": "assignments.self_create",
+        "requester_id": 5,
+        "requested": {"allocation": 40},
+        "previous": None,
+        "created_at": "2026-01-01T12:00:00.000Z",
+        "can_decide": True,
+    }
+    (sub_row,) = body["phases"][0]["children"][0]["staffAssignments"]
+    assert (sub_row["approval_status"], sub_row["approval"]) == ("approved", None)
+    (project_row,) = body["staffAssignments"]
+    assert project_row["approval_status"] == "approved"
+    assert project_row["approval"]["previous"]["allocation"] == 50
+    assert project_row["approval"]["requested"]["allocation"] == 80
+    assert project_row["approval"]["can_decide"] is False
 
 
 @pytest.mark.asyncio
@@ -344,7 +476,7 @@ async def test_create_project_with_phases(authed_client, mock_db_session, broadc
 
     assert response.status_code == 200
     assert response.json() == {"id": 77, "success": True}
-    validate.assert_awaited_once_with(mock_db_session, 1, [4])
+    validate.assert_awaited_once_with(mock_db_session, 1, [4], [])
     added = [c.args[0] for c in mock_db_session.add.call_args_list]
     project, design, gate = added
     assert isinstance(project, Project)
@@ -448,7 +580,7 @@ async def test_update_project_every_field(authed_client, mock_db_session, broadc
     assert (project.confirmed, project.volume, project.archived, project.notes) == (0, 5.5, 1, "n")
     assert (project.start_date, project.end_date) == (date(2026, 2, 1), date(2026, 4, 30))
     assert project.tags == ["T"]
-    validate.assert_awaited_once_with(mock_db_session, 1, [])
+    validate.assert_awaited_once_with(mock_db_session, 1, [], [])
     assert broadcast.await_args.kwargs["summary"] == "Renamed"
 
 
@@ -479,6 +611,43 @@ async def test_update_project_unknown_new_pm_404(authed_client, mock_db_session,
     assert response.json()["detail"] == "Project manager not found"
     assert project.pm_id == 7
     mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_project_explicit_null_clears_the_pm(
+    authed_client, mock_db_session, broadcast, change_intents
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    project = make_project(1, pm_id=7)
+    mock_db_session.execute.side_effect = [scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"pm_id": None})
+
+    assert response.status_code == 200
+    assert project.pm_id is None
+    # No user lookup for a cleared manager
+    assert mock_db_session.execute.await_count == 1
+    mock_db_session.commit.assert_awaited()
+    ((_, intents, _),) = change_intents
+    assert [(i.user_id, i.title) for i in intents] == [
+        (7, "Test User1 removed you as the manager of Project 1")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_project_omitted_pm_is_left_alone(
+    authed_client, mock_db_session, broadcast, change_intents
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    project = make_project(1, pm_id=7)
+    mock_db_session.execute.side_effect = [scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"customer": "Initech"})
+
+    assert response.status_code == 200
+    assert (project.pm_id, project.customer) == (7, "Initech")
 
 
 @pytest.mark.asyncio
@@ -681,7 +850,7 @@ async def test_subphase_parent_404(authed_client, mock_db_session, broadcast, ur
 
 
 @pytest.mark.asyncio
-async def test_update_phase_fields(authed_client, mock_db_session, broadcast):
+async def test_update_phase_fields(authed_client, mock_db_session, broadcast, change_intents):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
     phase = ProjectPhase(
@@ -694,7 +863,10 @@ async def test_update_phase_fields(authed_client, mock_db_session, broadcast):
         completion=0,
         status="todo",
     )
-    mock_db_session.execute.side_effect = [scalar_result(phase)]
+    bookings = MagicMock()
+    bookings.all.return_value = [(4, 60)]
+    # The phase, its approved bookings, then its segments to fit (none).
+    mock_db_session.execute.side_effect = [scalar_result(phase), bookings, scalars_result([])]
 
     response = await client.put(
         "/api/phases/10",
@@ -712,10 +884,17 @@ async def test_update_phase_fields(authed_client, mock_db_session, broadcast):
     assert (phase.start_date, phase.end_date) == (date(2026, 1, 6), date(2026, 1, 31))
     assert phase.dependencies == '[{"id": 9, "type": "SS"}]'
     assert broadcast.await_args.kwargs["project_id"] == 1
+    ((_, intents, _),) = change_intents
+    dates = "dates 2026-01-05–2026-01-30 → 2026-01-06–2026-01-31"
+    assert [(i.recipient, i.user_id, i.title, i.body) for i in intents] == [
+        ("person", 4, "Test User1 moved New", f"{dates} (you are booked at 60%)"),
+        ("pm", None, "Test User1 moved New", dates),
+    ]
+    assert all((i.entity_type, i.entity_id, i.project_id) == ("phase", 10, 1) for i in intents)
 
 
 @pytest.mark.asyncio
-async def test_update_subphase_fields(authed_client, mock_db_session, broadcast):
+async def test_update_subphase_fields(authed_client, mock_db_session, broadcast, change_intents):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
     subphase = ProjectSubphase(
@@ -728,7 +907,11 @@ async def test_update_subphase_fields(authed_client, mock_db_session, broadcast)
         completion=0,
         status="todo",
     )
-    mock_db_session.execute.side_effect = [scalar_result(subphase)]
+    mock_db_session.execute.side_effect = [
+        scalar_result(subphase),
+        MagicMock(),
+        scalars_result([]),
+    ]
 
     response = await client.put(
         "/api/subphases/20",
@@ -744,6 +927,8 @@ async def test_update_subphase_fields(authed_client, mock_db_session, broadcast)
     assert response.status_code == 200
     assert (subphase.name, subphase.is_milestone, subphase.dependencies) == ("New", 0, "[]")
     assert subphase.end_date == date(2026, 1, 31)
+    ((_, intents, _),) = change_intents
+    assert [(i.recipient, i.entity_type, i.entity_id) for i in intents] == [("pm", "subphase", 20)]
 
 
 @pytest.mark.asyncio

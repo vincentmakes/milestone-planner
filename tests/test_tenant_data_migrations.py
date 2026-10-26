@@ -13,12 +13,17 @@ import pytest
 
 from app.services import tenant_data_migrations as tdm
 from app.services.tenant_provisioner import (
+    APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
+    ASSIGNMENT_APPROVAL_TABLES,
     CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL,
     CARD_COMMENTS_AUTHOR_FK_SQL,
     CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
     CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
+    PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL,
     PROJECTS_SITE_FK_NEEDS_FIX_SQL,
     PROJECTS_SITE_FK_SQL,
+    RBAC_SEED_NEEDED_SQL,
+    STALE_APPROVAL_POINTER_CLEANUP_SQL,
 )
 
 
@@ -66,8 +71,12 @@ async def test_clean_database_only_checks_and_cleans():
     assert conn.executed == [
         PROJECTS_SITE_FK_NEEDS_FIX_SQL,
         CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL,
+        RBAC_SEED_NEEDED_SQL,
         CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
         CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
+        APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
+        *PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL,
+        *STALE_APPROVAL_POINTER_CLEANUP_SQL,
     ]
     conn.rollback.assert_not_awaited()
 
@@ -84,8 +93,8 @@ async def test_every_fix_is_committed():
     await tdm.run_data_migrations(conn)
 
     assert CARD_COMMENTS_AUTHOR_FK_SQL in conn.executed
-    # Two FK fixes + two cleanups, each in its own transaction.
-    assert conn.commit.await_count == 4
+    # Two FK fixes + nine cleanups, each in its own transaction.
+    assert conn.commit.await_count == 11
 
 
 @pytest.mark.asyncio
@@ -113,3 +122,45 @@ async def test_removed_orphans_are_logged(caplog):
 
     assert "removed 12 orphaned custom-column value(s)" in caplog.text
     assert "card comment" not in caplog.text
+
+
+def _norm(sql: str) -> str:
+    return " ".join(sql.split())
+
+
+def test_pending_rows_of_closed_requests_are_removed_per_table():
+    assert len(PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL) == len(ASSIGNMENT_APPROVAL_TABLES)
+    for table, sql in zip(
+        ASSIGNMENT_APPROVAL_TABLES, PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL, strict=False
+    ):
+        assert _norm(sql) == (
+            f"DELETE FROM {table} a WHERE a.approval_status = 'pending' "
+            "AND NOT EXISTS (SELECT 1 FROM approval_requests r "
+            "WHERE r.id = a.approval_request_id AND r.status = 'pending')"
+        )
+
+
+def test_approved_rows_stop_pointing_at_closed_requests_per_table():
+    assert len(STALE_APPROVAL_POINTER_CLEANUP_SQL) == len(ASSIGNMENT_APPROVAL_TABLES)
+    for table, sql in zip(
+        ASSIGNMENT_APPROVAL_TABLES, STALE_APPROVAL_POINTER_CLEANUP_SQL, strict=False
+    ):
+        assert _norm(sql) == (
+            f"UPDATE {table} a SET approval_request_id = NULL "
+            "WHERE a.approval_status = 'approved' AND a.approval_request_id IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM approval_requests r "
+            "WHERE r.id = a.approval_request_id AND r.status = 'pending')"
+        )
+
+
+@pytest.mark.asyncio
+async def test_row_cleanups_run_after_the_request_expiry_and_log(caplog):
+    caplog.set_level("INFO", logger=tdm.__name__)
+    first = PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL[0]
+    conn = FakeConn(rowcounts={first: 2})
+
+    await tdm.run_data_migrations(conn)
+
+    expiry = conn.executed.index(APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL)
+    assert conn.executed.index(first) > expiry
+    assert "removed 2 orphaned pending booking(s)" in caplog.text

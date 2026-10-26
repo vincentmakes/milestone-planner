@@ -39,7 +39,25 @@ Toasts appear for about 6 seconds before fading. The notification includes the u
 
 The activity feed above is transient and shows what *everyone* is doing. The **notification bell** in the header is the opposite: it is personal, it persists, and it keeps an unread count until you read it.
 
-You are notified when someone assigns you to a Kanban card, comments on a card you are assigned to, mentions you with `@`, or moves one of your cards to another column. You are never notified about your own actions. Clicking a notification opens the card it refers to.
+You are notified when someone:
+
+| Notification | Clicking it opens |
+|--------------|-------------------|
+| Assigns you to a Kanban card, comments on a card you are assigned to, mentions you with `@`, or moves one of your cards to another column | The card on the Kanban board |
+| Comments on a project you are booked on as a whole, or mentions you in that project's thread (see [Comments on a booking](my-work.md#comments-on-a-booking)) | The project on the Gantt chart |
+| Asks for your approval to book themselves, change or remove their booking | [My Work](my-work.md) → **My Approvals** |
+| Approves, rejects or (as an administrator) cancels your request, or your request expires | My Work → **My Requests**, showing decided requests |
+| Books you on a project, phase or subphase, changes your allocation or dates, removes you, moves the dates of a phase or subphase you are booked on, deletes one, or deletes the project | The project on the Gantt chart (or, for a phase or subphase, its card on the Kanban board; a deleted project: marked as read) |
+| *(project managers)* Changes your project: books, changes or removes someone's time or an equipment booking, edits the name, dates, customer, confirmed status or volume, archives or restores it, hands it over to you or from you, adds, moves or deletes a phase or subphase, deletes the project, or approves a request on it | The project on the Gantt chart (or the card on the Kanban board; a deleted project: marked as read) |
+
+You are never notified about your own actions. If one event concerns you twice, you get the most specific notification only — a mention before an approval request, then a decision, an assignment, a change to your booking, a change to your project, a card move and a comment.
+
+**Changes to your plan merge into one line.** Booking and project-change notifications go only to the person whose booking changed and to the project's manager — never to the person who made the change, and never to other administrators or superusers. Several changes by the same person on the same project update one unread line (*"3 changes by Alice Anderson on Bioprocess Scale-Up"*, showing the latest change) instead of adding a new one, as long as each change comes within ten minutes of the *previous* one — the window restarts with every change, so one line can cover a long editing session. Once you have read it, or after ten quiet minutes, the next change starts a new line. Dragging a phase on the Gantt chart, which also moves its subphases and bookings, therefore gives each person one line. Changes waiting for [approval](my-work.md) notify nobody until they are approved.
+
+Clicking a notification about a project on another site switches to that site first. A project that no longer exists, or that you can no longer see, shows a short message instead; the notification of a deleted project is only marked as read.
+
+!!! note "When the Kanban board is turned off"
+    An administrator can turn the Kanban board off for everyone ([Features & defaults](settings.md#features-defaults)). Card notifications then open the project on the Gantt chart instead of the board.
 
 Notifications are stored per user, so they survive a reload or a restart — you will not miss one because a browser tab was closed. See the [Kanban Board guide](kanban-board.md#notifications) for the full list of triggers.
 
@@ -57,7 +75,7 @@ The real-time features use a WebSocket connection that:
 
 The connection status is visible in the Online Users indicator: a connected state shows the user count, while a disconnected state shows a fallback icon. While live updates are disconnected, an **Offline** badge also appears in the header; your own edits keep saving, but colleagues' changes only arrive once the badge is gone.
 
-Live updates now also cover custom-column values and definitions, instance settings (title, weekends) and changes to your own account: if an admin changes your role or sites, it applies without a reload. If your account is deactivated, deleted or demoted, or your password is reset, your session ends at once and you are returned to the login screen.
+Live updates now also cover custom-column values and definitions, instance settings (title, weekends) and changes to your own account: if an admin changes your role or sites, or the permissions of your role, it applies without a reload — buttons and views appear or disappear accordingly. Approval requests and decisions update the affected bookings and everyone's [My Work](my-work.md) live; your own requests reach only you. If your account is deactivated, deleted or demoted, or your password is reset, your session ends at once and you are returned to the login screen.
 
 For security, the server refuses live-update connections opened from other websites.
 

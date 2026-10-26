@@ -8,6 +8,7 @@ from datetime import date as date_type
 from pydantic import BaseModel, Field
 
 from app.schemas.base import DateAsDateTimeJS, DateTimeJS
+from app.schemas.team import TeamIds
 
 # Upper bound on a single .ics import, so one request cannot insert unbounded rows.
 MAX_IMPORT_ITEMS = 1000
@@ -121,6 +122,8 @@ class CompanyEventResponse(BaseModel):
     color: str | None = None
     # Site closure: staff of the linked sites are unavailable on these dates.
     counts_as_unavailable: bool = False
+    # Teams the event is limited to; a site with none of them keeps the whole site.
+    team_ids: list[int] = []
     created_at: DateTimeJS
 
     class Config:
@@ -141,6 +144,9 @@ class CompanyEventMultiSiteCreate(CompanyEventCreate):
     """Request model for creating a company event on one or more sites."""
 
     site_ids: list[int] = Field(..., min_length=1)
+    # Teams the event is limited to, each at one of site_ids (a site with no
+    # listed team keeps the whole site).
+    team_ids: TeamIds | None = None
 
 
 class CompanyEventUpdate(BaseModel):
@@ -154,6 +160,9 @@ class CompanyEventUpdate(BaseModel):
     counts_as_unavailable: bool | None = None
     # When given, replaces the event's site links.
     site_ids: list[int] | None = Field(None, min_length=1)
+    # When given, replaces the event's teams (each at one of its sites); a site
+    # change alone drops the teams of the removed sites.
+    team_ids: TeamIds | None = None
 
 
 class CompanyEventImportItem(BaseModel):

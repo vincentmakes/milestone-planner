@@ -8,7 +8,7 @@ import { useAdminStore } from '@/stores/adminStore';
 import { deleteAdminUser, updateAdminUser } from '@/api';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
-import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, PlusIcon, TrashIcon, CheckIcon, BanIcon } from '@/components/common/Icon';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './TenantList.module.css'; // Reuse styles
 
@@ -75,7 +75,7 @@ export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
       <div className={styles.panel}>
         <div className={styles.panelHeader}>
           <h2>Admin Users</h2>
-          <Button icon={<PlusIcon />} onClick={onCreateNew}>
+          <Button icon={<Icon icon={PlusIcon} />} onClick={onCreateNew}>
             Add Admin
           </Button>
         </div>
@@ -143,14 +143,9 @@ export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
                               disabled={user.id === currentUser?.id}
                             >
                               {user.active ? (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <circle cx="12" cy="12" r="10" />
-                                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-                                </svg>
+                                <Icon icon={BanIcon} size={14} />
                               ) : (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <polyline points="20 6 9 17 4 12" />
-                                </svg>
+                                <Icon icon={CheckIcon} size={14} />
                               )}
                             </button>
                             
@@ -160,10 +155,7 @@ export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
                               title="Delete"
                               disabled={user.id === currentUser?.id}
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              </svg>
+                              <Icon icon={TrashIcon} size={14} />
                             </button>
                           </>
                         )}

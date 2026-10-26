@@ -7,7 +7,12 @@ import type { KanbanCard as KanbanCardData } from '@/utils/kanbanCards';
 import { dueStateOf } from '@/utils/kanbanCards';
 import { formatDateShort, parseDateISO } from '@/utils/date';
 import { avatarColorFor } from '@/utils/avatarColor';
+import { isPendingAssignment } from '@/utils/kanbanCards';
+import { groupCardBookings } from '@/utils/bookingSegments';
+import { PendingBadge } from '@/components/common/PendingBadge';
+import { useAppStore } from '@/stores/appStore';
 import styles from './KanbanCard.module.css';
+import { Icon, CommentIcon } from '@/components/common/Icon';
 
 interface KanbanCardProps {
   card: KanbanCardData;
@@ -37,6 +42,12 @@ export function KanbanCard({
   isDragging = false,
 }: KanbanCardProps) {
   const due = useMemo(() => dueStateOf(card), [card]);
+  // My own booking on the card awaits approval (My Todo lists such cards).
+  const myId = useAppStore((s) => s.currentUser?.id);
+  const myPendingRow =
+    myId !== undefined && card.pendingAssigneeIds.includes(myId)
+      ? card.assignments.find((a) => a.staff_id === myId && isPendingAssignment(a))
+      : undefined;
 
   const classNames = [
     styles.card,
@@ -82,6 +93,7 @@ export function KanbanCard({
             {due === 'overdue' ? 'Overdue' : 'Due soon'}
           </span>
         )}
+        {myPendingRow && <PendingBadge assignment={myPendingRow} projectId={card.projectId} />}
       </div>
 
       {card.completion !== null && card.completion > 0 && (
@@ -95,22 +107,26 @@ export function KanbanCard({
 
       <div className={styles.footer}>
         <div className={styles.avatars}>
-          {card.assignments.map((a) => (
-            <span
-              key={a.id}
-              className={styles.avatar}
-              style={{ background: avatarColorFor(a.staff_id) }}
-              title={`${a.staff_name ?? 'Staff'} - ${a.allocation}%`}
-            >
-              {initials(a.staff_name ?? '?')}
-            </span>
-          ))}
+          {/* One avatar per person: someone may hold several bookings (segments) on a card */}
+          {Array.from(groupCardBookings(card.assignments), ([staffId, rows]) => {
+            // Dashed only while none of their bookings is approved yet
+            const pending = rows.every((a) => isPendingAssignment(a));
+            const name = rows[0].staff_name;
+            return (
+              <span
+                key={staffId}
+                className={pending ? `${styles.avatar} ${styles.pendingAvatar}` : styles.avatar}
+                style={{ background: avatarColorFor(staffId) }}
+                title={`${name ?? 'Staff'} - ${rows.map((a) => `${a.allocation}%`).join(', ')}${pending ? ' (pending approval)' : ''}`}
+              >
+                {initials(name ?? '?')}
+              </span>
+            );
+          })}
         </div>
         {commentCount > 0 && (
           <span className={styles.comments} title={`${commentCount} comment(s)`}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
+            <Icon icon={CommentIcon} size={12} />
             {commentCount}
           </span>
         )}

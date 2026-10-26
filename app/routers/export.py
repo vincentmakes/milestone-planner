@@ -15,25 +15,32 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db
-from app.middleware.auth import require_superuser
+from app.middleware.auth import require_permission
 from app.models.absence_type import AbsenceType
 from app.models.card_comment import CardComment
 from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock, EquipmentSite
 from app.models.note import Note
 from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.project_field import ProjectField
+from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
-from app.models.tag import Tag, TagGroup, TagSite
+from app.models.tag import Tag, TagSite
+from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
+from app.services.approvals import pending_change_text
+from app.services.booking_segments import effective_dates
+from app.services.project_field_rules import load_project_field_values
+from app.services.site_access import ensure_project_visible, ensure_site_access
 from app.utils import utcnow_naive
 
 router = APIRouter(tags=["export"])
@@ -362,8 +369,9 @@ def format_xml_date(d: date) -> str:
 @router.post("/export/mpp/{project_id}")
 async def export_project_to_mpp(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.export")),
 ):
     """
     Export a project to MS Project XML format.
@@ -372,6 +380,7 @@ async def export_project_to_mpp(
 
     Matches: POST /api/export/mpp/:projectId
     """
+    await ensure_project_visible(request, db, user, project_id)
     project = await get_project_with_hierarchy(db, project_id)
 
     if not project:
@@ -396,8 +405,9 @@ async def export_project_to_mpp(
 @router.post("/export/csv/{project_id}")
 async def export_project_to_csv(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.export")),
 ):
     """
     Export a project to CSV format.
@@ -406,6 +416,7 @@ async def export_project_to_csv(
 
     Matches: POST /api/export/csv/:projectId
     """
+    await ensure_project_visible(request, db, user, project_id)
     project = await get_project_with_hierarchy(db, project_id)
 
     if not project:
@@ -430,15 +441,16 @@ async def export_project_to_csv(
 @router.get("/export/csv/{project_id}")
 async def export_project_to_csv_get(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.export")),
 ):
     """
     Export a project to CSV format (GET version for direct download).
 
     Returns a CSV file compatible with MS Project import.
     """
-    return await export_project_to_csv(project_id, db, user)
+    return await export_project_to_csv(project_id, request, db, user)
 
 
 # =============================================================================
@@ -496,6 +508,24 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     )
     user_ids = {u.id for u in user_rows}
 
+    # Teams at this site, with their members
+    team_rows = (
+        (
+            await db.execute(
+                select(Team)
+                .where(Team.site_id == site_id)
+                .options(selectinload(Team.members))
+                .order_by(Team.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    def teams_here(teams: list[Team]) -> str:
+        """Names of an entity's teams at this site; "" = the whole site."""
+        return ", ".join(t.name for t in teams if t.site_id == site_id)
+
     # Projects on this site, with phases / subphases / assignments preloaded
     project_rows = (
         (
@@ -508,6 +538,10 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     selectinload(Project.staff_assignments),
                     selectinload(Project.equipment_assignments),
                     selectinload(Project.tags),
+                    selectinload(Project.teams),
+                    # Field values come from load_project_field_values below.
+                    noload(Project.field_values),
+                    noload(Project.field_selections),
                 )
                 .order_by(Project.name)
             )
@@ -516,6 +550,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .all()
     )
     project_ids = [p.id for p in project_rows]
+
+    # Project fields (instance-wide) with their items, and the projects' values
+    field_rows = (
+        (await db.execute(select(ProjectField).order_by(ProjectField.sort_order, ProjectField.id)))
+        .scalars()
+        .all()
+    )
+    project_field_values = await load_project_field_values(db, project_ids)
 
     # Equipment linked to this site (equipment can be shared by several sites)
     equipment_rows = (
@@ -577,13 +619,6 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .scalars()
         .all()
     )
-    tag_group_rows = (
-        (await db.execute(select(TagGroup).order_by(TagGroup.sort_order, TagGroup.id)))
-        .scalars()
-        .all()
-    )
-    tag_group_names = {g.id: g.name for g in tag_group_rows}
-
     # Absence types are global - include all of them (vacations reference them)
     absence_type_rows = (
         (await db.execute(select(AbsenceType).order_by(AbsenceType.sort_order, AbsenceType.id)))
@@ -658,6 +693,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 select(CompanyEvent)
                 .join(CompanyEventSite, CompanyEventSite.event_id == CompanyEvent.id)
                 .where(CompanyEventSite.site_id == site_id)
+                .options(selectinload(CompanyEvent.teams))
                 .order_by(CompanyEvent.date, CompanyEvent.id)
             )
         )
@@ -696,6 +732,29 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         if project_ids
         else []
     )
+
+    # Approval requests on this site's projects (own bookings awaiting or past
+    # a decision); the assignment sheets show the open one of each row.
+    approval_rows: list[ApprovalRequest] = (
+        list(
+            (
+                await db.execute(
+                    select(ApprovalRequest)
+                    .where(ApprovalRequest.project_id.in_(project_ids))
+                    .order_by(ApprovalRequest.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if project_ids
+        else []
+    )
+    approval_by_id = {r.id: r for r in approval_rows}
+
+    def pending_change(assignment: Any) -> str:
+        request_id = assignment.approval_request_id
+        return pending_change_text(approval_by_id.get(request_id) if request_id else None)
 
     # --- Build the workbook ----------------------------------------------------------
     wb = Workbook()
@@ -898,6 +957,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Role",
             "Max capacity %",
             "Active",
+            "Bookable",
             "SSO provider",
             "Created at",
         ],
@@ -911,6 +971,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 u.role,
                 u.max_capacity,
                 _yes_no(u.active),
+                _yes_no(u.is_resource),
                 u.sso_provider,
                 _iso(u.created_at),
             ]
@@ -918,10 +979,33 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         ],
     )
 
+    # Teams at the site and their members
+    add_sheet(
+        "Teams",
+        ["ID", "Name", "Description", "Color", "Active", "Members", "Created at"],
+        [
+            [
+                t.id,
+                t.name,
+                t.description,
+                t.color,
+                _yes_no(t.active),
+                len(t.members),
+                _iso(t.created_at),
+            ]
+            for t in team_rows
+        ],
+    )
+    add_sheet(
+        "Team members",
+        ["Team ID", "Team name", "User ID", "User name"],
+        [[t.id, t.name, u.id, u.full_name] for t in team_rows for u in t.members],
+    )
+
     # Equipment
     add_sheet(
         "Equipment",
-        ["ID", "Name", "Type", "Description", "Active", "Sites", "Created at"],
+        ["ID", "Name", "Type", "Description", "Active", "Sites", "Teams", "Created at"],
         [
             [
                 e.id,
@@ -930,6 +1014,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 e.description,
                 _yes_no(e.active),
                 ", ".join(s.name for s in e.sites),
+                teams_here(e.teams),
                 _iso(e.created_at),
             ]
             for e in equipment_rows
@@ -958,45 +1043,92 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         ],
     )
 
-    # Tags applicable to the site, tag groups, and per-project tag assignments
+    # Tags applicable to the site and per-project tag assignments
     add_sheet(
         "Tags",
-        ["ID", "Name", "Color", "Group", "All sites", "Sites", "Sort order", "Created at"],
+        [
+            "ID",
+            "Name",
+            "Color",
+            "All sites",
+            "Sites",
+            "Sort order",
+            "Teams",
+            "Created at",
+        ],
         [
             [
                 t.id,
                 t.name,
                 t.color,
-                tag_group_names.get(t.group_id, "") if t.group_id is not None else "",
                 bool(t.all_sites),
                 "" if t.all_sites else ", ".join(s.name for s in t.sites),
                 t.sort_order,
+                teams_here(t.teams),
                 _iso(t.created_at),
             ]
             for t in tag_rows
         ],
     )
     add_sheet(
-        "Tag groups",
-        ["ID", "Name", "Single select", "Sort order"],
-        [[g.id, g.name, bool(g.single_select), g.sort_order] for g in tag_group_rows],
-    )
-    project_tag_rows = [
-        [
-            p.id,
-            p.name,
-            t.id,
-            t.name,
-            t.color,
-            tag_group_names.get(t.group_id, "") if t.group_id is not None else "",
-        ]
-        for p in project_rows
-        for t in p.tags
-    ]
-    add_sheet(
         "Project tags",
-        ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color", "Group"],
-        project_tag_rows,
+        ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color"],
+        [[p.id, p.name, t.id, t.name, t.color] for p in project_rows for t in p.tags],
+    )
+    add_sheet(
+        "Project teams",
+        ["Project ID", "Project name", "Team ID", "Team name", "Team color"],
+        [[p.id, p.name, t.id, t.name, t.color] for p in project_rows for t in p.teams],
+    )
+
+    # Project fields (global), the items applicable to the site, and the values
+    add_sheet(
+        "Project fields",
+        ["ID", "Name", "Type", "Sort order"],
+        [[f.id, f.name, f.field_type, f.sort_order] for f in field_rows],
+    )
+    add_sheet(
+        "Project field options",
+        ["ID", "Field", "Name", "Color", "All sites", "Sites", "Teams", "Sort order"],
+        [
+            [
+                o.id,
+                f.name,
+                o.name,
+                o.color,
+                bool(o.all_sites),
+                "" if o.all_sites else ", ".join(s.name for s in o.sites),
+                teams_here(o.teams),
+                o.sort_order,
+            ]
+            for f in field_rows
+            for o in f.options
+            if o.all_sites or site_id in o.site_ids
+        ],
+    )
+    option_names = {o.id: o.name for f in field_rows for o in f.options}
+
+    def field_value_cell(field: ProjectField, value: Any) -> Any:
+        """A value as written in the sheet: numbers as numbers, toggles Yes / No."""
+        if field.field_type == "toggle":
+            return _yes_no(value)
+        if field.field_type == "number":
+            return int(value) if float(value).is_integer() else value
+        if field.field_type == "select":
+            return option_names.get(value, "")
+        if field.field_type == "multiselect":
+            return ", ".join(option_names.get(i, "") for i in value)
+        return value
+
+    add_sheet(
+        "Project field values",
+        ["Project ID", "Project name", "Field", "Value"],
+        [
+            [p.id, p.name, f.name, field_value_cell(f, project_field_values[p.id][f.id])]
+            for p in project_rows
+            for f in field_rows
+            if f.id in project_field_values[p.id]
+        ],
     )
 
     # Absence types (global)
@@ -1056,6 +1188,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     phase_by_id = {ph.id: (p, ph) for p in project_rows for ph in p.phases}
     subphase_by_id = {sp.id: (p, sp) for p in project_rows for sp in p.subphases}
 
+    def segment_cells(booking: Any, card: Any) -> list[str]:
+        # Effective dates (own, else the card's) and whether the booking is
+        # linked to its card (no own dates).
+        start, end, linked = effective_dates(
+            booking.start_date, booking.end_date, card.start_date, card.end_date
+        )
+        return [_iso(start), _iso(end), _yes_no(linked)]
+
     for p in project_rows:
         for a in p.staff_assignments:
             project_assignment_data.append(
@@ -1069,6 +1209,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     _iso(a.start_date),
                     _iso(a.end_date),
                     _iso(a.created_at),
+                    a.approval_status,
+                    pending_change(a),
                 ]
             )
         for ph in p.phases:
@@ -1083,6 +1225,9 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                         pa.staff_id,
                         user_by_id[pa.staff_id].full_name if pa.staff_id in user_by_id else "",
                         pa.allocation,
+                        *segment_cells(pa, ph),
+                        pa.approval_status,
+                        pending_change(pa),
                     ]
                 )
         for sp in p.subphases:
@@ -1097,6 +1242,9 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                         sa.staff_id,
                         user_by_id[sa.staff_id].full_name if sa.staff_id in user_by_id else "",
                         sa.allocation,
+                        *segment_cells(sa, sp),
+                        sa.approval_status,
+                        pending_change(sa),
                     ]
                 )
 
@@ -1112,6 +1260,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Start date",
             "End date",
             "Created at",
+            "Approval status",
+            "Pending change",
         ],
         project_assignment_data,
     )
@@ -1126,6 +1276,11 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Staff ID",
             "Staff name",
             "Allocation %",
+            "Start",
+            "End",
+            "Linked",
+            "Approval status",
+            "Pending change",
         ],
         phase_assignment_data,
     )
@@ -1140,8 +1295,78 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Staff ID",
             "Staff name",
             "Allocation %",
+            "Start",
+            "End",
+            "Linked",
+            "Approval status",
+            "Pending change",
         ],
         subphase_assignment_data,
+    )
+
+    # Approval requests (own bookings awaiting or past a decision).
+    def target_name(request: ApprovalRequest) -> str:
+        if request.level == "phase" and request.target_id in phase_by_id:
+            return phase_by_id[request.target_id][1].type or ""
+        if request.level == "subphase" and request.target_id in subphase_by_id:
+            return subphase_by_id[request.target_id][1].name or ""
+        project = project_by_id.get(request.project_id)
+        return project.name if project is not None and request.level == "project" else ""
+
+    def user_name(user_id: int | None) -> str:
+        return user_by_id[user_id].full_name if user_id in user_by_id else ""
+
+    add_sheet(
+        "Approval requests",
+        [
+            "ID",
+            "Action",
+            "Status",
+            "Close reason",
+            "Requester ID",
+            "Requester name",
+            "Project ID",
+            "Project name",
+            "Level",
+            "Target ID",
+            "Target name",
+            "Assignment ID",
+            "Requested",
+            "Previous",
+            "Note",
+            "Decided by ID",
+            "Decided by",
+            "Decided at",
+            "Decision note",
+            "Superseded by",
+            "Created at",
+        ],
+        [
+            [
+                r.id,
+                r.action,
+                r.status,
+                r.close_reason or "",
+                r.requester_id,
+                user_name(r.requester_id),
+                r.project_id,
+                project_by_id[r.project_id].name if r.project_id in project_by_id else "",
+                r.level,
+                r.target_id,
+                target_name(r),
+                r.assignment_id,
+                r.requested or "",
+                r.previous or "",
+                r.note or "",
+                r.decided_by,
+                user_name(r.decided_by),
+                _iso(r.decided_at),
+                r.decision_note or "",
+                r.superseded_by_id,
+                _iso(r.created_at),
+            ]
+            for r in approval_rows
+        ],
     )
 
     # Equipment assignments
@@ -1160,6 +1385,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     else "",
                     _iso(ea.start_date),
                     _iso(ea.end_date),
+                    ea.note,
                     _iso(ea.created_at),
                 ]
             )
@@ -1173,6 +1399,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Equipment name",
             "Start date",
             "End date",
+            "Note",
             "Created at",
         ],
         equipment_assignment_data,
@@ -1267,7 +1494,17 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     # Company events
     add_sheet(
         "Company events",
-        ["ID", "Date", "End date", "Name", "Color", "Sites", "Staff unavailable", "Created at"],
+        [
+            "ID",
+            "Date",
+            "End date",
+            "Name",
+            "Color",
+            "Sites",
+            "Staff unavailable",
+            "Teams",
+            "Created at",
+        ],
         [
             [
                 e.id,
@@ -1277,6 +1514,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 e.color or "",
                 ", ".join(event_site_names.get(e.id, [])),
                 _yes_no(e.counts_as_unavailable),
+                teams_here(e.teams),
                 _iso(e.created_at),
             ]
             for e in event_rows
@@ -1378,18 +1616,17 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
 @router.get("/export/site/{site_id}/excel")
 async def export_site_to_excel(
     site_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("sites.export")),
 ):
     """
     Export all data for a site (projects, phases, users, equipment, skills,
     vacations, assignments, custom columns, holidays, events) as an Excel file.
 
-    Restricted to admin / superuser. Superusers may only export sites they
-    have access to.
+    Requires ``sites.export``, for a visible site only.
     """
-    if user.is_superuser and not user.is_admin and site_id not in user.site_ids:
-        raise HTTPException(status_code=403, detail="Access denied to this site")
+    await ensure_site_access(request, db, user, [site_id], "Access denied to this site")
 
     content, filename = await build_site_export_workbook(db, site_id)
     return Response(

@@ -12,6 +12,7 @@ import { CustomColumnHeader } from '../CustomColumns/CustomColumnHeader';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import type { CustomColumn, UserRole } from '@/types';
+import { makeUser } from '@/test/factories';
 
 const updateCustomColumn = vi.fn();
 vi.mock('@/api', () => ({
@@ -39,7 +40,7 @@ const column: CustomColumn = {
 
 function seedUser(role: UserRole) {
   useAppStore.setState({
-    currentUser: { id: 1, name: 'Someone', role } as never,
+    currentUser: makeUser({ id: 1, name: 'Someone', role }),
     currentSite: { id: 1, name: 'Basel' } as never,
   });
 }
@@ -61,6 +62,37 @@ describe('ProjectPanel "Manage Custom Columns"', () => {
     render(<ProjectPanel projects={[]} width={320} />);
     expect(screen.queryByTitle('Manage Custom Columns')).not.toBeInTheDocument();
     expect(screen.getByTitle('New Project')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectPanel header actions by key', () => {
+  function seedKeys(permissions: string[]) {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 1, role: 'planner', permissions }),
+      currentSite: { id: 1, name: 'Basel' } as never,
+    });
+  }
+
+  it('offers Import alone with projects.import, New alone with projects.create', () => {
+    seedKeys(['projects.view', 'projects.import']);
+    const { unmount } = render(<ProjectPanel projects={[]} width={320} />);
+    expect(screen.getByRole('button', { name: 'Import project' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
+    expect(screen.getByText('No projects available for this site')).toBeInTheDocument();
+    unmount();
+
+    seedKeys(['projects.view', 'projects.create']);
+    render(<ProjectPanel projects={[]} width={320} />);
+    expect(screen.queryByRole('button', { name: 'Import project' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New project' })).toBeInTheDocument();
+    expect(screen.getByText('Click "New" to create a project')).toBeInTheDocument();
+  });
+
+  it('offers Manage Custom Columns to any role holding custom_columns.manage', () => {
+    seedKeys(['projects.view', 'custom_columns.manage']);
+    render(<ProjectPanel projects={[]} width={320} />);
+    expect(screen.getByTitle('Manage Custom Columns')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
   });
 });
 
@@ -102,6 +134,23 @@ describe('ProjectPanel column visibility dropdown', () => {
   });
 });
 
+describe('ProjectPanel column visibility dropdown portal', () => {
+  it('portals the panel out of the header; a mousedown in it keeps it open', () => {
+    seedUser('admin');
+    useCustomColumnStore.setState({ customColumns: [column] });
+    render(<ProjectPanel projects={[]} width={320} />);
+    const trigger = screen.getByRole('button', { name: 'Column visibility' });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole('dialog', { name: 'Column visibility' });
+    expect(panel.parentElement).toBe(document.body);
+    expect(panel).toHaveAttribute('data-align', 'end');
+    fireEvent.mouseDown(screen.getByText('Show All Columns'));
+    expect(screen.getByRole('dialog', { name: 'Column visibility' })).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'Column visibility' })).not.toBeInTheDocument();
+  });
+});
+
 describe('ProjectPanel header grouping', () => {
   it('separates the view controls from the actions with a divider for admins', () => {
     seedUser('admin');
@@ -116,10 +165,10 @@ describe('ProjectPanel header grouping', () => {
     expect(screen.getByTitle('Import Project')).toBeInTheDocument();
     expect(screen.getByTitle('New Project')).toBeInTheDocument();
     expect(screen.queryByTitle('Manage Custom Columns')).not.toBeInTheDocument();
-    // The tag filter belongs to the view controls, before the divider.
+    // The project filter belongs to the view controls, before the divider.
     const divider = screen.getByTestId('header-divider');
-    const tagTrigger = screen.getByRole('button', { name: 'Tags' });
-    expect(tagTrigger.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const filterTrigger = screen.getByRole('button', { name: 'Filter' });
+    expect(filterTrigger.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows no divider to a plain user, who has no actions', () => {
@@ -148,6 +197,19 @@ describe('CustomColumnHeader definition controls', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Filter Priority' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it('portals the value filter out of the header; a mousedown in it keeps it open', () => {
+    seedUser('user');
+    const { header } = renderHeader();
+    fireEvent.click(screen.getByRole('button', { name: 'Filter Priority' }));
+    const panel = screen.getByRole('dialog', { name: 'Filter Priority' });
+    expect(header).not.toContainElement(panel);
+    expect(panel.parentElement).toBe(document.body);
+    fireEvent.mouseDown(screen.getByText('Filter by value'));
+    expect(screen.getByRole('dialog', { name: 'Filter Priority' })).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'Filter Priority' })).not.toBeInTheDocument();
   });
 
   it('opens the editor on double-click and offers resizing for admins', () => {

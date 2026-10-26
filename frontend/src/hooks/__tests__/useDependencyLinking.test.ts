@@ -14,7 +14,8 @@ import type React from 'react';
 import { useDependencyLinking } from '../useDependencyLinking';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
-import type { Dependency, Phase, Project, Subphase, User } from '@/types';
+import type { Dependency, Phase, Project, Subphase } from '@/types';
+import { makeUser } from '@/test/factories';
 
 const { updatePhase, updateSubphase } = vi.hoisted(() => ({
   updatePhase: vi.fn().mockResolvedValue({}),
@@ -80,7 +81,7 @@ beforeEach(() => {
   updatePhase.mockClear();
   updateSubphase.mockClear();
   useUIStore.setState({ isLinkingDependency: false, linkingFrom: null, flashNotice: null });
-  useAppStore.setState({ currentUser: { id: 1, role: 'admin' } as unknown as User });
+  useAppStore.setState({ currentUser: makeUser({ id: 1, role: 'admin' }) });
 });
 
 describe('useDependencyLinking cycle check', () => {

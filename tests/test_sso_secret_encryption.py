@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.settings import SSOConfig
+from app.schemas.auth import SSOConfigUpdate
 from app.services.encryption import encrypt
 from app.services.sso import (
     SSOService,
@@ -111,6 +112,44 @@ def test_mask_secret():
     assert mask_secret(SECRET) == "****1234"
     assert mask_secret(None) is None
     assert mask_secret("") is None
+
+
+# ---------------------------------------------------------------------------
+# SSOConfigUpdate trims pasted values (and agrees with POST /auth/sso/test)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("field", ["tenant_id", "client_id", "client_secret", "redirect_uri"])
+@pytest.mark.parametrize(
+    ("submitted", "expected"),
+    [
+        (None, None),  # omitted: keep the stored value
+        ("", ""),  # exact empty string: clear it
+        ("  \n", None),  # whitespace only: keep the stored value
+        (" value\n", "value"),  # anything else: trimmed
+    ],
+    ids=["none-keeps", "empty-clears", "blank-keeps", "trimmed"],
+)
+def test_sso_update_trims_pasted_values(field, submitted, expected):
+    assert getattr(SSOConfigUpdate(**{field: submitted}), field) == expected
+
+
+@pytest.mark.asyncio
+async def test_a_blank_secret_on_save_keeps_the_stored_one(authed_client, mock_db_session):
+    """Test treats "  " as the stored secret; Save must not then clear it."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    stored = encrypt(SECRET)
+    row = sso_row(client_secret=stored)
+    mock_db_session.execute.return_value = returning(row)
+
+    resp = await client.put(
+        "/api/auth/sso/config", json={"client_secret": "   ", "tenant_id": " entra-tenant\n"}
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert row.client_secret == stored
+    assert row.tenant_id == "entra-tenant"
 
 
 # ---------------------------------------------------------------------------
@@ -341,3 +380,27 @@ async def test_single_tenant_auto_migrations_reach_the_secret_step_and_data_hook
 
     secret_step.assert_awaited_once_with(conn, "single-tenant")
     hook.assert_awaited_once_with(conn)
+
+
+# ---------------------------------------------------------------------------
+# The SSO default role on every write route: an existing non-admin role key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", WRITE_ROUTES)
+@pytest.mark.parametrize(("found", "status"), [("team_lead", 200), (None, 400)])
+async def test_write_route_checks_a_custom_default_role(
+    authed_client, mock_db_session, path, found, status
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = sso_row()
+    role_lookup = MagicMock()
+    role_lookup.scalar_one_or_none.return_value = found
+    mock_db_session.execute = AsyncMock(side_effect=[returning(row), role_lookup])
+
+    resp = await client.put(path, json={"default_role": "team_lead"})
+
+    assert resp.status_code == status, resp.text
+    assert row.default_role == ("team_lead" if found else "user")

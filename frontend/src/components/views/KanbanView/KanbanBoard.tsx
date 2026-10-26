@@ -8,6 +8,7 @@ import type { KanbanCard as KanbanCardData, KanbanLane } from '@/utils/kanbanCar
 import { CARD_STATUSES, cardsForColumn } from '@/utils/kanbanCards';
 import { KanbanColumn } from './KanbanColumn';
 import styles from './KanbanBoard.module.css';
+import { Icon, ChevronDownIcon } from '@/components/common/Icon';
 
 interface KanbanBoardProps {
   lanes: KanbanLane[];
@@ -70,9 +71,7 @@ export function KanbanBoard({
                 aria-expanded={!isCollapsed}
               >
                 <span className={`${styles.chevron} ${isCollapsed ? styles.collapsed : ''}`}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  <Icon icon={ChevronDownIcon} size={12} />
                 </span>
                 <span className={styles.laneLabel}>{lane.label}</span>
                 <span className={styles.laneCount}>{lane.cards.length}</span>

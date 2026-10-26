@@ -19,7 +19,10 @@ Each type has a color and a **Counts as unavailable** setting, which decides how
 If an unavailable and an available absence overlap on the same day (for example Illness during a Home Office week), the unavailable one wins.
 
 !!! note "Site closures"
-    A shutdown or company holiday that applies to a whole site doesn't need an absence for every person: a [company event marked as a site closure](settings.md#site-closures) makes everyone on its sites unavailable for its dates, shown in the Staff workload view under the event's name and color.
+    A shutdown or company holiday that applies to a whole site doesn't need an absence for every person: a [company event marked as a site closure](settings.md#site-closures) makes everyone on its sites unavailable for its dates, shown in the Staff workload view under the event's name and color. A closure limited to [teams](settings.md#teams) disappears from the timeline when the header [team filter](settings.md#team-filter) leaves its teams out, while a whole-site closure always shows.
+
+!!! note "Bank holidays"
+    Public holidays are not absences: they are kept per site in [Settings → Bank holidays](settings.md#bank-holidays) and fetched from the Nager holiday service when a site has a country. An administrator can turn that import off in [Features & defaults](settings.md#features-defaults) — the holidays already imported stay, and holidays can still be added or imported from an `.ics` file by hand.
 
 ## Creating an Absence
 
@@ -29,21 +32,21 @@ If an unavailable and an available absence overlap on the same day (for example 
 4. Optionally add a **description** (e.g., "Annual Leave", "Conference")
 5. Click **Save**
 
-Admins and superusers can create absences for any staff member by selecting them from the dropdown — at any site, not only their own; regular users can only book their own. Admins and superusers can click an existing absence in the Staff Overview to edit it. A person who belongs to several sites appears once in the staff picker.
+People whose role can **manage others' absences** (admins and superusers by default) can create absences for any staff member at the sites they can see by picking them in the **Staff Member** dropdown, which opens with a search box — type to find a person ([how the pickers work](gantt-charts.md#picking-a-person)); everyone else can only book their own. They can also click an existing absence in the Staff Overview to edit it. A person who belongs to several sites appears once in the staff picker.
 
-An absence whose **To** date is before its **From** date is rejected.
+**From** and **To** are picked on the [shared calendar](gantt-charts.md#picking-dates), so **To** can never fall before **From**; for a recurring absence, the selected weekdays are highlighted in the calendar.
 
 !!! note "What-If mode"
     Adding absences is unavailable while [What-If mode](what-if-planning.md) is active, like other creates — the **Add** buttons are disabled with an explanation. Editing and deleting existing absences still works. (What-If is entered from the Gantt chart; **My absences** stays reachable from the user menu.)
 
 ## Who Sees Whose Absences
 
-| Role | Absences shown |
+| Your role | Absences shown |
 |------|----------------|
-| Admin, Superuser | Everyone's, at every site |
-| User | Their own, plus those of colleagues who share at least one site with them |
+| With **See colleagues' absences** (every built-in role) | Your own, plus those of the people at the sites you can see — every site for administrators |
+| Without it | Your own only |
 
-Absence descriptions can be personal (for example a reason for illness), so plain users no longer see the absences of people at sites they don't belong to.
+Absence descriptions can be personal (for example a reason for illness), so nobody sees the absences of people at sites they cannot see. Superusers, too, now see absences only at their own sites.
 
 ![Absence modal with date range, recurring-absence day toggles, and ICS import](../assets/screenshots/vacation-modal.png){ loading=lazy }
 
@@ -66,7 +69,7 @@ Everyone — including regular users — can manage their own time off from the 
 
 Each entry shows its type (with an *available* note for types such as Home Office that don't reduce capacity), dates, description and any recurring days, with **Edit** and **Delete** buttons. Click **Add absence** to book a new one, or **Import .ics** to load several from a calendar file.
 
-The Staff Overview keeps its own entry points — **+ Add vacation / time off** and clicking an existing absence — for admins and superusers planning on behalf of others.
+The Staff Overview keeps its own entry points — **+ Add vacation / time off** and clicking an existing absence — for people planning on behalf of others (admins and superusers by default).
 
 ## Importing from Calendar (ICS)
 

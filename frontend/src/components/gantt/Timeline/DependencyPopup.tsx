@@ -9,6 +9,7 @@ import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import styles from './DependencyPopup.module.css';
 import type { DependencyType } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
+import { Icon, CloseIcon } from '@/components/common/Icon';
 
 interface DependencyPopupProps {
   visible: boolean;
@@ -78,7 +79,7 @@ export const DependencyPopup = memo(function DependencyPopup({
       <div className={styles.header}>
         <span className={styles.typeLabel}>{DEPENDENCY_TYPE_LABELS[dependencyType]}</span>
         <button type="button" className={styles.closeButton} onClick={onClose} title="Close" aria-label="Close dependency details">
-          <span aria-hidden="true">×</span>
+          <Icon icon={CloseIcon} size={16} />
         </button>
       </div>
 

@@ -23,19 +23,29 @@ from app.models.tenant import Tenant, TenantCredentials
 from app.services.encryption import decrypt
 from app.services.tenant_provisioner import (
     ABSENCE_TYPES_SEED_SQL,
+    BOOKING_SEGMENT_COLUMN_STATEMENTS,
     COMPANY_EVENT_SITES_BACKFILL_SQL,
     COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     COMPANY_EVENTS_SITE_FK_SQL,
     COMPANY_EVENTS_SITE_NULLABLE_SQL,
+    EQUIPMENT_ASSIGNMENTS_NOTE_SQL,
     EQUIPMENT_SITE_FK_NEEDS_FIX_SQL,
     EQUIPMENT_SITE_FK_SQL,
     EQUIPMENT_SITES_BACKFILL_SQL,
-    TAG_GROUPS_DROP_COLORS_STATEMENTS,
-    TAG_GROUPS_TABLE_SQL,
+    NOTIFICATIONS_TYPE_CHECK_SQL,
+    PROJECT_COMMENTS_CHECK_SQL,
+    PROJECT_FIELD_TABLES,
+    PROJECT_FIELDS_MIGRATION_SQL,
+    PROJECT_FIELDS_PROBE_SQL,
+    PROJECT_FIELDS_SCHEMA_STATEMENTS,
+    RBAC_NEEDS_MIGRATION_SQL,
+    RBAC_SCHEMA_STATEMENTS,
     TAG_SITES_SITE_INDEX_SQL,
     TAG_SITES_TABLE_SQL,
-    TAGS_GROUP_INDEX_SQL,
     TAGS_UPGRADE_STATEMENTS,
+    TEAM_TABLES,
+    TEAMS_SCHEMA_STATEMENTS,
+    USERS_IS_RESOURCE_SQL,
 )
 from app.utils import utcnow_naive
 
@@ -172,6 +182,39 @@ class TenantConnectionManager:
             logger.warning("Auto-migration warning for %s: %s", slug, e)
             # Don't fail if migration has issues - continue with connection
 
+        # users.is_resource, "Bookable as a resource" (add_user_is_resource.sql,
+        # 1.16.0). The DO block is its own gate: it adds the column (existing
+        # administrators back-filled FALSE) only when it is missing.
+        try:
+            await conn.execute(text(USERS_IS_RESOURCE_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (users.is_resource) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Unlinked booking segments (add_booking_segments.sql, 1.17.0): own
+        # start_date / end_date on phase and subphase staff bookings plus the
+        # both-or-neither CHECK. Each DO block is its own gate, so this runs on
+        # every pool creation. One statement per execute.
+        try:
+            for statement in BOOKING_SEGMENT_COLUMN_STATEMENTS:
+                await conn.execute(text(statement))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (booking segments) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # equipment_assignments.note, the optional note of an equipment booking
+        # (add_equipment_assignment_note.sql, 2.0.0). The DO block is its own
+        # gate (a no-op once the column exists), so this runs on every pool
+        # creation.
+        try:
+            await conn.execute(text(EQUIPMENT_ASSIGNMENTS_NOTE_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (equipment booking note) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
         # Tags / project_tags tables (added in the project-tags feature).
         # Idempotent CREATE IF NOT EXISTS so this is safe to run on every boot.
         try:
@@ -218,14 +261,18 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning("Auto-migration (tags) warning for %s: %s", slug, e)
 
-        # Tag groups + site-scoped tags: tag_groups / tag_sites tables and the
-        # tags.group_id / all_sites / sort_order columns. Every statement is
+        # Site-scoped tags (add_tag_groups_and_sites.sql, 1.6.0): the tag_sites
+        # table and the tags.all_sites / sort_order columns. Every statement is
         # idempotent (guarded inside the SQL), so this converges on any state.
+        # Tag groups became project fields in 2.0.0 (the project-fields step
+        # below converts and drops them): this step no longer creates
+        # tag_groups, and the group_id block of TAGS_UPGRADE_STATEMENTS only
+        # runs while tag_groups exists.
         try:
             tables_check = await conn.execute(
                 text("""
                 SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name IN ('tag_groups', 'tag_sites')
+                WHERE table_schema = 'public' AND table_name IN ('tag_sites')
             """)
             )
             existing = {row[0] for row in tables_check.fetchall()}
@@ -233,44 +280,20 @@ class TenantConnectionManager:
                 text("""
                 SELECT column_name FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = 'tags'
-                  AND column_name IN ('group_id', 'all_sites', 'sort_order')
+                  AND column_name IN ('all_sites', 'sort_order')
             """)
             )
             columns = {row[0] for row in columns_check.fetchall()}
-            if len(existing) < 2 or len(columns) < 3:
-                logger.info("Auto-migration: Adding tag groups / tag sites on tenant %s...", slug)
-                await conn.execute(text(TAG_GROUPS_TABLE_SQL))
+            if not existing or len(columns) < 2:
+                logger.info("Auto-migration: Adding tag sites on tenant %s...", slug)
                 for statement in TAGS_UPGRADE_STATEMENTS:
                     await conn.execute(text(statement))
                 await conn.execute(text(TAG_SITES_TABLE_SQL))
-                await conn.execute(text(TAGS_GROUP_INDEX_SQL))
                 await conn.execute(text(TAG_SITES_SITE_INDEX_SQL))
                 await conn.commit()
-                logger.info("Auto-migration: Added tag groups / tag sites on tenant %s", slug)
+                logger.info("Auto-migration: Added tag sites on tenant %s", slug)
         except Exception as e:
-            logger.warning("Auto-migration (tag groups) warning for %s: %s", slug, e)
-            await _rollback_quietly(conn)
-
-        # Pre-release 1.6.0 builds carried tag_groups.colors_projects; colouring is now a
-        # per-user Gantt preference, so drop the column and its partial index if present.
-        try:
-            colors_check = await conn.execute(
-                text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'tag_groups'
-                  AND column_name = 'colors_projects'
-            """)
-            )
-            if colors_check.fetchone() is not None:
-                logger.info(
-                    "Auto-migration: Dropping tag_groups.colors_projects on tenant %s...", slug
-                )
-                for statement in TAG_GROUPS_DROP_COLORS_STATEMENTS:
-                    await conn.execute(text(statement))
-                await conn.commit()
-                logger.info("Auto-migration: Dropped tag_groups.colors_projects on tenant %s", slug)
-        except Exception as e:
-            logger.warning("Auto-migration (tag group colours) warning for %s: %s", slug, e)
+            logger.warning("Auto-migration (tag sites) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # equipment_blocks table (added in the equipment maintenance feature).
@@ -474,7 +497,7 @@ class TenantConnectionManager:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                         CONSTRAINT card_comments_entity_type_check
-                            CHECK (entity_type IN ('phase', 'subphase'))
+                            CHECK (entity_type IN ('phase', 'subphase', 'project'))
                     )
                 """)
                 )
@@ -494,6 +517,17 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Created card_comments on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (card_comments) warning for %s: %s", slug, e)
+
+        # Project comment threads (add_project_comments.sql, 2.0.0): the
+        # card_comments entity-type CHECK gains 'project'. The DO block is its
+        # own gate (a no-op once the constraint has it), so this runs on every
+        # pool creation. A failure is rolled back so the later steps still run.
+        try:
+            await conn.execute(text(PROJECT_COMMENTS_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (project comments) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
 
         # In-app notifications table.
         try:
@@ -520,7 +554,9 @@ class TenantConnectionManager:
                         read_at TIMESTAMP,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                         CONSTRAINT notifications_type_check
-                            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change'))
+                            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change',
+                                            'approval_requested', 'approval_decided',
+                                            'assignment_changed', 'project_changed'))
                     )
                 """)
                 )
@@ -739,6 +775,85 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning(
                 "Auto-migration (company_events.counts_as_unavailable) warning for %s: %s", slug, e
+            )
+            await _rollback_quietly(conn)
+
+        # Teams (1.12.0): teams + the five junction tables and their indexes
+        # (add_teams.sql). Idempotent; one statement per execute (asyncpg).
+        try:
+            tables_check = await conn.execute(
+                text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name IN ('teams', 'team_members', 'project_teams', 'tag_teams',
+                                     'company_event_teams', 'equipment_teams')
+            """)
+            )
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(TEAM_TABLES):
+                logger.info("Auto-migration: Creating teams tables on tenant %s...", slug)
+                for statement in TEAMS_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.commit()
+                logger.info("Auto-migration: Created teams tables on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (teams) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Project fields (add_project_fields.sql, 2.0.0): the six tables and
+        # their indexes, then the one-off conversion of tag groups into
+        # dropdown fields (the DO block is its own gate: it works only while
+        # tag_groups exists). After the teams step: project_field_option_teams
+        # references teams, and the conversion copies tag_teams. Skipped once
+        # every table exists and tag_groups is gone. One statement per execute.
+        try:
+            tables_check = await conn.execute(text(PROJECT_FIELDS_PROBE_SQL))
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(PROJECT_FIELD_TABLES) or "tag_groups" in existing:
+                logger.info("Auto-migration: Adding project fields on tenant %s...", slug)
+                for statement in PROJECT_FIELDS_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.execute(text(PROJECT_FIELDS_MIGRATION_SQL))
+                await conn.commit()
+                logger.info("Auto-migration: Added project fields on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (project fields) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # RBAC (1.13.0): roles, role_permissions, approval policies / requests,
+        # the assignment approval columns, the widened notification
+        # types (add_rbac.sql). The seed (system roles + defaults, policies)
+        # and the users.role CHECK -> FK swap follow in the data migrations
+        # (tenant_data_migrations.RBAC_SEED_STEP). One statement per execute.
+        try:
+            needed = (await conn.execute(text(RBAC_NEEDS_MIGRATION_SQL))).scalar()
+            if needed:
+                logger.info("Auto-migration: Creating RBAC tables on tenant %s...", slug)
+                for statement in RBAC_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.commit()
+                logger.info("Auto-migration: Created RBAC tables on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (rbac) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Notification types (add_change_notifications.sql). Runs on every pool
+        # creation: the DO block is its own gate (it replaces the CHECK only
+        # when the newest type is missing), and the RBAC probe above skips
+        # 1.13 / 1.14 tenants whose constraint predates the newest types.
+        try:
+            await conn.execute(text(NOTIFICATIONS_TYPE_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            # An error, not a warning: without the widened CHECK every change
+            # notification of this tenant fails (change_notifications.deliver
+            # logs and drops it; the change itself stays committed).
+            logger.error(
+                "Auto-migration (notification types) failed for %s: %s -- change "
+                "notifications cannot be stored until migrations/"
+                "add_change_notifications.sql is applied",
+                slug,
+                e,
             )
             await _rollback_quietly(conn)
 

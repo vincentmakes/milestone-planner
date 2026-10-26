@@ -129,17 +129,22 @@ const WHAT_IF_EXEMPT_PREFIXES: readonly string[] = [
 /**
  * Configuration endpoints, exempt like settings: the What-If snapshot covers
  * only appStore.projects, so a queued configuration write (absence type,
- * skill, equipment type, phase template, user, tag, tag group, site or
- * equipment definition) could not be rolled back on Discard and its local
- * edit would vanish on the next reload. Assigning tags to a project goes
- * through PUT /api/projects/{id} and stays queued. Calendar and booking data
+ * skill, equipment type, phase template, user, tag, project field or item,
+ * team, site or equipment definition) could not be rolled back on Discard and its local
+ * edit would vanish on the next reload. Assigning tags, teams or project field
+ * values to a project goes through PUT /api/projects/{id} and stays queued. Calendar and booking data
  * stays queued: /api/sites/{id}/holidays…, /api/sites/{id}/events…,
  * /api/events…, /api/equipment-blocks…, /api/equipment-assignments… and the
  * /api/equipment/{id}/… sub-resources.
  */
 const WHAT_IF_EXEMPT_PATTERNS: readonly RegExp[] = [
-  /^\/api\/kanban\/cards\/(phase|subphase)\/\d+\/comments/,
-  /^\/api\/(absence-types|skills|equipment-types|predefined-phases|users|tags|tag-groups)(\/|$)/,
+  /^\/api\/kanban\/cards\/(phase|subphase|project)\/\d+\/comments/,
+  /^\/api\/(absence-types|skills|equipment-types|predefined-phases|users|tags|project-fields|teams)(\/|$)/,
+  // RBAC. Roles, permissions and approval policies are configuration; an
+  // approval decision (approve, reject, cancel) is a message to a person:
+  // queued, Discard would silently un-decide it. Own bookings stay queued on
+  // the assignment routes (a 202 on Apply becomes a request).
+  /^\/api\/(roles|permissions|approval-policies|approval-requests)(\/|$)/,
   /^\/api\/sites(\/\d+)?$/,
   /^\/api\/equipment(\/\d+)?$/,
 ];
@@ -156,6 +161,29 @@ export function isWhatIfExempt(endpoint: string): boolean {
     WHAT_IF_EXEMPT_PREFIXES.some(prefix => path.startsWith(prefix)) ||
     WHAT_IF_EXEMPT_PATTERNS.some(pattern => pattern.test(path))
   );
+}
+
+// =============================================================================
+// ERRORS
+// =============================================================================
+
+/** A non-2xx API response; `message` is the server's detail, `status` the HTTP code. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * A 403: the role lacks the key the route needs. Loaders of view-gated
+ * slices treat it as an empty slice, not as a failure.
+ */
+export function isForbidden(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
 }
 
 // =============================================================================
@@ -252,7 +280,7 @@ export async function apiRequest<T>(
       if (response.ok) {
         return {} as T;
       }
-      throw new Error(`HTTP ${response.status}: Empty response`);
+      throw new ApiError(`HTTP ${response.status}: Empty response`, response.status);
     }
     
     // Try to parse as JSON
@@ -262,7 +290,7 @@ export async function apiRequest<T>(
     } catch {
       // Not JSON - might be an HTML error page from proxy
       console.error(`[API Error] Non-JSON response from ${endpoint}:`, text.substring(0, 200));
-      throw new Error(`HTTP ${response.status}: Invalid response`);
+      throw new ApiError(`HTTP ${response.status}: Invalid response`, response.status);
     }
     
     if (!response.ok) {
@@ -273,11 +301,11 @@ export async function apiRequest<T>(
           const field = d.loc?.slice(-1)[0] || 'field';
           return `${field}: ${d.msg || 'invalid'}`;
         });
-        throw new Error(messages.join(', '));
+        throw new ApiError(messages.join(', '), response.status);
       }
       // Standard error format
       const message = (error.error as string) || (error.detail as string) || `HTTP ${response.status}`;
-      throw new Error(message);
+      throw new ApiError(message, response.status);
     }
     
     return data as T;

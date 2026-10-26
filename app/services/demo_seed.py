@@ -36,19 +36,35 @@ def _where(key: dict[str, Any], offset: int) -> str:
     )
 
 
-async def _insert_once(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> None:
-    """INSERT unless a row with the same natural key exists (no id needed)."""
+def _segment_values(booking: dict[str, Any]) -> dict[str, Any]:
+    """The own dates of an unlinked phase / subphase booking (none when linked)."""
+    if booking.get("start_date") is None:
+        return {}
+    return {"start_date": booking["start_date"], "end_date": booking["end_date"]}
+
+
+async def _insert_once(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> bool:
+    """INSERT unless a row with the same natural key exists (no id needed).
+
+    True when this call inserted the row (asyncpg's ``INSERT 0 1`` status).
+    """
     sql = (
         f"INSERT INTO {table} ({', '.join(values)}) "
         f"SELECT {_placeholders(values)} "
         f"WHERE NOT EXISTS (SELECT 1 FROM {table} WHERE {_where(key, len(values))})"
     )
-    await conn.execute(sql, *values.values(), *key.values())
+    status = await conn.execute(sql, *values.values(), *key.values())
+    return isinstance(status, str) and status.startswith("INSERT") and status.split()[-1] != "0"
 
 
 async def _insert_id(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> int:
     """`_insert_once`, then the id of the row with that natural key."""
     await _insert_once(conn, table, values, key)
+    return await _row_id(conn, table, key)
+
+
+async def _row_id(conn: Any, table: str, key: dict[str, Any]) -> int:
+    """The id of the row with that natural key (it must exist)."""
     row_id = await conn.fetchval(
         f"SELECT id FROM {table} WHERE {_where(key, 0)} ORDER BY id LIMIT 1", *key.values()
     )
@@ -102,6 +118,88 @@ async def insert_demo_data(
     for sk in demo.skills:
         skill_id[sk["name"]] = await _insert_id(conn, "skills", dict(sk), {"name": sk["name"]})
 
+    # Roles before the users (users.role references roles.key). The system
+    # roles, their default permissions and one policy per approvable action
+    # come with the tenant schema; the demo adds a custom role, switches modes
+    # on a system role and names the approving roles of a policy.
+    #
+    # Those settings belong to the tenant admin once seeded: they are written
+    # only on the first seed -- the run that creates the demo's custom roles
+    # -- so re-provisioning with demo data (the portal route has no
+    # already-provisioned guard) never reverts an admin's edits, deleted rows
+    # included. Same rule as the system roles' defaults in the schema seed.
+    role_id: dict[str, int] = {}
+    created_roles: set[str] = set()
+    for r in demo.roles:
+        key = {"key": r["key"]}
+        if await _insert_once(
+            conn,
+            "roles",
+            {
+                "key": r["key"],
+                "name": r["name"],
+                "description": r["description"],
+                "is_system": False,
+                "sort_order": r["sort_order"],
+            },
+            key,
+        ):
+            created_roles.add(r["key"])
+        role_id[r["key"]] = await _row_id(conn, "roles", key)
+        if r["key"] not in created_roles:
+            continue
+        for permission, mode in r["permissions"].items():
+            await conn.execute(
+                "INSERT INTO role_permissions (role_id, permission, mode) VALUES ($1, $2, $3) "
+                "ON CONFLICT (role_id, permission) DO NOTHING",
+                role_id[r["key"]],
+                permission,
+                mode,
+            )
+    first_seed = bool(demo.roles) and created_roles == {r["key"] for r in demo.roles}
+
+    async def system_role_id(key: str) -> int:
+        if key not in role_id:
+            found = await conn.fetchval("SELECT id FROM roles WHERE key = $1", key)
+            if found is None:
+                raise RuntimeError(f"roles: system role {key!r} missing (schema not applied?)")
+            role_id[key] = int(found)
+        return role_id[key]
+
+    for policy in demo.approval_policies:
+        # The schema seeds one per approvable action; this only fills a gap.
+        await conn.execute(
+            "INSERT INTO approval_policies (action, pm_approves) VALUES ($1, $2) "
+            "ON CONFLICT (action) DO NOTHING",
+            policy["action"],
+            policy["pm_approves"],
+        )
+    if first_seed:
+        for role_key, modes in demo.role_modes.items():
+            rid = await system_role_id(role_key)
+            for permission, mode in modes.items():
+                # The schema seeded this row (allow); the demo switches it.
+                await conn.execute(
+                    "UPDATE role_permissions SET mode = $1 WHERE role_id = $2 AND permission = $3",
+                    mode,
+                    rid,
+                    permission,
+                )
+        for policy in demo.approval_policies:
+            await conn.execute(
+                "UPDATE approval_policies SET pm_approves = $1 WHERE action = $2",
+                policy["pm_approves"],
+                policy["action"],
+            )
+            for key in policy["roles"]:
+                await conn.execute(
+                    "INSERT INTO approval_policy_roles (action, role_id) VALUES ($1, $2) "
+                    "ON CONFLICT DO NOTHING",
+                    policy["action"],
+                    await system_role_id(key),
+                )
+    counts["roles"] = len(demo.roles)
+
     user_id: dict[str, int] = {}
     full_name: dict[str, str] = {}
     for u in demo.users:
@@ -122,6 +220,7 @@ async def insert_demo_data(
                 "max_capacity": u["max_capacity"],
                 "active": 1 if u["active"] else 0,
                 "is_system": 1 if u["is_system"] else 0,
+                "is_resource": bool(u["is_resource"]),
             },
             {"email": u["email"]},
         )
@@ -141,6 +240,31 @@ async def insert_demo_data(
             )
     counts["users"] = len(user_id)
 
+    # Teams belong to one site; tags, equipment and events name them as
+    # (site, team name), projects by name within their own site.
+    team_id: dict[tuple[str, str], int] = {}
+    for t in demo.teams:
+        key = (t["site"], t["name"])
+        team_id[key] = await _insert_id(
+            conn,
+            "teams",
+            {
+                "site_id": site_id[t["site"]],
+                "name": t["name"],
+                "description": t["description"],
+                "color": t["color"],
+                "active": True,
+            },
+            {"site_id": site_id[t["site"]], "name": t["name"]},
+        )
+        for email in t["members"]:
+            await conn.execute(
+                "INSERT INTO team_members (team_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                team_id[key],
+                user_id[email],
+            )
+    counts["teams"] = len(team_id)
+
     equipment_id: dict[str, int] = {}
     for e in demo.equipment:
         # Legacy `site_id` = the lowest linked site; links live in equipment_sites.
@@ -158,11 +282,55 @@ async def insert_demo_data(
                 equipment_id[e["name"]],
                 site_id[site],
             )
+        for team in e["teams"]:
+            await conn.execute(
+                "INSERT INTO equipment_teams (equipment_id, team_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                equipment_id[e["name"]],
+                team_id[team],
+            )
     counts["equipment"] = len(equipment_id)
 
-    group_id: dict[str, int] = {}
-    for g in demo.tag_groups:
-        group_id[g["name"]] = await _insert_id(conn, "tag_groups", dict(g), {"name": g["name"]})
+    # Project fields and their dropdown items (natural keys: the field's name,
+    # the item's name within its field), with the items' site / team limits.
+    option_id: dict[tuple[str, str], int] = {}
+    for f in demo.project_fields:
+        fid = await _insert_id(
+            conn,
+            "project_fields",
+            {"name": f["name"], "field_type": f["field_type"], "sort_order": f["sort_order"]},
+            {"name": f["name"]},
+        )
+        for o in f["options"]:
+            oid = await _insert_id(
+                conn,
+                "project_field_options",
+                {
+                    "field_id": fid,
+                    "name": o["name"],
+                    "color": o["color"],
+                    "all_sites": o["sites"] is None,
+                    "sort_order": o["sort_order"],
+                },
+                {"field_id": fid, "name": o["name"]},
+            )
+            option_id[(f["name"], o["name"])] = oid
+            for site in o["sites"] or []:
+                await conn.execute(
+                    "INSERT INTO project_field_option_sites (option_id, site_id) VALUES ($1, $2) "
+                    "ON CONFLICT DO NOTHING",
+                    oid,
+                    site_id[site],
+                )
+            for team in o["teams"]:
+                await conn.execute(
+                    "INSERT INTO project_field_option_teams (option_id, team_id) VALUES ($1, $2) "
+                    "ON CONFLICT DO NOTHING",
+                    oid,
+                    team_id[team],
+                )
+    counts["project_fields"] = len(demo.project_fields)
+
     tag_id: dict[str, int] = {}
     for t in demo.tags:
         tag_id[t["name"]] = await _insert_id(
@@ -171,7 +339,6 @@ async def insert_demo_data(
             {
                 "name": t["name"],
                 "color": t["color"],
-                "group_id": group_id[t["group"]] if t["group"] else None,
                 "all_sites": t["sites"] is None,
                 "sort_order": t["sort_order"],
             },
@@ -182,6 +349,12 @@ async def insert_demo_data(
                 "INSERT INTO tag_sites (tag_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 tag_id[t["name"]],
                 site_id[site],
+            )
+        for team in t["teams"]:
+            await conn.execute(
+                "INSERT INTO tag_teams (tag_id, team_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                tag_id[t["name"]],
+                team_id[team],
             )
     counts["tags"] = len(tag_id)
 
@@ -209,6 +382,21 @@ async def insert_demo_data(
                 "INSERT INTO project_tags (project_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 project_id[p["name"]],
                 tag_id[tag],
+            )
+        for field_name, items in p["fields"].items():
+            for name in items:
+                await conn.execute(
+                    "INSERT INTO project_field_selections (project_id, option_id) "
+                    "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    project_id[p["name"]],
+                    option_id[(field_name, name)],
+                )
+        for name in p["teams"]:
+            await conn.execute(
+                "INSERT INTO project_teams (project_id, team_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                project_id[p["name"]],
+                team_id[(p["site"], name)],
             )
     counts["projects"] = len(project_id)
 
@@ -260,8 +448,12 @@ async def insert_demo_data(
         )
     counts["subphases"] = len(subphase_id)
 
+    request_id: dict[tuple[str, str], int] = {}  # filled after the assignments
+
     def entity_id(ent: tuple[str, str, str]) -> int:
         kind, proj, name = ent
+        if kind == "approval_request":
+            return request_id[(proj, name)]
         return phase_id[(proj, name)] if kind == "phase" else subphase_id[(proj, name)]
 
     # Dependencies: one JSON list per successor, written only where nothing is
@@ -286,17 +478,22 @@ async def insert_demo_data(
         )
     counts["dependencies"] = len(demo.dependencies)
 
+    # Phase / subphase bookings: linked (no dates, they follow the card) or
+    # unlinked segments with their own dates; one person may hold several
+    # segments on a card, so the natural key includes the start (NULL-safe).
     for a in demo.phase_assignments:
+        pid = phase_id[(a["project"], a["phase"])]
         await _insert_once(
             conn,
             "phase_staff_assignments",
             {
                 "project_id": project_id[a["project"]],
-                "phase_id": phase_id[(a["project"], a["phase"])],
+                "phase_id": pid,
                 "staff_id": user_id[a["staff"]],
                 "allocation": a["allocation"],
+                **_segment_values(a),
             },
-            {"phase_id": phase_id[(a["project"], a["phase"])], "staff_id": user_id[a["staff"]]},
+            {"phase_id": pid, "staff_id": user_id[a["staff"]], "start_date": a.get("start_date")},
         )
     for a in demo.project_assignments:
         await _insert_once(
@@ -325,12 +522,78 @@ async def insert_demo_data(
                 "subphase_id": sid,
                 "staff_id": user_id[a["staff"]],
                 "allocation": a["allocation"],
+                **_segment_values(a),
             },
-            {"subphase_id": sid, "staff_id": user_id[a["staff"]]},
+            {
+                "subphase_id": sid,
+                "staff_id": user_id[a["staff"]],
+                "start_date": a.get("start_date"),
+            },
         )
     counts["staff_assignments"] = (
         len(demo.phase_assignments) + len(demo.project_assignments) + len(demo.subphase_assignments)
     )
+
+    # Pending own bookings, after the approved ones: the request first, then
+    # its pending row pointing at it, then the request's link to the row --
+    # the order app/services/approvals.py writes them in.
+    for rq in demo.approval_requests:
+        pid = project_id[rq["project"]]
+        target = entity_id((rq["level"], rq["project"], rq["target"]))
+        requester = user_id[rq["requester"]]
+        rid = await _insert_id(
+            conn,
+            "approval_requests",
+            {
+                "requester_id": requester,
+                "action": rq["action"],
+                "project_id": pid,
+                "level": rq["level"],
+                "target_id": target,
+                "requested": json.dumps({"allocation": rq["allocation"]}, sort_keys=True),
+                "note": rq["note"],
+                "status": "pending",
+            },
+            {
+                "requester_id": requester,
+                "action": rq["action"],
+                "level": rq["level"],
+                "target_id": target,
+            },
+        )
+        request_id[(rq["project"], rq["target"])] = rid
+        table, column = (
+            ("phase_staff_assignments", "phase_id")
+            if rq["level"] == "phase"
+            else ("subphase_staff_assignments", "subphase_id")
+        )
+        # Only while the request is still pending (a request decided since
+        # must not get a pending row back) and never next to a booking.
+        await conn.execute(
+            f"INSERT INTO {table} "
+            f"(project_id, {column}, staff_id, allocation, approval_status, approval_request_id) "
+            "SELECT $1, $2, $3, $4, 'pending', $5 "
+            f"WHERE NOT EXISTS (SELECT 1 FROM {table} WHERE {column} = $6 AND staff_id = $7) "
+            "AND EXISTS (SELECT 1 FROM approval_requests WHERE id = $8 AND status = 'pending')",
+            pid,
+            target,
+            requester,
+            rq["allocation"],
+            rid,
+            target,
+            requester,
+            rid,
+        )
+        await conn.execute(
+            f"UPDATE approval_requests SET assignment_id = (SELECT id FROM {table} "
+            f"WHERE {column} = $1 AND staff_id = $2 AND approval_request_id = $3) "
+            "WHERE id = $4 AND assignment_id IS NULL",
+            target,
+            requester,
+            rid,
+            rid,
+        )
+    counts["approval_requests"] = len(demo.approval_requests)
 
     for b in demo.equipment_bookings:
         await _insert_once(
@@ -404,6 +667,13 @@ async def insert_demo_data(
                 "ON CONFLICT DO NOTHING",
                 event_id,
                 site_id[site],
+            )
+        for team in ev["teams"]:
+            await conn.execute(
+                "INSERT INTO company_event_teams (event_id, team_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                event_id,
+                team_id[team],
             )
     counts["company_events"] = len(demo.company_events)
 

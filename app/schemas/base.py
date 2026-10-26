@@ -15,9 +15,12 @@ from datetime import UTC, date, datetime
 from typing import Annotated, Generic, TypeVar
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, PlainSerializer, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, model_validator
 
 T = TypeVar("T")
+
+# A "#rrggbb" hex colour (tags, tag groups, teams).
+COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$"
 
 
 def serialize_datetime_js(dt: datetime | None) -> str | None:
@@ -108,6 +111,19 @@ class DateRangeOrdered(BaseModel):
         if start is not None and end is not None and end < start:
             raise ValueError(DATE_ORDER_MESSAGE)
         return self
+
+
+def _blank_as_none(value: object) -> object:
+    """Surrounding whitespace dropped; a blank string becomes ``None``."""
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
+# An optional free-text field (a booking's comment or note): blank or
+# whitespace-only is no text at all. The length limit is the field's own
+# ``Field(max_length=...)``, checked after the strip.
+OptionalText = Annotated[str | None, BeforeValidator(_blank_as_none)]
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Milestone Frontend (React)
 
-React/TypeScript SPA for Milestone. For the full architecture reference (stores, Gantt drag pipeline, WebSocket refetch, What-If mode, conventions), see the **Frontend Architecture** section of the repo-root [CLAUDE.md](../CLAUDE.md) — this README is only a quick orientation.
+React/TypeScript SPA for Milestone. For the full architecture reference (stores, Gantt drag pipeline, WebSocket refetch, What-If mode, conventions), see [Frontend architecture](../docs/developer-guide/frontend-architecture.md) in the developer guide (the rules are in the repo-root [CLAUDE.md](../CLAUDE.md)) — this README is only a quick orientation.
 
 ## Tech Stack
 

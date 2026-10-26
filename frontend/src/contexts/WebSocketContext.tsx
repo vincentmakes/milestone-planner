@@ -7,12 +7,15 @@
 
 import React, { createContext, useContext, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { useWorkStore } from '@/stores/workStore';
 import { useWebSocket, ConnectionState } from '@/hooks/useWebSocket';
 import type { PresenceUser, ChangePayload } from '@/hooks/useWebSocket';
 import type { AppNotification } from '@/types';
 import { loadAllProjects } from '@/api/endpoints/projects';
+import { clearMentionableUsersCache } from '@/api/endpoints/mentionableCache';
 import { getStaff } from '@/api/endpoints/staff';
 import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
+import { loadGated } from '@/hooks/useDataLoader';
 import { getVacations } from '@/api/endpoints/vacations';
 import {
   getSites,
@@ -22,7 +25,11 @@ import {
   buildEventDateSet,
 } from '@/api/endpoints/sites';
 import { skillsApi } from '@/api/endpoints/skills';
-import { tagsApi, tagGroupsApi } from '@/api/endpoints/tags';
+import { tagsApi } from '@/api/endpoints/tags';
+import { projectFieldsApi } from '@/api/endpoints/projectFields';
+import { teamsApi } from '@/api/endpoints/teams';
+import { rolesApi } from '@/api/endpoints/roles';
+import { refreshApprovalPoliciesIfLoaded } from '@/hooks/useApprovalPolicies';
 import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
 import { getCustomColumnsWithValues } from '@/api/endpoints/customColumns';
 import { getInstanceSettings } from '@/api/endpoints/settings';
@@ -70,7 +77,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const setSites = useAppStore((s) => s.setSites);
   const setSkills = useAppStore((s) => s.setSkills);
   const setTags = useAppStore((s) => s.setTags);
-  const setTagGroups = useAppStore((s) => s.setTagGroups);
+  const setProjectFields = useAppStore((s) => s.setProjectFields);
+  const setTeams = useAppStore((s) => s.setTeams);
+  const setRoles = useAppStore((s) => s.setRoles);
   const setAbsenceTypes = useAppStore((s) => s.setAbsenceTypes);
   const setBankHolidays = useAppStore((s) => s.setBankHolidays);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
@@ -117,6 +126,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
 
     const tasks: Array<Promise<unknown>> = [];
+    // Who may be @-mentioned follows people (staff) and roles (who sees
+    // every site): the next thread opened reloads its site's list.
+    if (batch.includes('staff') || batch.includes('roles')) clearMentionableUsersCache();
     for (const slice of batch) {
       switch (slice) {
         case 'projects':
@@ -125,11 +137,20 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         case 'staff':
           tasks.push(getStaff(true).then(setStaff).catch((e) => console.error('[WS] staff refresh failed', e)));
           break;
+        // View-gated (views.equipment): empty without the key or on a 403
         case 'equipment':
-          tasks.push(getEquipment(true).then(setEquipment).catch((e) => console.error('[WS] equipment refresh failed', e)));
+          tasks.push(
+            loadGated('views.equipment', () => getEquipment(true))
+              .then(setEquipment)
+              .catch((e) => console.error('[WS] equipment refresh failed', e))
+          );
           break;
         case 'equipmentBlocks':
-          tasks.push(getEquipmentBlocks().then(setEquipmentBlocks).catch((e) => console.error('[WS] equipment blocks refresh failed', e)));
+          tasks.push(
+            loadGated('views.equipment', () => getEquipmentBlocks())
+              .then(setEquipmentBlocks)
+              .catch((e) => console.error('[WS] equipment blocks refresh failed', e))
+          );
           break;
         case 'vacations':
           tasks.push(getVacations().then(setVacations).catch((e) => console.error('[WS] vacations refresh failed', e)));
@@ -141,17 +162,20 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
           tasks.push(skillsApi.getAll().then(setSkills).catch((e) => console.error('[WS] skills refresh failed', e)));
           break;
         case 'tags':
-          // Groups and tags are one slice: a group edit can re-group or recolour tags.
-          // Fetched together and written back to back, so no render sees a
-          // tag whose group_id points at a not-yet-loaded group.
+          tasks.push(tagsApi.getAll().then(setTags).catch((e) => console.error('[WS] tags refresh failed', e)));
+          break;
+        case 'projectFields':
           tasks.push(
-            Promise.all([tagsApi.getAll(), tagGroupsApi.getAll()])
-              .then(([tags, groups]) => {
-                setTags(tags);
-                setTagGroups(groups);
-              })
-              .catch((e) => console.error('[WS] tags refresh failed', e))
+            projectFieldsApi.getAll()
+              .then(setProjectFields)
+              .catch((e) => console.error('[WS] project fields refresh failed', e))
           );
+          break;
+        case 'teams':
+          tasks.push(teamsApi.getAll().then(setTeams).catch((e) => console.error('[WS] teams refresh failed', e)));
+          break;
+        case 'roles':
+          tasks.push(rolesApi.getAll().then(setRoles).catch((e) => console.error('[WS] roles refresh failed', e)));
           break;
         case 'absenceTypes':
           tasks.push(absenceTypesApi.getAll().then(setAbsenceTypes).catch((e) => console.error('[WS] absence types refresh failed', e)));
@@ -195,6 +219,24 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         case 'settings':
           tasks.push(getInstanceSettings().then(setInstanceSettings).catch((e) => console.error('[WS] settings refresh failed', e)));
           break;
+        case 'approvalPolicies':
+          // The pending badge's approver names (only once something loaded
+          // them). A decision does not change them: only change:approval_policy.
+          tasks.push(
+            refreshApprovalPoliciesIfLoaded().catch((e) =>
+              console.error('[WS] approval policies refresh failed', e)
+            )
+          );
+          break;
+        case 'approvals':
+          // Both request lists live in workStore, which reloads them together.
+          tasks.push(
+            useWorkStore
+              .getState()
+              .refresh()
+              .catch((e) => console.error('[WS] approvals refresh failed', e))
+          );
+          break;
         case 'currentUser':
           tasks.push(
             fetchCurrentUser()
@@ -221,7 +263,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, [
     setProjects, setStaff, setEquipment, setEquipmentBlocks, setVacations, setSites,
-    setSkills, setTags, setTagGroups, setAbsenceTypes, setBankHolidays, setCompanyEvents,
+    setSkills, setTags, setProjectFields, setTeams, setRoles, setAbsenceTypes, setBankHolidays, setCompanyEvents,
     setInstanceSettings, setCurrentUser,
   ]);
 
@@ -232,9 +274,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     useNotificationStore.getState().receive(notification);
   }, []);
 
-  const handleChangeReceived = useCallback((change: ChangePayload) => {
+  const stageSlices = useCallback((slices: Slice[]) => {
     const target = inFlightRef.current ? restageRef.current : pendingSlicesRef.current;
-    for (const slice of slicesForEntity(change.entity_type)) {
+    for (const slice of slices) {
       target.add(slice);
     }
 
@@ -245,6 +287,14 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     // refresh, but the receiving user still feels the change near-instantly.
     refreshTimeoutRef.current = window.setTimeout(runRefresh, 200);
   }, [runRefresh]);
+
+  const handleChangeReceived = useCallback((change: ChangePayload) => {
+    stageSlices(slicesForEntity(change.entity_type));
+  }, [stageSlices]);
+
+  // Per-user push (a request reaches its people): a live hint like
+  // notification:new; workStore reloads through the same debounce.
+  const handleApprovalChanged = useCallback(() => stageSlices(['approvals']), [stageSlices]);
 
   // The server closed the socket for an invalid / revoked session (4001), a
   // disabled user or a disallowed Origin (both 4003). Confirm with
@@ -278,8 +328,24 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     autoConnect: true,
     onChangeReceived: handleChangeReceived,
     onNotificationReceived: handleNotificationReceived,
+    onApprovalChanged: handleApprovalChanged,
     onSessionInvalid: handleSessionInvalid,
   });
+
+  // workStore feeds the sidebar's My Work badge, so it loads with the
+  // signed-in app (this provider) and again on window focus: the pushes and
+  // slices above are hints that a user on another worker misses.
+  useEffect(() => {
+    const refreshWork = () => {
+      useWorkStore
+        .getState()
+        .refresh()
+        .catch((e) => console.error('[WS] approvals refresh failed', e));
+    };
+    refreshWork();
+    window.addEventListener('focus', refreshWork);
+    return () => window.removeEventListener('focus', refreshWork);
+  }, []);
 
   // When What-If mode exits, run the refreshes that were deferred during it.
   useEffect(() => {

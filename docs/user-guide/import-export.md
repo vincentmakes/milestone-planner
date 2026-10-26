@@ -87,29 +87,32 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 |---|---|
 | **Site** | Site metadata: name, city, country, region code, active flag |
 | **Projects** | All projects on the site with their phases and subphases (full hierarchy, dates, project manager, customer, completion %) |
-| **Users** | Users assigned to this site (name, email, role, job title, active flag) |
+| **Users** | Users assigned to this site (name, email, role, job title, active flag, **Bookable** — whether they can be booked as a resource) |
 | **Equipment** | Equipment items linked to the site, with type, active status and a **Sites** column listing every site each item belongs to |
 | **Skills** | Skills defined on the instance (name, color, description) |
 | **User skills** | User → Skill associations |
-| **Tag groups** | Tag group definitions (name, single select, order) |
-| **Tags** | Project tags that apply to this site (name, color, group, all sites / sites, order) |
-| **Project tags** | Project → Tag associations, with the tag's group |
+| **Tags** | Project tags that apply to this site (name, color, all sites / sites, teams, order) |
+| **Project tags** | Project → Tag associations |
+| **Project fields** | Every project field (name, type — text, number, toggle, select, multiselect — and order) |
+| **Project field options** | The dropdown items that apply to this site (field, name, color, all sites / sites, teams at the site, order) |
+| **Project field values** | One row per project of the site and field with a value: text, number, Yes / No for a switch, the chosen items joined by commas |
 | **Absence types** | Absence type definitions (name, color, counts as unavailable, active, order) |
 | **Vacations** | All absence entries for users on this site, including recurring patterns, with their **Type** and **Type ID** |
 | **Project assignments** | Staff assigned at the project level |
-| **Phase assignments** | Staff assigned at the phase level (with allocation %) |
-| **Subphase assignments** | Staff assigned at the subphase level |
-| **Equipment assignments** | Equipment booked against projects/phases/subphases |
+| **Phase assignments** | Staff assigned at the phase level (with allocation %, **Start** / **End** — the booking's own dates, or the phase's — and **Linked**: yes when the booking follows the phase dates) |
+| **Subphase assignments** | Staff assigned at the subphase level (same Start / End / Linked columns). The three assignment sheets carry an **Approval status** (approved or pending) and a **Pending change** column |
+| **Approval requests** | Own-booking requests of the site's projects: requester, action, target, requested and previous values, status, decision and reason |
+| **Equipment assignments** | Equipment booked on projects, with each booking's **Note** |
 | **Custom columns** | Custom column definitions for this site (name, type, scope, options) |
 | **Custom column values** | Custom column values for every project/phase/subphase |
 | **Bank holidays** | Public and custom holidays on the site (with year) |
 | **Company events** | Company events linked to the site, with a **Sites** column listing every site each event applies to and a **Staff unavailable** column marking site closures |
 | **Equipment blocks** | Maintenance/unavailability windows on the site's equipment |
 | **Staff notes** | Notes pinned to the site's staff timeline |
-| **Card comments** | Kanban card comments on the site's phases and subphases |
+| **Card comments** | The comment threads of the site's phases and subphases and of its projects (the threads of project-level bookings): **Card type** is `phase`, `subphase` or `project`, and for a project thread **Card ID** is the project's id |
 
 !!! note
-    The Site Excel Export is restricted to **Admins and Superusers**. Superusers can only export sites they belong to — Admins can export any site. The Sites section of Settings is admin-only, so superusers export through the API (`GET /api/export/site/{site_id}/excel`).
+    The Site Excel Export needs the *Export site data (Excel)* permission — **Admins and Superusers** by default — and works for the sites you can see: superusers export the sites they belong to, admins any site. Superusers find it in **Settings → Sites**, which shows them the export only (editing sites stays admin-only).
 
 !!! tip
     Use this export before doing destructive operations (e.g. deleting a site, large bulk edits). The file is small enough to keep alongside regular database backups and is human-readable without needing to restore.

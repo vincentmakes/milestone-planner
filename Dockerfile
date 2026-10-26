@@ -22,12 +22,17 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ---- Stage 2: Build React frontend ----
 FROM node:24-alpine AS frontend
 
-WORKDIR /build
+# frontend/ sits at /build/frontend so that the repo-root shared/ can sit
+# beside it at /build/shared: the permission-catalogue mirror test imports
+# ../../../../shared/permission-keys.json and `npm run build` (tsc -b)
+# type-checks it.
+WORKDIR /build/frontend
 
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 
 COPY frontend/ ./
+COPY shared/ /build/shared/
 RUN npm run build
 
 # ---- Stage 3: Production runtime ----
@@ -65,7 +70,7 @@ COPY app/ ./app/
 COPY migrations/ ./migrations/
 
 # Copy frontend build output from Node.js stage
-COPY --from=frontend /build/dist/ ./public/
+COPY --from=frontend /build/frontend/dist/ ./public/
 # Copy static images (logos etc.) not produced by Vite
 COPY public/img/ ./public/img/
 

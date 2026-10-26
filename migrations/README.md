@@ -97,25 +97,35 @@ The authoritative list is the set of `.sql` files in this folder — run either 
 | Migration | Target | Description |
 |-----------|--------|-------------|
 | `add_absence_types_and_event_sites` | tenant | Adds absence_types (seeded), vacations.absence_type_id (existing rows → "Holidays"), and company_event_sites for multi-site events |
+| `add_booking_segments` | tenant | Adds optional start_date / end_date to phase_staff_assignments and subphase_staff_assignments (both NULL = linked, the booking follows its phase / subphase; both set = an unlinked segment inside it), with a both-or-neither CHECK (1.17.0) |
+| `add_change_notifications` | tenant | Widens the notification types with assignment_changed and project_changed (someone else changed your booking or your project) (1.15.0) |
 | `add_company_events` | tenant | Adds company_events table for non-working-day events |
 | `add_company_event_color` | tenant | Adds color column to company_events |
 | `add_custom_columns` | tenant | Adds custom_columns and custom_column_values tables (EAV pattern) |
+| `add_equipment_assignment_note` | tenant | Adds equipment_assignments.note, the optional note of an equipment booking (shown in its dialog, the PM's notification and the site export); skipped when the column exists (2.0.0) |
 | `add_equipment_blocks` | tenant | Adds equipment_blocks table (maintenance/unavailability) |
 | `add_equipment_sites_and_site_closures` | tenant | Adds equipment_sites for multi-site equipment (back-filled from equipment.site_id) and company_events.counts_as_unavailable (site closures) |
 | `add_is_system_column` | tenant | Adds is_system flag to protect system users from deletion |
 | `add_kanban_tables` | tenant | Adds Kanban card status (back-filled from completion), card_comments and notifications |
 | `add_organizations` | **master** | Adds organizations + organization_sso_config tables and tenant columns |
+| `add_project_fields` | tenant | Adds project fields (project_fields: text / number / toggle / select / multiselect), their dropdown items (project_field_options, scoped to sites and teams through project_field_option_sites / project_field_option_teams), project_field_values and project_field_selections; then converts the tag groups into dropdown fields (single-select group → select field, other group → multiselect field, tags → items with their colours, order, sites, teams and projects) and drops tag_groups and tags.group_id; requires `add_teams` (2.0.0) |
+| `add_project_comments` | tenant | Lets a project carry its own comment thread (the thread of its project-level bookings): the card_comments entity-type CHECK gains `project`; skipped when it already has it (2.0.0) |
 | `add_project_presence` | tenant | Adds project_presence table (active viewers) |
+| `add_rbac` | tenant | Adds roles (admin / superuser / user system roles seeded with their default permissions) and role_permissions, approval_policies / approval_policy_roles and approval_requests; adds approval_status / approval_request_id to the three staff assignment tables, widens the notification types, drops the sso_config default-role CHECK and replaces the users.role CHECK with a foreign key to roles.key (1.13.0) |
 | `add_skills_tables` | tenant | Adds skills and user_skills tables for capability tracking |
 | `add_staff_notes` | tenant | Creates staff_notes (migrates rows from and drops the legacy `notes` table) |
 | `add_tags_tables` | tenant | Adds tags and project_tags tables |
-| `add_tag_groups_and_sites` | tenant | Adds tag_groups (single-select groups) and tag_sites, plus tags.group_id / all_sites / sort_order (existing tags stay ungrouped and available at every site) |
+| `add_teams` | tenant | Adds teams (one site each, name unique per site), team_members, and the project_teams / tag_teams / company_event_teams / equipment_teams links; every FK cascades (1.12.0) |
+| `add_tag_groups_and_sites` | tenant | Adds tag_groups (single-select groups) and tag_sites, plus tags.group_id / all_sites / sort_order (existing tags stay ungrouped and available at every site); since 2.0.0 the groups are converted into project fields by `add_project_fields` |
+| `add_user_is_resource` | tenant | Adds users.is_resource, the "Bookable as a resource" flag (may be booked on projects, listed in the Staff panel); existing administrators are back-filled not bookable, everyone else bookable (1.16.0) |
 | `card_comments_author_set_null` | tenant | Makes card_comments.author_id nullable with ON DELETE SET NULL, so deleting a user keeps their comments |
 | `cleanup_orphaned_values` | tenant | Removes custom-column values and card comments whose project/phase/subphase no longer exists |
 | `projects_site_fk_cascade` | tenant | Makes the projects.site_id FK ON DELETE CASCADE (deleting a site deletes its projects, as the app does) |
 | `upgrade_to_v90` | tenant | Legacy comprehensive upgrade from the Node.js era (superseded by the files above and the tenant auto-migration) |
 
-Some tenant migrations also run automatically when a tenant's connection pool is created (and at single-tenant startup): `add_tag_groups_and_sites` via `tenant_manager._run_auto_migrations` (`app/services/tenant_manager.py`), and `card_comments_author_set_null`, `cleanup_orphaned_values`, `projects_site_fk_cascade` via `app/services/tenant_data_migrations.py`. In both cases the SQL is shared with `app/services/tenant_provisioner.py`.
+Some tenant migrations also run automatically when a tenant's connection pool is created (and at single-tenant startup): `add_tag_groups_and_sites` (tag_sites and the tags columns; tag groups are no longer created), `add_teams`, `add_project_fields` (tables and tag-group conversion), the tables of `add_rbac`, `add_change_notifications`, `add_user_is_resource`, `add_booking_segments`, `add_equipment_assignment_note` and `add_project_comments` via `tenant_manager._run_auto_migrations` (`app/services/tenant_manager.py`), and `card_comments_author_set_null`, `cleanup_orphaned_values`, `projects_site_fk_cascade` and the seed / `users.role` foreign key of `add_rbac` via `app/services/tenant_data_migrations.py`. In both cases the SQL is shared with `app/services/tenant_provisioner.py`.
+
+`add_rbac` and `add_change_notifications` never shipped on their own (they first ship with 2.0.0) and were edited in place when the personal todos were removed: they no longer create the `todos` table or list the `todo_assigned` notification type. A database upgraded from a pre-release build keeps its `todos` table (unused) and the wider notification CHECK, which still allows `todo_assigned`: harmless, as nothing writes either any more (the widening is guarded by the last type, `project_changed`, so it is not re-run).
 
 ### Additional Migrations (in scripts/sql/migrations/)
 

@@ -5,6 +5,7 @@
 import { EVENT_COLOR_SWATCHES } from '@/utils/colorSwatches';
 import type { ColorSwatch } from '@/utils/colorSwatches';
 import styles from './ColorSwatchPicker.module.css';
+import { Icon, PlusIcon } from '@/components/common/Icon';
 
 interface ColorSwatchPickerProps {
   value: string;
@@ -57,7 +58,7 @@ export function ColorSwatchPicker({
             onChange={(e) => onChange(e.target.value)}
             aria-label="Custom color"
           />
-          {!isCustom && <span aria-hidden="true">+</span>}
+          {!isCustom && <Icon icon={PlusIcon} size={14} />}
         </label>
       )}
     </div>

@@ -21,8 +21,9 @@ import {
   type KanbanCard as KanbanCardData,
 } from '@/utils/kanbanCards';
 import { orderSiteProjects } from '@/utils/storage';
-import { canEditProjectById } from '@/utils/permissions';
-import { useTagFilteredProjects } from '@/hooks/useTagFilter';
+import { can } from '@/utils/permissions';
+import { useFilteredProjects } from '@/hooks/useProjectFilter';
+import { useTeamFilteredProjects } from '@/hooks/useTeamFilter';
 import { KanbanDragProvider, useKanbanDrag } from '@/contexts/KanbanDragContext';
 import { useUIStore } from '@/stores/uiStore';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
@@ -57,25 +58,25 @@ export function KanbanView() {
     [projects, currentSite?.id]
   );
 
-  // The per-site tag filter (shared with the Gantt) narrows the picker and the
-  // "All projects" board.
-  const tagFilteredProjects = useTagFilteredProjects(siteProjects);
+  // The per-site project and team filters (shared with the Gantt) narrow the
+  // picker and the "All projects" board.
+  const filteredProjects = useTeamFilteredProjects(useFilteredProjects(siteProjects));
 
   // A null id means "All projects"; a stale id (e.g. after a site switch, or a
-  // project the tag filter now hides) also falls back to showing everything
+  // project the filter now hides) also falls back to showing everything
   // rather than silently picking one.
   const activeProject = useMemo(
     () =>
       kanbanProjectId === null
         ? null
-        : tagFilteredProjects.find((p) => p.id === kanbanProjectId) ?? null,
-    [tagFilteredProjects, kanbanProjectId]
+        : filteredProjects.find((p) => p.id === kanbanProjectId) ?? null,
+    [filteredProjects, kanbanProjectId]
   );
 
   /** The projects on the board, in Gantt order. */
   const boardProjects = useMemo(
-    () => (activeProject ? [activeProject] : tagFilteredProjects),
-    [activeProject, tagFilteredProjects]
+    () => (activeProject ? [activeProject] : filteredProjects),
+    [activeProject, filteredProjects]
   );
 
   // Comment counts are fetched only by this view - deliberately NOT folded into
@@ -133,9 +134,13 @@ export function KanbanView() {
 
   const allCards = useMemo(() => collectCardsForProjects(boardProjects), [boardProjects]);
 
+  // My Todo: the cards I am on, and the ones I asked to join (my booking
+  // awaits approval; the card shows a pending badge).
   const visibleCards = useMemo(() => {
     if (!myTodoOnly || !currentUser) return allCards;
-    return allCards.filter((c) => c.assigneeIds.includes(currentUser.id));
+    return allCards.filter(
+      (c) => c.assigneeIds.includes(currentUser.id) || c.pendingAssigneeIds.includes(currentUser.id)
+    );
   }, [allCards, myTodoOnly, currentUser]);
 
   const listColumns = useMemo(
@@ -174,13 +179,11 @@ export function KanbanView() {
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
 
   // Mirror the server gate (app/services/card_access.py) so a card the server
-  // would reject with 403 is not draggable in the first place: the project's
-  // editors (admin, superuser, its manager) and the card's assignees.
+  // would reject with 403 is not draggable in the first place: kanban.move_any
+  // (or managing the project), or kanban.move_assigned on the card's assignees.
   const canMoveCard = (card: KanbanCardData) =>
-    Boolean(
-      canEditProjectById(currentUser, projects, card.projectId) ||
-        (currentUser && card.assigneeIds.includes(currentUser.id))
-    );
+    can(currentUser, 'kanban.move_any', projects.find((p) => p.id === card.projectId)) ||
+    Boolean(currentUser && card.assigneeIds.includes(currentUser.id) && can(currentUser, 'kanban.move_assigned'));
 
   const handleOpenCard = (card: KanbanCardData) => {
     openKanbanCard(card.entityType, card.entityId, card.projectId);
@@ -201,7 +204,7 @@ export function KanbanView() {
   return (
     <div className={styles.container}>
       <KanbanToolbar
-        projects={tagFilteredProjects}
+        projects={filteredProjects}
         selectedProjectId={activeProject?.id ?? null}
         onSelectProject={setKanbanProjectId}
         grouping={grouping}
@@ -214,10 +217,10 @@ export function KanbanView() {
         totalCount={allCards.length}
       />
 
-      {tagFilteredProjects.length === 0 ? (
-        // Keep the toolbar (and its tag filter) reachable so the filter can be cleared.
+      {filteredProjects.length === 0 ? (
+        // Keep the toolbar (and its filter) reachable so the filter can be cleared.
         <div className={styles.placeholder}>
-          No projects in {currentSite.name} match the tag filter.
+          No projects in {currentSite.name} match the filter.
         </div>
       ) : (
         <KanbanDragProvider>

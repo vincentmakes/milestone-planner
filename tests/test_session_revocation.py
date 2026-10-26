@@ -92,9 +92,16 @@ SESSION_SNAPSHOT = {
 COOKIE = {"connect.sid": "s%3Asid-123."}
 
 
-def live_row(mock_db_session, row):
+def live_rows(*rows):
+    """The ``load_live_user`` result: (active, role, permission, mode, kanban_enabled) rows."""
     result = MagicMock()
-    result.one_or_none.return_value = row
+    result.all.return_value = list(rows)
+    return result
+
+
+def live_row(mock_db_session, row):
+    """One user row without permission rows (``None`` = the user is gone)."""
+    result = live_rows(*([] if row is None else [(*row, None, None, None)]))
     mock_db_session.execute = AsyncMock(return_value=result)
 
 
@@ -156,9 +163,12 @@ async def test_active_user_passes_with_live_role():
         role = "user"
 
     db = MagicMock()
-    result = MagicMock()
-    result.one_or_none.return_value = (1, "superuser")
-    db.execute = AsyncMock(return_value=result)
+    db.execute = AsyncMock(
+        return_value=live_rows(
+            (1, "superuser", "projects.create", "allow", None),
+            (1, "superuser", "assignments.self_create", "approval", None),
+        )
+    )
     request = MagicMock()
     request.scope = {"state": {}}
 
@@ -166,3 +176,107 @@ async def test_active_user_passes_with_live_role():
 
     assert user.role == "superuser"
     assert request.scope["state"]["current_user"]["id"] == 7
+    # The live role's matrix rides along on the user (one query).
+    assert user.permissions.role_key == "superuser"
+    assert user.permissions.has("projects.create")
+    assert user.permissions.mode("assignments.self_create") == "approval"
+    assert not user.permissions.has("projects.delete")
+    db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_live_permission_query_joins_the_role_matrix():
+    from app.middleware.auth import load_live_user
+
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=live_rows((1, "admin", None, None, None)))
+
+    active, role, permissions = await load_live_user(db, 7)  # type: ignore[misc]
+
+    assert (active, role) == (True, "admin")
+    assert permissions.is_admin and permissions.has("roles.manage")
+    sql = " ".join(str(db.execute.await_args.args[0]).split())
+    assert "LEFT OUTER JOIN roles ON roles.key = users.role" in sql
+    assert "LEFT OUTER JOIN role_permissions ON role_permissions.role_id = roles.id" in sql
+
+
+@pytest.mark.asyncio
+async def test_matrix_edit_applies_on_the_next_request():
+    """Same session, same role: the permissions come from the rows of this request."""
+    from app.middleware.auth import get_current_user
+
+    class Snapshot:
+        id = 7
+        first_name = "A"
+        last_name = "B"
+        role = "user"
+
+    request = MagicMock()
+    request.scope = {"state": {}}
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=live_rows((1, "user", None, None, None)))
+    before = await get_current_user(request, Snapshot(), "sid", db)  # type: ignore[arg-type]
+    db.execute = AsyncMock(return_value=live_rows((1, "user", "projects.create", "allow", None)))
+    after = await get_current_user(request, Snapshot(), "sid", db)  # type: ignore[arg-type]
+
+    assert not before.permissions.has("projects.create")
+    assert after.permissions.has("projects.create")
+
+
+# ---------------------------------------------------------------------------
+# The Kanban switch rides along as a fifth column (no second round trip)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_live_query_reads_the_kanban_switch_as_a_fifth_column():
+    from app.middleware.auth import load_live_user
+
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=live_rows((1, "admin", None, None, None)))
+
+    await load_live_user(db, 7)
+
+    db.execute.assert_awaited_once()
+    stmt = db.execute.await_args.args[0]
+    assert len(stmt.selected_columns) == 5
+    sql = " ".join(str(stmt.compile(compile_kwargs={"literal_binds": True})).split())
+    assert "(SELECT settings.value FROM settings WHERE settings.key = 'kanban_enabled')" in sql
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stored", "board"), [(None, True), ("true", True), ("false", False)])
+async def test_the_kanban_switch_disables_the_board_for_everyone(stored, board):
+    from app.middleware.auth import load_live_user
+
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=live_rows(
+            (1, "user", "views.kanban", "allow", stored),
+            (1, "user", "kanban.comment", "allow", stored),
+        )
+    )
+    admin_db = MagicMock()
+    admin_db.execute = AsyncMock(return_value=live_rows((1, "admin", None, None, stored)))
+
+    _, _, user = await load_live_user(db, 7)  # type: ignore[misc]
+    _, _, admin = await load_live_user(admin_db, 1)  # type: ignore[misc]
+
+    assert user.has("views.kanban") is board
+    assert admin.has("views.kanban") is board
+    # Only the board view goes; the card writes' keys stay.
+    assert user.has("kanban.comment") and admin.has("kanban.comment")
+
+
+@pytest.mark.asyncio
+async def test_a_switched_off_board_answers_403_to_an_admin_session(app_client, mock_db_session):
+    """End to end through get_current_user: the live row carries the switch."""
+    mock_db_session.execute = AsyncMock(return_value=live_rows((1, "admin", None, None, "false")))
+    with patch.object(
+        SessionService, "get_user_from_session", AsyncMock(return_value=SESSION_SNAPSHOT)
+    ):
+        resp = await app_client.get("/api/kanban/sites/1/comment-counts", cookies=COOKIE)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Permission required: views.kanban"
+    mock_db_session.execute.assert_awaited_once()

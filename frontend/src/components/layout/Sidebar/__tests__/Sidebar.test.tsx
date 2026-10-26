@@ -11,7 +11,8 @@ import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import { makeEquipment, makeProject, makeSite, makeStaff, makeUser } from '@/test/factories';
+import { makeEquipment, makeProject, makeSite, makeStaff, makeTeam, makeUser } from '@/test/factories';
+import { tagFilterKey } from '@/utils/tags';
 
 beforeEach(() => {
   resetAllStores();
@@ -155,5 +156,34 @@ describe('Sidebar', () => {
     expect(stat('Projects').getByText('2')).toBeInTheDocument();
     expect(stat('Staff').getByText('2')).toBeInTheDocument();
     expect(stat('Equipment').getByText('1')).toBeInTheDocument();
+  });
+
+  it('with an active team filter, counts only matching projects, staff and equipment', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'user' }),
+      currentSite: makeSite({ id: 1 }),
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      projects: [
+        makeProject({ id: 1, site_id: 1, confirmed: true, team_ids: [1] }),
+        makeProject({ id: 2, site_id: 1, confirmed: false, team_ids: [2] }),
+        makeProject({ id: 3, site_id: 1, confirmed: false, team_ids: [] }),
+      ],
+      staff: [
+        makeStaff({ id: 1, site_id: 1, team_ids: [1] }),
+        makeStaff({ id: 2, site_id: 1, team_ids: [2] }),
+      ],
+      equipment: [
+        makeEquipment({ id: 1, site_id: 1, team_ids: [] }),
+        makeEquipment({ id: 2, site_id: 1, team_ids: [1] }),
+        makeEquipment({ id: 3, site_id: 1, team_ids: [2] }),
+      ],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<Sidebar />);
+    expect(stat('Projects').getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('1 confirmed, 0 pending')).toBeInTheDocument();
+    expect(stat('Staff').getByText('1')).toBeInTheDocument();
+    // Whole-site equipment plus the team's own
+    expect(stat('Equipment').getByText('2')).toBeInTheDocument();
   });
 });

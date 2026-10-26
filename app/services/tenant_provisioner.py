@@ -13,9 +13,16 @@ from typing import Any
 import asyncpg
 
 from app.config import get_settings
+from app.models.card_comment import COMMENT_ENTITY_TYPES
 from app.scripts.demo_data import build_demo
 from app.services.demo_seed import insert_demo_data
 from app.services.encryption import generate_password, hash_user_password
+from app.services.permissions import (
+    APPROVABLE_KEYS,
+    PERMISSIONS,
+    SYSTEM_ROLES,
+    build_default_role_permissions_sql,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +305,34 @@ CARD_COMMENTS_AUTHOR_FK_SQL = """
     END $$;
 """
 
+# What a comment thread hangs on (COMMENT_ENTITY_TYPES, app/models/card_comment.py;
+# 2.0.0 adds 'project': a thread for the project-level bookings of a project).
+# The ORM, the four CREATE TABLE card_comments sources and the widening below
+# spell the same CHECK.
+CARD_COMMENTS_ENTITY_TYPE_CHECK = (
+    "entity_type IN (" + ", ".join(f"'{t}'" for t in COMMENT_ENTITY_TYPES) + ")"
+)
+
+# Widen card_comments_entity_type_check on an existing table
+# (add_project_comments.sql, 2.0.0). Skipped when the constraint already allows
+# 'project' (the newest type, which no other part of the definition contains),
+# so it can run on every pool creation and on every re-applied schema. One
+# statement, no trailing ';'.
+PROJECT_COMMENTS_CHECK_SQL = f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.card_comments') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.card_comments')
+              AND conname = 'card_comments_entity_type_check'
+              AND strpos(pg_get_constraintdef(oid), '{COMMENT_ENTITY_TYPES[-1]}') > 0
+        ) THEN
+            ALTER TABLE card_comments DROP CONSTRAINT IF EXISTS card_comments_entity_type_check;
+            ALTER TABLE card_comments ADD CONSTRAINT card_comments_entity_type_check
+                CHECK ({CARD_COMMENTS_ENTITY_TYPE_CHECK});
+        END IF;
+    END $$"""
+
 # Whether CARD_COMMENTS_AUTHOR_FK_SQL has anything to do (logging only).
 CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL = """
     SELECT
@@ -395,18 +430,23 @@ VACATIONS_ABSENCE_TYPE_COLUMN_SQL = """
 """
 
 
-def _add_column_if_missing(table: str, column: str, definition: str, backfill: str = "") -> str:
+def _add_column_if_missing(
+    table: str, column: str, definition: str, backfill: str = "", requires: str | None = None
+) -> str:
     """
     Idempotent ``ADD COLUMN`` for upgrading a database created by an older
     release, as a guarded DO block (an already-migrated database does not take
     the ALTER TABLE lock again). ``backfill`` runs once, in the same branch,
-    right after the column is created -- never on a fresh database. Only ever
-    called with literal identifiers from this module.
+    right after the column is created -- never on a fresh database.
+    ``requires`` names a table the column's definition references: without it
+    the block does nothing. Only ever called with literal identifiers from this
+    module.
     """
+    required = f"to_regclass('public.{requires}') IS NOT NULL AND " if requires else ""
     return f"""
     DO $$
     BEGIN
-        IF to_regclass('public.{table}') IS NOT NULL AND NOT EXISTS (
+        IF to_regclass('public.{table}') IS NOT NULL AND {required}NOT EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = 'public' AND table_name = '{table}'
               AND column_name = '{column}'
@@ -426,9 +466,21 @@ def _add_column_if_missing(table: str, column: str, definition: str, backfill: s
 # file has ever added therefore needs an equivalent here. All no-ops on a
 # fresh database.
 
+# users.is_resource (1.16.0): the person may be booked on projects and appears
+# in the Staff panel. Existing administrators are back-filled FALSE, everyone
+# else keeps the column default TRUE, so an upgrade changes nobody's
+# bookability. Shared by USERS_UPGRADE_SQL, migrations/add_user_is_resource.sql
+# and the tenant auto-migration (tenant_manager._run_auto_migrations).
+USERS_IS_RESOURCE_SQL = _add_column_if_missing(
+    "users",
+    "is_resource",
+    "BOOLEAN NOT NULL DEFAULT TRUE",
+    "UPDATE users SET is_resource = FALSE WHERE role = 'admin';",
+)
+
 # users.max_capacity (part-time staff), users.is_system (protected admin: the
 # first admin becomes the system user, as add_is_system_column.sql /
-# the auto-migration do), users.updated_at.
+# the auto-migration do), users.updated_at, users.is_resource.
 USERS_UPGRADE_SQL = (
     _add_column_if_missing(
         "users",
@@ -445,6 +497,7 @@ USERS_UPGRADE_SQL = (
         "(SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1);",
     )
     + _add_column_if_missing("users", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    + USERS_IS_RESOURCE_SQL
 )
 
 # bank_holidays.end_date (multi-day holidays) and bank_holidays.year (back-
@@ -458,6 +511,11 @@ BANK_HOLIDAYS_UPGRADE_SQL = _add_column_if_missing(
     "UPDATE bank_holidays SET year = EXTRACT(YEAR FROM date) WHERE year IS NULL;\n"
     "            ALTER TABLE bank_holidays ALTER COLUMN year SET NOT NULL;",
 )
+
+# equipment_assignments.note (2.0.0): the optional note of an equipment
+# booking. Shared by migrations/add_equipment_assignment_note.sql and the
+# tenant auto-migration (tenant_manager._run_auto_migrations).
+EQUIPMENT_ASSIGNMENTS_NOTE_SQL = _add_column_if_missing("equipment_assignments", "note", "TEXT")
 
 # company_events.color (event colour picker).
 COMPANY_EVENTS_COLOR_COLUMN_SQL = _add_column_if_missing("company_events", "color", "VARCHAR(20)")
@@ -555,19 +613,10 @@ CUSTOM_COLUMNS_UPGRADE_SQL = (
 )
 
 
-# Tag groups and site-scoped tags (add_tag_groups_and_sites.sql). The tables
-# are created by the schema / auto-migration; these upgrade a pre-existing
-# tags table in place (tag_groups must exist first: group_id references it).
-TAG_GROUPS_TABLE_SQL = """
-    CREATE TABLE IF NOT EXISTS tag_groups (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(100) NOT NULL UNIQUE,
-      single_select BOOLEAN NOT NULL DEFAULT FALSE,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )"""
-
+# Site-scoped tags (add_tag_groups_and_sites.sql, 1.6.0). The table is created
+# by the schema / auto-migration; TAGS_UPGRADE_STATEMENTS upgrade a
+# pre-existing tags table in place. The tag groups of that release became
+# project fields in 2.0.0 (PROJECT_FIELDS_MIGRATION_SQL converts and drops them).
 TAG_SITES_TABLE_SQL = """
     CREATE TABLE IF NOT EXISTS tag_sites (
       tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -575,26 +624,671 @@ TAG_SITES_TABLE_SQL = """
       PRIMARY KEY (tag_id, site_id)
     )"""
 
-TAGS_GROUP_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id)"
+# Teams (add_teams.sql, 1.12.0): a team belongs to one site; users are members,
+# and projects / tags / company events / equipment can be linked to teams. Every
+# FK cascades, so deleting a site removes its teams and all their links. One
+# statement per constant: the auto-migration executes them one at a time
+# (asyncpg runs a single statement per call); setup_databases.sql, the template
+# and migrations/add_teams.sql carry the same text.
+TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS teams (
+      id SERIAL PRIMARY KEY,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      color VARCHAR(7),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT teams_site_name_unique UNIQUE (site_id, name)
+    )"""
+
+TEAM_MEMBERS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS team_members (
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      PRIMARY KEY (team_id, user_id)
+    )"""
+
+PROJECT_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_teams (
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (project_id, team_id)
+    )"""
+
+TAG_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS tag_teams (
+      tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (tag_id, team_id)
+    )"""
+
+COMPANY_EVENT_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS company_event_teams (
+      event_id INTEGER NOT NULL REFERENCES company_events(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (event_id, team_id)
+    )"""
+
+EQUIPMENT_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS equipment_teams (
+      equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (equipment_id, team_id)
+    )"""
+
+TEAMS_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_teams_site ON teams(site_id)",
+    "CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_teams_team ON project_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tag_teams_team ON tag_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_company_event_teams_team ON company_event_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_equipment_teams_team ON equipment_teams(team_id)",
+)
+
+TEAMS_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    TEAMS_TABLE_SQL,
+    TEAM_MEMBERS_TABLE_SQL,
+    PROJECT_TEAMS_TABLE_SQL,
+    TAG_TEAMS_TABLE_SQL,
+    COMPANY_EVENT_TEAMS_TABLE_SQL,
+    EQUIPMENT_TEAMS_TABLE_SQL,
+    *TEAMS_INDEX_STATEMENTS,
+)
+
+TEAM_TABLES: tuple[str, ...] = (
+    "teams",
+    "team_members",
+    "project_teams",
+    "tag_teams",
+    "company_event_teams",
+    "equipment_teams",
+)
+
+TEAMS_SCHEMA_SQL = ";\n".join(TEAMS_SCHEMA_STATEMENTS) + ";"
+
+# --- Project fields (add_project_fields.sql, 2.0.0) -------------------------
+# Instance-wide custom fields on projects: text, number, toggle, select and
+# multiselect. Dropdown items carry the tag scoping rules (all_sites + sites,
+# teams per site). project_field_option_teams references teams, so the block
+# follows the teams tables in every DDL source. Every FK cascades. One
+# statement per constant: the auto-migration executes them one at a time
+# (asyncpg runs a single statement per call); setup_databases.sql, the template
+# and migrations/add_project_fields.sql carry the same text
+# (tests/test_project_fields_schema.py).
+PROJECT_FIELDS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_fields (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      field_type VARCHAR(20) NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT project_fields_type_check
+        CHECK (field_type IN ('text', 'number', 'toggle', 'select', 'multiselect'))
+    )"""
+
+PROJECT_FIELD_OPTIONS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_options (
+      id SERIAL PRIMARY KEY,
+      field_id INTEGER NOT NULL REFERENCES project_fields(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+      all_sites BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT project_field_options_field_name_unique UNIQUE (field_id, name)
+    )"""
+
+PROJECT_FIELD_OPTION_SITES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_option_sites (
+      option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      PRIMARY KEY (option_id, site_id)
+    )"""
+
+PROJECT_FIELD_OPTION_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_option_teams (
+      option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (option_id, team_id)
+    )"""
+
+PROJECT_FIELD_VALUES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_values (
+      id SERIAL PRIMARY KEY,
+      field_id INTEGER NOT NULL REFERENCES project_fields(id) ON DELETE CASCADE,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      value_text TEXT,
+      value_number DOUBLE PRECISION,
+      value_bool BOOLEAN,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT project_field_values_field_project_unique UNIQUE (field_id, project_id)
+    )"""
+
+PROJECT_FIELD_SELECTIONS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_selections (
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+      assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (project_id, option_id)
+    )"""
+
+PROJECT_FIELDS_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_project_field_option_sites_site "
+    "ON project_field_option_sites(site_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_field_option_teams_team "
+    "ON project_field_option_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_field_values_project "
+    "ON project_field_values(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_field_selections_option "
+    "ON project_field_selections(option_id)",
+)
+
+PROJECT_FIELDS_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    PROJECT_FIELDS_TABLE_SQL,
+    PROJECT_FIELD_OPTIONS_TABLE_SQL,
+    PROJECT_FIELD_OPTION_SITES_TABLE_SQL,
+    PROJECT_FIELD_OPTION_TEAMS_TABLE_SQL,
+    PROJECT_FIELD_VALUES_TABLE_SQL,
+    PROJECT_FIELD_SELECTIONS_TABLE_SQL,
+    *PROJECT_FIELDS_INDEX_STATEMENTS,
+)
+
+PROJECT_FIELD_TABLES: tuple[str, ...] = (
+    "project_fields",
+    "project_field_options",
+    "project_field_option_sites",
+    "project_field_option_teams",
+    "project_field_values",
+    "project_field_selections",
+)
+
+PROJECT_FIELDS_SCHEMA_SQL = ";\n".join(PROJECT_FIELDS_SCHEMA_STATEMENTS) + ";"
+
+# The one-off conversion of tag groups into dropdown fields (2.0.0), after the
+# tables above exist. Its own gate: it works only while tag_groups exists, so
+# it is a no-op on a fresh 2.0.0 database and on a converted one. Per group
+# (in group order): a field ('select' for a single-select group, else
+# 'multiselect', same sort_order; " (tags)" appended while the name clashes
+# with an existing field, case-insensitively), an item per tag of the group
+# (name, colour, sort_order, all_sites) with the tag's site and team links,
+# and a selection per project carrying the tag. Then the grouped tags are
+# deleted (their project_tags / tag_sites / tag_teams rows cascade), the
+# remaining tags renumbered 0..n-1 by (sort_order, name), and tags.group_id
+# and tag_groups dropped. One transaction: a failure leaves the database as it
+# was. No ':name' tokens (SQLAlchemy text() would read them as binds).
+PROJECT_FIELDS_MIGRATION_SQL = """
+    DO $$
+    DECLARE
+        grp RECORD;
+        grouped_tag RECORD;
+        new_field_id INTEGER;
+        new_option_id INTEGER;
+        candidate TEXT;
+        suffix TEXT;
+        attempt INTEGER;
+    BEGIN
+        IF to_regclass('public.tag_groups') IS NOT NULL THEN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'tags'
+                  AND column_name = 'group_id'
+            ) THEN
+                FOR grp IN
+                    SELECT id, name, single_select, sort_order FROM tag_groups
+                    ORDER BY sort_order, id
+                LOOP
+                    candidate := grp.name;
+                    attempt := 1;
+                    WHILE EXISTS (
+                        SELECT 1 FROM project_fields WHERE lower(name) = lower(candidate)
+                    ) LOOP
+                        suffix := CASE WHEN attempt = 1 THEN ' (tags)'
+                                       ELSE ' (tags ' || attempt || ')' END;
+                        candidate := left(grp.name, 100 - length(suffix)) || suffix;
+                        attempt := attempt + 1;
+                    END LOOP;
+
+                    INSERT INTO project_fields (name, field_type, sort_order)
+                    VALUES (
+                        candidate,
+                        CASE WHEN grp.single_select THEN 'select' ELSE 'multiselect' END,
+                        grp.sort_order
+                    )
+                    RETURNING id INTO new_field_id;
+
+                    FOR grouped_tag IN
+                        SELECT id, name, color, all_sites, sort_order FROM tags
+                        WHERE group_id = grp.id
+                        ORDER BY sort_order, name
+                    LOOP
+                        INSERT INTO project_field_options
+                            (field_id, name, color, all_sites, sort_order)
+                        VALUES (
+                            new_field_id, grouped_tag.name, grouped_tag.color,
+                            grouped_tag.all_sites, grouped_tag.sort_order
+                        )
+                        RETURNING id INTO new_option_id;
+
+                        INSERT INTO project_field_option_sites (option_id, site_id)
+                        SELECT new_option_id, site_id FROM tag_sites
+                        WHERE tag_id = grouped_tag.id;
+
+                        INSERT INTO project_field_option_teams (option_id, team_id)
+                        SELECT new_option_id, team_id FROM tag_teams
+                        WHERE tag_id = grouped_tag.id;
+
+                        INSERT INTO project_field_selections (project_id, option_id, assigned_at)
+                        SELECT project_id, new_option_id, COALESCE(assigned_at, CURRENT_TIMESTAMP)
+                        FROM project_tags
+                        WHERE tag_id = grouped_tag.id;
+                    END LOOP;
+                END LOOP;
+
+                DELETE FROM tags WHERE group_id IS NOT NULL;
+
+                UPDATE tags SET sort_order = ranked.position
+                FROM (
+                    SELECT id, row_number() OVER (ORDER BY sort_order, name) - 1 AS position
+                    FROM tags
+                ) AS ranked
+                WHERE tags.id = ranked.id AND tags.sort_order <> ranked.position;
+
+                DROP INDEX IF EXISTS idx_tags_group;
+                ALTER TABLE tags DROP COLUMN IF EXISTS group_id;
+            END IF;
+
+            DROP TABLE tag_groups;
+        END IF;
+    END $$"""
+
+# Probe of the project-fields auto-migration step: the step runs while a
+# table is missing or tag_groups still exists.
+PROJECT_FIELDS_PROBE_SQL = (
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+    "AND table_name IN (" + ", ".join(f"'{t}'" for t in (*PROJECT_FIELD_TABLES, "tag_groups")) + ")"
+)
+
 TAG_SITES_SITE_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id)"
 
 # One guarded DO block per column (the auto-migration runs them one at a time:
-# asyncpg executes a single statement per call).
+# asyncpg executes a single statement per call). The group_id block is kept for
+# a database that still has tag_groups (it runs only while that table exists,
+# so never on a fresh 2.0.0 schema); the project-fields migration converts the
+# groups and drops the column right after.
 TAGS_UPGRADE_STATEMENTS: tuple[str, ...] = (
     _add_column_if_missing(
-        "tags", "group_id", "INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL"
+        "tags",
+        "group_id",
+        "INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL",
+        requires="tag_groups",
     ),
     _add_column_if_missing("tags", "all_sites", "BOOLEAN NOT NULL DEFAULT TRUE"),
     _add_column_if_missing("tags", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
 )
 TAGS_UPGRADE_SQL = "".join(TAGS_UPGRADE_STATEMENTS)
 
-# Pre-release 1.6.0 builds had a tag_groups.colors_projects flag (one group coloured the
-# project bars); colouring is now a per-user Gantt preference. Idempotent drop.
-TAG_GROUPS_DROP_COLORS_STATEMENTS: tuple[str, ...] = (
-    "DROP INDEX IF EXISTS idx_tag_groups_colors_projects",
-    "ALTER TABLE tag_groups DROP COLUMN IF EXISTS colors_projects",
+# --- RBAC: roles, permissions, approvals (add_rbac.sql, 1.13.0) -----------
+# users.role holds a role key and references roles.key, so `roles` (with its
+# seeded system roles) is created BEFORE `users` in every DDL source. One
+# statement per constant: the tenant auto-migration and the data-migration
+# step execute them one at a time (asyncpg runs a single statement per call);
+# get_tenant_schema_sql(), setup_databases.sql, the template and
+# migrations/add_rbac.sql carry the same text
+# (tests/test_rbac_schema_sources.py). DO blocks carry no trailing ';'.
+ROLES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS roles (
+      id SERIAL PRIMARY KEY,
+      key VARCHAR(20) NOT NULL UNIQUE,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      description TEXT,
+      is_system BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT roles_key_format CHECK (key ~ '^[a-z][a-z0-9_]{1,19}$')
+    )"""
+
+ROLE_PERMISSIONS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      permission VARCHAR(60) NOT NULL,
+      mode VARCHAR(10) NOT NULL DEFAULT 'allow',
+      PRIMARY KEY (role_id, permission),
+      CONSTRAINT role_permissions_mode_check CHECK (mode IN ('allow', 'approval'))
+    )"""
+
+APPROVAL_POLICIES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS approval_policies (
+      action VARCHAR(60) PRIMARY KEY,
+      pm_approves BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )"""
+
+APPROVAL_POLICY_ROLES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS approval_policy_roles (
+      action VARCHAR(60) NOT NULL REFERENCES approval_policies(action) ON DELETE CASCADE,
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      PRIMARY KEY (action, role_id)
+    )"""
+
+# assignment_id: a row of project_assignments / phase_staff_assignments /
+# subphase_staff_assignments (by level), hence no FK.
+APPROVAL_REQUESTS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS approval_requests (
+      id SERIAL PRIMARY KEY,
+      requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      action VARCHAR(60) NOT NULL,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      level VARCHAR(10) NOT NULL,
+      target_id INTEGER NOT NULL,
+      assignment_id INTEGER,
+      requested TEXT,
+      previous TEXT,
+      note TEXT,
+      status VARCHAR(12) NOT NULL DEFAULT 'pending',
+      close_reason VARCHAR(20),
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TIMESTAMP,
+      decision_note TEXT,
+      superseded_by_id INTEGER REFERENCES approval_requests(id) ON DELETE SET NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT approval_requests_level_check CHECK (level IN ('project', 'phase', 'subphase')),
+      CONSTRAINT approval_requests_status_check CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'superseded', 'expired')),
+      CONSTRAINT approval_requests_close_reason_check CHECK (close_reason IN ('target_deleted', 'requester_inactive', 'permission_lost', 'overtaken', 'duplicate'))
+    )"""
+
+RBAC_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_approval_policy_roles_role ON approval_policy_roles(role_id)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_requests_project_status "
+    "ON approval_requests(project_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_requests_requester_status "
+    "ON approval_requests(requester_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_requests_pending "
+    "ON approval_requests(status) WHERE status = 'pending'",
 )
+
+# Pending self-bookings are real assignment rows: approval_status = 'pending'
+# until approved; approval_request_id points at the open request (a pending
+# create, change or removal). Guarded ADD COLUMNs (two per table), after
+# approval_requests exists.
+ASSIGNMENT_APPROVAL_TABLES: tuple[str, ...] = (
+    "project_assignments",
+    "phase_staff_assignments",
+    "subphase_staff_assignments",
+)
+
+
+def _statement(sql: str) -> str:
+    """A DO block as a single statement: no surrounding blanks, no trailing ';'."""
+    return sql.strip().removesuffix(";")
+
+
+ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS: tuple[str, ...] = tuple(
+    _statement(sql)
+    for table in ASSIGNMENT_APPROVAL_TABLES
+    for sql in (
+        _add_column_if_missing(
+            table,
+            "approval_status",
+            "VARCHAR(10) NOT NULL DEFAULT 'approved' "
+            f"CONSTRAINT {table}_approval_status_check "
+            "CHECK (approval_status IN ('approved', 'pending'))",
+        ),
+        _add_column_if_missing(
+            table,
+            "approval_request_id",
+            f"INTEGER CONSTRAINT {table}_approval_request_id_fkey "
+            "REFERENCES approval_requests(id) ON DELETE SET NULL",
+        ),
+    )
+)
+
+# Unlinked booking segments (1.17.0): a phase / subphase staff booking may
+# carry its own dates (a segment that moves within its card); both NULL =
+# linked, the booking follows the card. Guarded ADD COLUMNs plus the
+# both-or-neither CHECK, added when missing (add_booking_segments.sql, the
+# tenant auto-migration and the fresh schema share these statements).
+BOOKING_SEGMENT_TABLES: tuple[str, ...] = (
+    "phase_staff_assignments",
+    "subphase_staff_assignments",
+)
+
+BOOKING_SEGMENT_DATES_CHECK = "((start_date IS NULL) = (end_date IS NULL))"
+
+
+def _segment_dates_check_if_missing(table: str) -> str:
+    """Guarded ``ADD CONSTRAINT <table>_segment_dates_check`` (literal identifiers only)."""
+    return f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.{table}') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.{table}')
+              AND conname = '{table}_segment_dates_check'
+        ) THEN
+            ALTER TABLE {table} ADD CONSTRAINT {table}_segment_dates_check
+                CHECK {BOOKING_SEGMENT_DATES_CHECK};
+        END IF;
+    END $$"""
+
+
+BOOKING_SEGMENT_COLUMN_STATEMENTS: tuple[str, ...] = tuple(
+    _statement(sql)
+    for table in BOOKING_SEGMENT_TABLES
+    for sql in (
+        _add_column_if_missing(table, "start_date", "DATE"),
+        _add_column_if_missing(table, "end_date", "DATE"),
+        _segment_dates_check_if_missing(table),
+    )
+)
+
+# The notification types, in the order every DDL source spells them. The
+# CHECK text derived from it appears in seven places (the ORM, the four
+# CREATE TABLE notifications sources, the tenant auto-migration and the
+# widening below). Append new types at the end: the widening's marker is the
+# last one.
+NOTIFICATION_TYPES: tuple[str, ...] = (
+    "assigned",
+    "comment",
+    "mention",
+    "status_change",
+    "approval_requested",
+    "approval_decided",
+    "assignment_changed",
+    "project_changed",
+)
+
+NOTIFICATIONS_TYPE_CHECK = "type IN (" + ", ".join(f"'{t}'" for t in NOTIFICATION_TYPES) + ")"
+
+# Widen notifications_type_check on an existing table. Skipped when the
+# constraint already allows the newest type, so a migrated table is not
+# re-validated on every run (and the step can run on every pool creation).
+NOTIFICATIONS_TYPE_CHECK_SQL = f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.notifications') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.notifications')
+              AND conname = 'notifications_type_check'
+              AND strpos(pg_get_constraintdef(oid), '{NOTIFICATION_TYPES[-1]}') > 0
+        ) THEN
+            ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+            ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+                CHECK ({NOTIFICATIONS_TYPE_CHECK});
+        END IF;
+    END $$"""
+
+# sso_config.default_role becomes a role key (validated in code): drop the
+# superuser|user CHECK.
+SSO_DEFAULT_ROLE_CHECK_DROP_SQL = """
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.sso_config')
+              AND conname = 'sso_config_default_role_check'
+        ) THEN
+            ALTER TABLE sso_config DROP CONSTRAINT sso_config_default_role_check;
+        END IF;
+    END $$"""
+
+RBAC_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    ROLES_TABLE_SQL,
+    ROLE_PERMISSIONS_TABLE_SQL,
+    APPROVAL_POLICIES_TABLE_SQL,
+    APPROVAL_POLICY_ROLES_TABLE_SQL,
+    APPROVAL_REQUESTS_TABLE_SQL,
+    *RBAC_INDEX_STATEMENTS,
+    *ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
+    NOTIFICATIONS_TYPE_CHECK_SQL,
+    SSO_DEFAULT_ROLE_CHECK_DROP_SQL,
+)
+
+RBAC_TABLES: tuple[str, ...] = (
+    "roles",
+    "role_permissions",
+    "approval_policies",
+    "approval_policy_roles",
+    "approval_requests",
+)
+
+# --- RBAC seed (run after the tables; order matters) ------------------------
+# 1. The system roles with their default permissions -- defaults only for a
+#    role row created by the same statement, so an admin's edits are never
+#    re-seeded (see permissions.build_default_role_permissions_sql).
+RBAC_SEED_ROLES_SQL = build_default_role_permissions_sql()
+
+# 2. One policy per approvable action: the project manager approves, no roles.
+RBAC_SEED_POLICIES_SQL = (
+    """
+    INSERT INTO approval_policies (action, pm_approves) VALUES
+"""
+    + ",\n".join(f"      ('{p.key}', TRUE)" for p in PERMISSIONS if p.approvable)
+    + """
+    ON CONFLICT (action) DO NOTHING"""
+)
+
+# 3. Any role value without a roles row falls back to 'user' (cannot happen
+#    under the old CHECK; defensive before the FK is added).
+USERS_ROLE_RESET_SQL = """
+    UPDATE users SET role = 'user' WHERE role NOT IN (SELECT key FROM roles)"""
+
+# 4. users.role: CHECK (admin|superuser|user) -> FK to roles.key.
+USERS_ROLE_FK_CLAUSE = (
+    "CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES roles(key) "
+    "ON UPDATE CASCADE ON DELETE RESTRICT"
+)
+
+USERS_ROLE_FK_SQL = f"""
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_check'
+        ) THEN
+            ALTER TABLE users DROP CONSTRAINT users_role_check;
+        END IF;
+        IF to_regclass('public.users') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_fkey'
+        ) THEN
+            ALTER TABLE users ADD {USERS_ROLE_FK_CLAUSE};
+        END IF;
+    END $$"""
+
+RBAC_SEED_STATEMENTS: tuple[str, ...] = (
+    RBAC_SEED_ROLES_SQL,
+    RBAC_SEED_POLICIES_SQL,
+    USERS_ROLE_RESET_SQL,
+    USERS_ROLE_FK_SQL,
+)
+
+_SYSTEM_ROLE_LIST = ", ".join(f"'{r.key}'" for r in SYSTEM_ROLES)
+_APPROVABLE_LIST = ", ".join(f"'{p.key}'" for p in PERMISSIONS if p.approvable)
+_RBAC_TABLE_LIST = ", ".join(f"'{t}'" for t in RBAC_TABLES)
+
+# Tenant auto-migration trigger: an RBAC table is missing, the old role CHECK
+# is still there, or the assignment approval columns are missing.
+RBAC_NEEDS_MIGRATION_SQL = f"""
+    SELECT
+        (SELECT count(*) FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN ({_RBAC_TABLE_LIST})) < {len(RBAC_TABLES)}
+        OR EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_check'
+        )
+        OR NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'project_assignments' AND column_name = 'approval_status'
+        )"""
+
+# Data-migration trigger for the seed: a system role or an approval policy is
+# missing, or users.role is not yet the FK.
+RBAC_SEED_NEEDED_SQL = f"""
+    SELECT
+        (SELECT count(*) FROM roles WHERE key IN ({_SYSTEM_ROLE_LIST})) < {len(SYSTEM_ROLES)}
+        OR (SELECT count(*) FROM approval_policies
+            WHERE action IN ({_APPROVABLE_LIST})) < {len(APPROVABLE_KEYS)}
+        OR EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_check'
+        )
+        OR NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_fkey'
+        )"""
+
+# Pending approval requests whose card or assignment row no longer exists are
+# closed as expired (target_deleted). Run by the tenant data migrations.
+APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL = """
+    UPDATE approval_requests r
+    SET status = 'expired', close_reason = 'target_deleted', updated_at = CURRENT_TIMESTAMP
+    WHERE r.status = 'pending'
+      AND ((r.level = 'phase'
+            AND NOT EXISTS (SELECT 1 FROM project_phases ph WHERE ph.id = r.target_id))
+        OR (r.level = 'subphase'
+            AND NOT EXISTS (SELECT 1 FROM project_subphases sp WHERE sp.id = r.target_id))
+        OR (r.level = 'project' AND r.assignment_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM project_assignments a WHERE a.id = r.assignment_id))
+        OR (r.level = 'phase' AND r.assignment_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM phase_staff_assignments a WHERE a.id = r.assignment_id))
+        OR (r.level = 'subphase' AND r.assignment_id IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM subphase_staff_assignments a WHERE a.id = r.assignment_id)))"""
+
+
+# After that expiry: a pending-create row whose request is no longer pending
+# (closed, or gone) is removed, and an approved row stops pointing at a closed
+# request. One statement per assignment table; run by the tenant data
+# migrations (a data step: not part of the fresh-install DDL).
+PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL: tuple[str, ...] = tuple(
+    f"""
+    DELETE FROM {table} a
+    WHERE a.approval_status = 'pending'
+      AND NOT EXISTS (SELECT 1 FROM approval_requests r
+                      WHERE r.id = a.approval_request_id AND r.status = 'pending')"""
+    for table in ASSIGNMENT_APPROVAL_TABLES
+)
+STALE_APPROVAL_POINTER_CLEANUP_SQL: tuple[str, ...] = tuple(
+    f"""
+    UPDATE {table} a SET approval_request_id = NULL
+    WHERE a.approval_status = 'approved' AND a.approval_request_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM approval_requests r
+                      WHERE r.id = a.approval_request_id AND r.status = 'pending')"""
+    for table in ASSIGNMENT_APPROVAL_TABLES
+)
+
+
+def _sql_block(*statements: str) -> str:
+    """Statements joined for a multi-statement script (each terminated by ';')."""
+    return "".join(f"{statement};\n" for statement in statements)
 
 
 def _validate_identifier(name: str) -> str:
@@ -783,6 +1477,11 @@ def get_tenant_schema_sql() -> str:
         + COMPANY_EVENT_SITES_BACKFILL_SQL
         + """;
 
+    -- Roles (users.role references roles.key, so before users), their
+    -- permission rows, and the system roles with their default permissions.
+    """
+        + _sql_block(ROLES_TABLE_SQL, ROLE_PERMISSIONS_TABLE_SQL, RBAC_SEED_ROLES_SQL)
+        + """
     -- Users table
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -791,20 +1490,27 @@ def get_tenant_schema_sql() -> str:
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       job_title TEXT,
-      role TEXT DEFAULT 'user' NOT NULL CHECK(role IN ('admin', 'superuser', 'user')),
+      role TEXT DEFAULT 'user' NOT NULL,
       max_capacity INTEGER DEFAULT 100 NOT NULL,
       sso_provider TEXT,
       sso_id TEXT,
       active INTEGER DEFAULT 1 NOT NULL,
+      is_resource BOOLEAN NOT NULL DEFAULT TRUE,
       is_system INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES roles(key) ON UPDATE CASCADE ON DELETE RESTRICT
     );
 
     -- Upgrade of a users table that predates part-time capacity / the
     -- protected system admin.
     """
         + USERS_UPGRADE_SQL
+        + """
+    -- Upgrade of a users table from before roles: unknown role values fall
+    -- back to 'user', then the role CHECK becomes the FK to roles.key.
+    """
+        + _sql_block(USERS_ROLE_RESET_SQL, USERS_ROLE_FK_SQL)
         + """
 
     -- User-Site junction table
@@ -921,7 +1627,11 @@ def get_tenant_schema_sql() -> str:
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       allocation INTEGER DEFAULT 100,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      start_date DATE,
+      end_date DATE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT phase_staff_assignments_segment_dates_check
+        CHECK ((start_date IS NULL) = (end_date IS NULL))
     );
 
     -- Subphase staff assignments
@@ -931,7 +1641,11 @@ def get_tenant_schema_sql() -> str:
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       allocation INTEGER DEFAULT 100,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      start_date DATE,
+      end_date DATE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT subphase_staff_assignments_segment_dates_check
+        CHECK ((start_date IS NULL) = (end_date IS NULL))
     );
 
     -- Equipment assignments
@@ -941,8 +1655,14 @@ def get_tenant_schema_sql() -> str:
       equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
       start_date DATE NOT NULL,
       end_date DATE NOT NULL,
+      note TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Upgrade of an equipment_assignments table that predates booking notes.
+    """
+        + EQUIPMENT_ASSIGNMENTS_NOTE_SQL
+        + """
 
     -- Staff notes (pinned to a site/date; matches the Note model's staff_notes table)
     CREATE TABLE IF NOT EXISTS staff_notes (
@@ -1022,7 +1742,7 @@ def get_tenant_schema_sql() -> str:
       client_secret TEXT,
       redirect_uri TEXT,
       auto_create_users INTEGER DEFAULT 0,
-      default_role TEXT DEFAULT 'user' CHECK(default_role IN ('superuser', 'user')),
+      default_role TEXT DEFAULT 'user',
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -1056,10 +1776,13 @@ def get_tenant_schema_sql() -> str:
         + CUSTOM_COLUMNS_UPGRADE_SQL
         + """
 
-    -- Kanban card comments (a card is a leaf phase/subphase)
+    -- Comment threads: a Kanban card (a leaf phase/subphase) or a project
+    -- (its project-level bookings)
     CREATE TABLE IF NOT EXISTS card_comments (
       id SERIAL PRIMARY KEY,
-      entity_type VARCHAR(20) NOT NULL CHECK(entity_type IN ('phase', 'subphase')),
+      entity_type VARCHAR(20) NOT NULL CHECK("""
+        + CARD_COMMENTS_ENTITY_TYPE_CHECK
+        + """),
       entity_id INTEGER NOT NULL,
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -1069,6 +1792,11 @@ def get_tenant_schema_sql() -> str:
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
+    -- Upgrade of card_comments from before project threads (the entity-type
+    -- CHECK gains 'project'; no-op once it has it)
+    """
+        + _sql_block(PROJECT_COMMENTS_CHECK_SQL)
+        + """
     -- Upgrade of card_comments from before comments outlived their author
     -- (author_id nullable, ON DELETE SET NULL), then removal of comments and
     -- custom-column values left behind by deleted projects/phases/subphases.
@@ -1083,7 +1811,9 @@ def get_tenant_schema_sql() -> str:
     CREATE TABLE IF NOT EXISTS notifications (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      type VARCHAR(30) NOT NULL CHECK(type IN ('assigned', 'comment', 'mention', 'status_change')),
+      type VARCHAR(30) NOT NULL CHECK("""
+        + NOTIFICATIONS_TYPE_CHECK
+        + """),
       actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       entity_type VARCHAR(20),
       entity_id INTEGER,
@@ -1113,25 +1843,19 @@ def get_tenant_schema_sql() -> str:
       PRIMARY KEY (user_id, skill_id)
     );
 
-    -- Tag groups (a single-select group allows one of its tags per project)
-    """
-        + TAG_GROUPS_TABLE_SQL
-        + """;
-
     -- Tags (tenant-wide, assignable to projects; all_sites = false restricts a
     -- tag to the sites in tag_sites)
     CREATE TABLE IF NOT EXISTS tags (
       id SERIAL PRIMARY KEY,
       name VARCHAR(100) NOT NULL UNIQUE,
       color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
-      group_id INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL,
       all_sites BOOLEAN NOT NULL DEFAULT TRUE,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Upgrade of a tags table from before tag groups / site-scoped tags.
+    -- Upgrade of a tags table from before site-scoped tags.
     """
         + TAGS_UPGRADE_SQL
         + """
@@ -1148,6 +1872,37 @@ def get_tenant_schema_sql() -> str:
       assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (project_id, tag_id)
     );
+
+    -- Teams (per site) and their links to users, projects, tags, company
+    -- events and equipment, with their indexes
+    """
+        + TEAMS_SCHEMA_SQL
+        + """
+
+    -- Project fields (custom fields on projects), their dropdown items with
+    -- the items' site and team links, the values and the chosen items, with
+    -- their indexes
+    """
+        + PROJECT_FIELDS_SCHEMA_SQL
+        + """
+
+    -- Approval policies (seeded: the project manager approves), approval
+    -- requests, the assignment approval columns, the booking segment
+    -- columns (no-ops here: CREATE TABLE has them), the widened
+    -- notification types, the SSO default-role CHECK dropped, and indexes.
+    """
+        + _sql_block(
+            APPROVAL_POLICIES_TABLE_SQL,
+            APPROVAL_POLICY_ROLES_TABLE_SQL,
+            RBAC_SEED_POLICIES_SQL,
+            APPROVAL_REQUESTS_TABLE_SQL,
+            *ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
+            *BOOKING_SEGMENT_COLUMN_STATEMENTS,
+            NOTIFICATIONS_TYPE_CHECK_SQL,
+            SSO_DEFAULT_ROLE_CHECK_DROP_SQL,
+            *RBAC_INDEX_STATEMENTS,
+        )
+        + """
 
     -- Project presence (tracking active viewers for realtime collaboration)
     CREATE TABLE IF NOT EXISTS project_presence (
@@ -1199,7 +1954,6 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_user_skills_skill ON user_skills(skill_id);
     CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
-    CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id);
     CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_project ON project_presence(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_user ON project_presence(user_id);
@@ -1238,10 +1992,16 @@ async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_passwo
     VALUES ('Main Site', 'Default', 'Default', 'US', 'US')
     ON CONFLICT (name) DO NOTHING;
     """)
+    # Roles before users (users.role references roles.key). Normally already
+    # done by get_tenant_schema_sql(); idempotent, and a role created earlier
+    # keeps its (possibly edited) permissions.
+    for statement in (RBAC_SEED_ROLES_SQL, RBAC_SEED_POLICIES_SQL):
+        await conn.execute(statement)
     # User input - use parameterized queries
     await conn.execute(
-        "INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system) "
-        "VALUES ($1, $2, 'Admin', 'User', 'Administrator', 'admin', 1) "
+        "INSERT INTO users "
+        "(email, password, first_name, last_name, job_title, role, is_system, is_resource) "
+        "VALUES ($1, $2, 'Admin', 'User', 'Administrator', 'admin', 1, FALSE) "
         "ON CONFLICT (email) DO NOTHING",
         admin_email,
         admin_password_hash,

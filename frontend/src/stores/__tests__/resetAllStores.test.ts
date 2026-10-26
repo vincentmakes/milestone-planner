@@ -5,12 +5,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Project, User, AppNotification, Site } from '@/types';
+import { makeApprovalRequest } from '@/test/factories';
 import { resetAllStores, expireSession } from '../index';
 import * as appStoreModule from '../appStore';
 import { useAppStore } from '../appStore';
 import { useWhatIfStore } from '../whatIfStore';
 import { useUndoStore } from '../undoStore';
 import { useNotificationStore } from '../notificationStore';
+import { useWorkStore } from '../workStore';
 import { useCustomColumnStore } from '../customColumnStore';
 import { useUIStore } from '../uiStore';
 import { useViewStore } from '../viewStore';
@@ -31,6 +33,7 @@ function seedSignedInState() {
   useWhatIfStore.getState().queueWhatIfOperation({ method: 'PUT', url: '/api/phases/1', body: {} });
   useUndoStore.getState().saveState([PROJECT], 'drag');
   useNotificationStore.setState({ items: [{ id: 1 } as AppNotification], unreadCount: 1, panelOpen: true });
+  useWorkStore.setState({ toDecide: [makeApprovalRequest()], openCount: 1, activeTab: 'requests', loaded: true });
   useCustomColumnStore.setState({
     customColumns: [{ id: 3 } as never],
     customColumnValues: { '3-phase-1': 'High' },
@@ -48,7 +51,7 @@ describe('resetAllStores', () => {
     seedSignedInState();
   });
 
-  it('clears user data, the What-If queue, undo, notifications, custom-column data and open modals', () => {
+  it('clears user data, the What-If queue, undo, notifications, approval requests, custom-column data and open modals', () => {
     resetAllStores();
 
     const app = useAppStore.getState();
@@ -60,6 +63,10 @@ describe('resetAllStores', () => {
     expect(useUndoStore.getState().canUndo).toBe(false);
     expect(useNotificationStore.getState().items).toEqual([]);
     expect(useNotificationStore.getState().unreadCount).toBe(0);
+    expect(useWorkStore.getState().toDecide).toEqual([]);
+    expect(useWorkStore.getState().openCount).toBe(0);
+    expect(useWorkStore.getState().activeTab).toBe('assignments');
+    expect(useWorkStore.getState().loaded).toBe(false);
     expect(useCustomColumnStore.getState().customColumns).toEqual([]);
     expect(useCustomColumnStore.getState().customColumnValues).toEqual({});
     expect(useCustomColumnStore.getState().customColumnFilters).toEqual({});
@@ -128,10 +135,10 @@ describe('expireSession', () => {
 describe('appStore selectors', () => {
   it('no longer exports the array-allocating selectors (infinite re-render under Zustand 5)', () => {
     const exported = Object.keys(appStoreModule);
-    for (const name of ['selectSiteProjects', 'selectArchivedProjects', 'selectSiteStaff', 'selectSiteEquipment', 'selectIsAdmin']) {
+    for (const name of ['selectSiteProjects', 'selectArchivedProjects', 'selectSiteStaff', 'selectSiteEquipment', 'selectIsAdmin', 'selectCanManageResources']) {
       expect(exported).not.toContain(name);
     }
-    expect(exported).toContain('selectCanManageResources');
+    expect(exported).toContain('selectCanManageOthersAbsences');
     expect(exported).toContain('selectStaffSiteIds');
   });
 });

@@ -39,12 +39,27 @@ class CardAssigneeCreate(BaseModel):
     allocation: int | None = Field(None, ge=1, le=100)
 
 
+class AdjustedBooking(BaseModel):
+    """A booking of the same person shortened to make room (its new dates)."""
+
+    id: int
+    start_date: str | None = None
+    end_date: str | None = None
+    linked: bool = False
+
+
 class CardAssigneeResponse(BaseModel):
     success: bool = True
     id: int
     staff_id: int
     staff_name: str | None = None
     allocation: int
+    # The new booking's effective dates (own, else the card's) and whether it
+    # follows the card; ``adjusted`` = the person's booking shortened by a split.
+    start_date: str | None = None
+    end_date: str | None = None
+    linked: bool = True
+    adjusted: list[AdjustedBooking] = []
 
 
 class CardCommentCreate(BaseModel):

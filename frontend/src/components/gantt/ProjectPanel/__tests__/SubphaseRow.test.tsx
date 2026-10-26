@@ -143,7 +143,8 @@ describe('SubphaseRow expansion', () => {
     expect(screen.getByTitle('Column A')).toBeInTheDocument();
     expect(screen.getAllByTitle('Level 2 - Click to scroll to start date')).toHaveLength(2);
     expect(screen.getByTitle('Bob Brown')).toBeInTheDocument();
-    expect(screen.getByText('📌 Screening')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Screening' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Own dates for Bob Brown' })).toBeInTheDocument();
     expect(screen.getByTitle('Old rig')).toBeInTheDocument();
 
     fireEvent.click(row(30).querySelector('button')!);
@@ -275,5 +276,64 @@ describe('SubphaseRow editing', () => {
     expect(row(40).className).toMatch(/dragging/);
     fireEvent.dragEnd(handle);
     expect(row(40).className).not.toMatch(/dragging/);
+  });
+});
+
+describe('SubphaseRow per-person booking groups', () => {
+  const grouped = makeSubphase({
+    id: 30,
+    name: 'Screening',
+    start_date: '2026-03-02',
+    end_date: '2026-03-13',
+    staffAssignments: [
+      { id: 81, staff_id: 4, allocation: 20, start_date: '2026-03-02', end_date: '2026-03-03', linked: false },
+      { id: 82, staff_id: 4, allocation: 50, start_date: '2026-03-09', end_date: '2026-03-10', linked: false },
+      { id: 83, staff_id: 6, staff_name: 'Dana Diaz', allocation: 30, start_date: '', end_date: '' },
+    ],
+  });
+  /** The card badges of the booking rows: the ones holding a pin. */
+  const badges = () =>
+    screen
+      .queryAllByRole('button', { name: 'Screening' })
+      .map((name) => name.parentElement as HTMLElement)
+      .filter((badge) => within(badge).queryByRole('button', { name: /^Own dates for / }));
+
+  beforeEach(() => {
+    useViewStore.setState({ expandedSubphases: new Set([30]), collapsedStaffGroups: new Set() });
+  });
+
+  it('groups the person with two bookings, rows two levels deeper, singles unchanged', () => {
+    renderRow(grouped);
+    const toggle = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle.parentElement).toHaveTextContent('ScreeningBob Brown2 bookings20–50%');
+    expect(toggle.parentElement).toHaveStyle({ paddingLeft: '76px' }); // like a booking row at depth 3
+    const badge = within(toggle.parentElement!).getByRole('button', { name: 'Screening' }).parentElement as HTMLElement;
+    expect(badge.className).toMatch(/cardBadge/);
+    expect(badge.className).toBe(badges()[0].className);
+    expect(badge.getAttribute('style')).toBe(badges()[0].getAttribute('style'));
+    expect(within(badge).getAllByRole('button')).toHaveLength(1); // no pin on the overview row
+    expect(badges().map((b) => (b.parentElement as HTMLElement).style.paddingLeft)).toEqual(['108px', '108px', '76px']);
+    expect(screen.queryByRole('button', { name: /Dana Diaz's bookings/ })).not.toBeInTheDocument();
+  });
+
+  it("scrolls to the first booking from the group badge and to a booking from its own badge", () => {
+    renderRow(grouped);
+    const [groupName, firstName, secondName] = screen.getAllByRole('button', { name: 'Screening' });
+    fireEvent.click(groupName);
+    expect(useUIStore.getState().scrollToDateTrigger?.date).toBe('2026-03-02');
+    fireEvent.click(secondName);
+    expect(useUIStore.getState().scrollToDateTrigger?.date).toBe('2026-03-09');
+    fireEvent.click(firstName);
+    expect(useUIStore.getState().scrollToDateTrigger?.date).toBe('2026-03-02');
+  });
+
+  it('collapses the group to its overview row', () => {
+    renderRow(grouped);
+    fireEvent.click(screen.getByRole('button', { name: "Collapse Bob Brown's bookings" }));
+    expect(useViewStore.getState().collapsedStaffGroups.has('subphase:30:4')).toBe(true);
+    expect(screen.getByRole('button', { name: "Expand Bob Brown's bookings" })).toHaveAttribute('aria-expanded', 'false');
+    expect(badges()).toHaveLength(1);
+    expect(screen.getByTitle('Dana Diaz')).toBeInTheDocument();
   });
 });

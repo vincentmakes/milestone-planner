@@ -130,11 +130,11 @@ describe('CSS design tokens', () => {
     expect(over).toEqual([]);
   });
 
-  it('lets grid tracks and date inputs shrink (no bare 1fr track, min-width 0 on date inputs)', () => {
+  it('lets grid tracks shrink (no bare 1fr track)', () => {
     // A `1fr` track has an implicit `min-width: auto`: it cannot shrink below
-    // its content, and iOS Safari gives a date input a wide intrinsic width —
-    // so two date fields in a `1fr 1fr` row overflowed and overlapped on iPad.
-    // `minmax(0, 1fr)` is the track that shrinks.
+    // its content — two fields with a wide intrinsic width in a `1fr 1fr` row
+    // overflowed and overlapped on iPad. `minmax(0, 1fr)` is the track that
+    // shrinks.
     const bare: string[] = [];
     for (const file of stylesheets.filter((f) => f.endsWith('.module.css'))) {
       readFileSync(file, 'utf8')
@@ -149,9 +149,6 @@ describe('CSS design tokens', () => {
         });
     }
     expect(bare).toEqual([]);
-
-    const global = readFileSync(join(STYLES, 'global.css'), 'utf8');
-    expect(global).toMatch(/input\[type="date"\]\s*\{[^}]*min-width:\s*0;/);
   });
 
   it('keeps the tokens the fixed stylesheets rely on', () => {

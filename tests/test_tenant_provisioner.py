@@ -311,3 +311,21 @@ async def test_provision_route_without_a_body_seeds_the_defaults():
         )
 
     assert provision.await_args.kwargs["seed_demo_data"] is False
+
+
+async def test_seed_data_seeds_roles_and_policies_before_the_admin_user():
+    """users.role references roles.key: the roles must exist before the admin row."""
+    from app.services.tenant_provisioner import (
+        RBAC_SEED_POLICIES_SQL,
+        RBAC_SEED_ROLES_SQL,
+        run_seed_data,
+    )
+
+    conn = AsyncMock()
+    await run_seed_data(conn, "admin@acme.com", "$2b$12$hash")
+
+    executed = [call.args[0] for call in conn.execute.await_args_list]
+    admin = next(i for i, sql in enumerate(executed) if sql.startswith("INSERT INTO users"))
+    assert executed.index(RBAC_SEED_ROLES_SQL) < admin
+    assert executed.index(RBAC_SEED_POLICIES_SQL) < admin
+    assert conn.execute.await_args_list[admin].args[1:] == ("admin@acme.com", "$2b$12$hash")

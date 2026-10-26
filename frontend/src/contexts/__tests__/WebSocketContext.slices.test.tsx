@@ -11,14 +11,19 @@ import type { ChangePayload } from '@/hooks/useWebSocket';
 
 const hookState = vi.hoisted(() => ({
   onChangeReceived: undefined as undefined | ((c: ChangePayload) => void),
+  onApprovalChanged: undefined as undefined | (() => void),
   recentChanges: [] as ChangePayload[],
   connect: vi.fn(),
   disconnect: vi.fn(),
 }));
 
 vi.mock('@/hooks/useWebSocket', () => ({
-  useWebSocket: (opts: { onChangeReceived?: (c: ChangePayload) => void }) => {
+  useWebSocket: (opts: {
+    onChangeReceived?: (c: ChangePayload) => void;
+    onApprovalChanged?: () => void;
+  }) => {
     hookState.onChangeReceived = opts.onChangeReceived;
+    hookState.onApprovalChanged = opts.onApprovalChanged;
     return {
       connectionState: 'connected',
       offline: false,
@@ -45,7 +50,10 @@ vi.mock('@/api/endpoints/sites', async () => {
   };
 });
 vi.mock('@/api/endpoints/skills', () => ({ skillsApi: { getAll: vi.fn() } }));
-vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn() }, tagGroupsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/projectFields', () => ({ projectFieldsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/teams', () => ({ teamsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/roles', () => ({ rolesApi: { getAll: vi.fn(), getApprovalPolicies: vi.fn() } }));
 vi.mock('@/api/endpoints/absenceTypes', () => ({ absenceTypesApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/settings', () => ({ getInstanceSettings: vi.fn() }));
 vi.mock('@/api/endpoints/auth', () => ({ fetchCurrentUser: vi.fn() }));
@@ -58,24 +66,34 @@ import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
 import { getVacations } from '@/api/endpoints/vacations';
 import { getBankHolidays, getCompanyEvents, getSites } from '@/api/endpoints/sites';
 import { skillsApi } from '@/api/endpoints/skills';
-import { tagGroupsApi, tagsApi } from '@/api/endpoints/tags';
+import { tagsApi } from '@/api/endpoints/tags';
+import { projectFieldsApi } from '@/api/endpoints/projectFields';
+import { teamsApi } from '@/api/endpoints/teams';
+import { rolesApi } from '@/api/endpoints/roles';
 import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
 import { getInstanceSettings } from '@/api/endpoints/settings';
 import { fetchCurrentUser } from '@/api/endpoints/auth';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { resetAllStores } from '@/stores';
+import { useWorkStore } from '@/stores/workStore';
+import { mentionableUsersFor } from '@/api/endpoints/mentionableCache';
 import {
   makeCustomColumn,
   makeEquipment,
   makeProject,
+  makeProjectField,
+  makeRole,
   makeSite,
+  makeSystemRoles,
   makeStaff,
   makeTag,
+  makeTeam,
   makeUser,
   makeVacation,
 } from '@/test/factories';
 import type { BankHoliday, CompanyEvent } from '@/types';
+import { ApiError } from '@/api/client';
 
 const holiday = { id: 1, site_id: 1, date: '2026-08-01', name: 'National Day' } as BankHoliday;
 const event = { id: 2, site_id: 1, date: '2026-09-10', name: 'Audit' } as CompanyEvent;
@@ -93,7 +111,9 @@ function seedApi() {
   vi.mocked(getCompanyEvents).mockResolvedValue([event]);
   vi.mocked(skillsApi.getAll).mockResolvedValue([{ id: 1, name: 'HPLC' } as never]);
   vi.mocked(tagsApi.getAll).mockResolvedValue([makeTag()]);
-  vi.mocked(tagGroupsApi.getAll).mockResolvedValue([{ id: 1, name: 'Type' } as never]);
+  vi.mocked(projectFieldsApi.getAll).mockResolvedValue([makeProjectField()]);
+  vi.mocked(teamsApi.getAll).mockResolvedValue([makeTeam()]);
+  vi.mocked(rolesApi.getAll).mockResolvedValue(makeSystemRoles(makeRole()));
   vi.mocked(absenceTypesApi.getAll).mockResolvedValue([{ id: 1, name: 'Sick' } as never]);
   vi.mocked(getCustomColumnsWithValues).mockResolvedValue({ columns: [makeCustomColumn()], values: { '1-project-1': 'High' } });
   vi.mocked(getInstanceSettings).mockResolvedValue({ instance_title: 'Lab Planner' });
@@ -107,7 +127,12 @@ async function receive(entity_type: string) {
   });
 }
 
+const workRefresh = vi.fn(async () => {});
+const realWorkRefresh = useWorkStore.getState().refresh;
+
 beforeEach(() => {
+  workRefresh.mockClear();
+  useWorkStore.setState({ refresh: workRefresh });
   vi.useFakeTimers();
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.clearAllMocks();
@@ -118,6 +143,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  useWorkStore.setState({ refresh: realWorkRefresh });
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -139,7 +165,9 @@ describe('WebSocketProvider slice refresh', () => {
     expect(app.sites.map((s) => s.name)).toEqual(['Basel', 'Zurich']);
     expect(app.skills).toHaveLength(1);
     expect(app.tags).toHaveLength(1);
-    expect(app.tagGroups).toHaveLength(1);
+    expect(app.projectFields).toEqual([makeProjectField()]);
+    expect(app.teams).toEqual([makeTeam()]);
+    expect(app.roles.map((r) => r.key)).toEqual(['admin', 'superuser', 'user', 'team_lead']);
     expect(app.absenceTypes).toHaveLength(1);
     expect(app.bankHolidayDates).toEqual(new Set(['2026-08-01']));
     expect(app.companyEventDates).toEqual(new Set(['2026-09-10']));
@@ -159,6 +187,9 @@ describe('WebSocketProvider slice refresh', () => {
     }
     vi.mocked(skillsApi.getAll).mockImplementation(fail);
     vi.mocked(tagsApi.getAll).mockImplementation(fail);
+    vi.mocked(projectFieldsApi.getAll).mockImplementation(fail);
+    vi.mocked(teamsApi.getAll).mockImplementation(fail);
+    vi.mocked(rolesApi.getAll).mockImplementation(fail);
     vi.mocked(absenceTypesApi.getAll).mockImplementation(fail);
 
     render(<WebSocketProvider><div /></WebSocketProvider>);
@@ -175,6 +206,9 @@ describe('WebSocketProvider slice refresh', () => {
         '[WS] sites refresh failed',
         '[WS] skills refresh failed',
         '[WS] tags refresh failed',
+        '[WS] project fields refresh failed',
+        '[WS] teams refresh failed',
+        '[WS] roles refresh failed',
         '[WS] absence types refresh failed',
         '[WS] bank holidays refresh failed',
         '[WS] company events refresh failed',
@@ -184,6 +218,169 @@ describe('WebSocketProvider slice refresh', () => {
       ])
     );
     expect(useAppStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('empties the equipment slices without views.equipment, and on a 403', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'] }),
+      equipment: [makeEquipment()],
+    });
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('equipment');
+    expect(getEquipment).not.toHaveBeenCalled();
+    expect(useAppStore.getState().equipment).toEqual([]);
+
+    useAppStore.setState({ currentUser: makeUser(), equipment: [makeEquipment()], equipmentBlocks: [{ id: 9 } as never] });
+    vi.mocked(getEquipment).mockRejectedValue(new ApiError('Permission required: views.equipment', 403));
+    vi.mocked(getEquipmentBlocks).mockRejectedValue(new ApiError('Permission required: views.equipment', 403));
+    await receive('equipment');
+    await receive('equipment_block');
+    expect(useAppStore.getState().equipment).toEqual([]);
+    expect(useAppStore.getState().equipmentBlocks).toEqual([]);
+  });
+
+  it('loads the work store on mount and on window focus (the sidebar badge)', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    expect(workRefresh).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(workRefresh).toHaveBeenCalledTimes(2);
+    cleanup();
+    window.dispatchEvent(new Event('focus'));
+    expect(workRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs a failed mount load of the work store', async () => {
+    workRefresh.mockRejectedValueOnce(new Error('boom'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(error).toHaveBeenCalledWith('[WS] approvals refresh failed', expect.any(Error));
+  });
+
+  it('reloads the projects and the work store once, not the policies, on change:approval_request', async () => {
+    useAppStore.setState({
+      approvalPolicies: [{ action: 'assignments.self_create', label: 'x', pm_approves: true, role_ids: [] }],
+    });
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    workRefresh.mockClear(); // the mount load
+    await receive('approval_request');
+    expect(loadAllProjects).toHaveBeenCalledTimes(1);
+    expect(workRefresh).toHaveBeenCalledTimes(1);
+    expect(rolesApi.getApprovalPolicies).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the work store once for an unknown entity', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    workRefresh.mockClear(); // the mount load
+    await receive('brand_new_entity');
+    expect(workRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a failed approvals refresh', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    workRefresh.mockRejectedValueOnce(new Error('boom'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await receive('approval_request');
+    expect(error).toHaveBeenCalledWith('[WS] approvals refresh failed', expect.any(Error));
+  });
+
+  it.each([
+    ['user', 2],
+    ['role', 2],
+    ['tag', 1],
+  ] as const)('on change:%s the @-mention lists load again: %i loads', async (entity, loads) => {
+    const load = vi.fn().mockResolvedValue([]);
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await mentionableUsersFor(1, load);
+    await receive(entity);
+    await mentionableUsersFor(1, load);
+    expect(load).toHaveBeenCalledTimes(loads);
+  });
+
+  it('refreshes the work store on the per-user approval:changed push, debounced', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    workRefresh.mockClear(); // the mount load
+    await act(async () => {
+      hookState.onApprovalChanged!();
+      hookState.onApprovalChanged!();
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(workRefresh).toHaveBeenCalledTimes(1);
+    expect(loadAllProjects).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the approval policies on change:approval_policy once something loaded them', async () => {
+    const policy = { action: 'assignments.self_create', label: 'Book own time', pm_approves: false, role_ids: [] };
+    vi.mocked(rolesApi.getApprovalPolicies).mockResolvedValue([policy]);
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+
+    // Nothing holds them yet: no request.
+    await receive('approval_policy');
+    expect(rolesApi.getApprovalPolicies).not.toHaveBeenCalled();
+
+    useAppStore.setState({ approvalPolicies: [{ ...policy, pm_approves: true }] });
+    await receive('approval_policy');
+    expect(rolesApi.getApprovalPolicies).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().approvalPolicies).toEqual([policy]);
+    // approval_required comes from the role, not the policy: no /auth/me.
+    expect(fetchCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed approval-policy refresh', async () => {
+    useAppStore.setState({
+      approvalPolicies: [{ action: 'assignments.self_create', label: 'x', pm_approves: true, role_ids: [] }],
+    });
+    vi.mocked(rolesApi.getApprovalPolicies).mockRejectedValue(new Error('boom'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('approval_policy');
+    expect(error).toHaveBeenCalledWith('[WS] approval policies refresh failed', expect.any(Error));
+  });
+
+  it('re-reads the signed-in user and the roles on change:role', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('role');
+    expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().currentUser?.first_name).toBe('Renamed');
+    expect(rolesApi.getAll).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().roles.map((r) => r.name)).toContain('Team lead');
+    expect(loadAllProjects).not.toHaveBeenCalled();
+  });
+
+  it('reloads the project fields and the projects on change:project_field', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('project_field');
+
+    const app = useAppStore.getState();
+    expect(projectFieldsApi.getAll).toHaveBeenCalledTimes(1);
+    expect(app.projectFields).toEqual([makeProjectField()]);
+    expect(app.projects.map((p) => p.name)).toEqual(['Fresh']);
+    expect(tagsApi.getAll).not.toHaveBeenCalled();
+    expect(teamsApi.getAll).not.toHaveBeenCalled();
+  });
+
+  it('reloads teams and the slices that carry team links on change:team', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('team');
+
+    const app = useAppStore.getState();
+    expect(teamsApi.getAll).toHaveBeenCalledWith();
+    expect(app.teams).toEqual([makeTeam()]);
+    expect(app.staff).toHaveLength(1);
+    expect(app.projects.map((p) => p.name)).toEqual(['Fresh']);
+    expect(app.tags).toHaveLength(1);
+    expect(app.projectFields).toEqual([makeProjectField()]);
+    expect(app.equipment).toHaveLength(1);
+    expect(getCompanyEvents).toHaveBeenCalledWith(1);
+    expect(getVacations).not.toHaveBeenCalled();
+    expect(skillsApi.getAll).not.toHaveBeenCalled();
   });
 
   it('drops calendar and custom-column results for a site the user has left', async () => {

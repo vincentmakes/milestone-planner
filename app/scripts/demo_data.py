@@ -2,11 +2,13 @@
 The demo tenant's data, as plain Python — no database.
 
 `build_demo(today)` returns every row the demo seed inserts, keyed by *names*
-(e-mails for people, names for sites/projects/phases/equipment/tags) and with
+(e-mails for people, names for sites/projects/phases/equipment/tags/project
+fields and their items) and with
 every date relative to `today`. `app/scripts/seed_demo.py` resolves the names
 to ids as it inserts; `tests/test_demo_data.py` checks the data against the
-app's rules (status/completion pairs, single-select tag groups, site-restricted
-tags, mention tokens, dependency shape, PM membership) without a database.
+app's rules (status/completion pairs, one item per single-select project
+field, site-restricted tags, team scopes, mention tokens, dependency shape, PM
+membership) without a database.
 
 The four canonical projects (Bioprocess Scale-Up, Catalyst Optimization,
 Analytical Method Transfer, Quality System Upgrade) and the people's names are
@@ -20,6 +22,7 @@ from datetime import date, timedelta
 from typing import Any, Literal
 
 from app.services.card_status import DEFAULT_IN_PROGRESS_COMPLETION
+from app.services.permissions import default_modes
 
 Row = dict[str, Any]
 EntityKind = Literal["phase", "subphase"]
@@ -49,6 +52,14 @@ FIONA = "fiona.fischer@demo.local"
 GEORGE = "george.garcia@demo.local"
 HANNAH = "hannah.harris@demo.local"
 
+# RBAC: a custom role, and the approval mode of the own-booking keys.
+TEAM_LEAD = "team_lead"
+SELF_BOOKING_KEYS = (
+    "assignments.self_create",
+    "assignments.self_update",
+    "assignments.self_remove",
+)
+
 
 @dataclass
 class DemoData:
@@ -60,17 +71,31 @@ class DemoData:
     predefined_phases: list[str] = field(default_factory=list)
     sites: list[Row] = field(default_factory=list)
     skills: list[Row] = field(default_factory=list)
+    # Custom roles (key, name, description, sort_order, {key: mode}); inserted
+    # before the users, whose role references roles.key.
+    roles: list[Row] = field(default_factory=list)
+    # {system role key: {permission: mode}}: modes changed on a seeded role.
+    role_modes: dict[str, dict[str, str]] = field(default_factory=dict)
+    # One row per approvable action: pm_approves + the approving role keys.
+    approval_policies: list[Row] = field(default_factory=list)
     users: list[Row] = field(default_factory=list)  # incl. the admin
+    teams: list[Row] = field(default_factory=list)  # per site, members by e-mail
     equipment: list[Row] = field(default_factory=list)
-    tag_groups: list[Row] = field(default_factory=list)
+    # Project fields (2.0.0) with their dropdown items; projects name their
+    # chosen items per field (``fields``: {field name: [item names]}).
+    project_fields: list[Row] = field(default_factory=list)
     tags: list[Row] = field(default_factory=list)
     projects: list[Row] = field(default_factory=list)
     phases: list[Row] = field(default_factory=list)
     subphases: list[Row] = field(default_factory=list)
     dependencies: list[Row] = field(default_factory=list)
     project_assignments: list[Row] = field(default_factory=list)
+    # Phase / subphase bookings: optional start_date / end_date make the row an
+    # unlinked segment inside its card (absent = linked, follows the card).
     phase_assignments: list[Row] = field(default_factory=list)
     subphase_assignments: list[Row] = field(default_factory=list)
+    # Pending own bookings: the request and its pending assignment row.
+    approval_requests: list[Row] = field(default_factory=list)
     equipment_bookings: list[Row] = field(default_factory=list)
     equipment_blocks: list[Row] = field(default_factory=list)
     bank_holidays: list[Row] = field(default_factory=list)
@@ -210,6 +235,28 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(name="Quality Control", description="QC procedures", color="#ef4444"),
     ]
 
+    # A team lead: what a user may do, plus creating projects and managing
+    # colleagues' absences.
+    d.roles = [
+        dict(
+            key=TEAM_LEAD,
+            name="Team Lead",
+            description="Leads a team: creates projects and manages absences.",
+            sort_order=3,
+            permissions={
+                **default_modes("user"),
+                "projects.create": "allow",
+                "absences.manage_others": "allow",
+            },
+        )
+    ]
+    # Plain users book themselves through an approval.
+    d.role_modes = {"user": dict.fromkeys(SELF_BOOKING_KEYS, "approval")}
+    # Joining a project: its manager or a team lead approves (admins always).
+    d.approval_policies = [
+        dict(action="assignments.self_create", pm_approves=True, roles=[TEAM_LEAD]),
+    ]
+
     def person(
         email: str,
         first: str,
@@ -222,6 +269,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         max_capacity: int = 100,
         active: bool = True,
         is_system: bool = False,
+        is_resource: bool | None = None,
     ) -> Row:
         return dict(
             email=email,
@@ -234,6 +282,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             max_capacity=max_capacity,
             active=active,
             is_system=is_system,
+            # Bookable unless an administrator, like a new account.
+            is_resource=role != "admin" if is_resource is None else is_resource,
         )
 
     d.users = [
@@ -300,7 +350,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             "Fiona",
             "Fischer",
             "Analytical Chemist",
-            "user",
+            TEAM_LEAD,
             [FRANKFURT],
             ("HPLC", "Quality Control"),
         ),
@@ -324,32 +374,105 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         ),
     ]
 
-    d.equipment = [
-        dict(name="HPLC System 1", type="Analytical", sites=[WINTERTHUR]),
-        # Shared by both sites: one row per site in the equipment lists.
-        dict(name="Mass Spectrometer", type="Analytical", sites=[WINTERTHUR, FRANKFURT]),
-        dict(name="PCR Thermocycler", type="Molecular Biology", sites=[WINTERTHUR]),
-        dict(name="Biosafety Cabinet", type="Cell Culture", sites=[WINTERTHUR]),
-        dict(name="Centrifuge", type="General Lab", sites=[WINTERTHUR]),
-        dict(name="HPLC System 2", type="Analytical", sites=[FRANKFURT]),
-        dict(name="Plate Reader", type="Analytical", sites=[FRANKFURT]),
-        dict(name="Freeze Dryer", type="Processing", sites=[FRANKFURT]),
+    # Two teams per site; members are people of that site (the admin is in
+    # none). Tags, equipment and events name teams as (site, team name): no
+    # team at a site means the whole site.
+    d.teams = [
+        dict(
+            site=WINTERTHUR,
+            name="Analytical Lab",
+            description="Method development and routine analytics",
+            color="#0ea5e9",
+            members=[ALICE, CHARLIE, DIANA],
+        ),
+        dict(
+            site=WINTERTHUR,
+            name="Process Development",
+            description="Scale-up and process transfer",
+            color="#f97316",
+            members=[BOB, CHARLIE],
+        ),
+        dict(
+            site=FRANKFURT,
+            name="QA & Compliance",
+            description="Quality assurance, GMP and audits",
+            color="#10b981",
+            members=[FIONA, HANNAH],
+        ),
+        dict(
+            site=FRANKFURT,
+            name="Formulation",
+            description="Formulation and stability studies",
+            color="#8b5cf6",
+            members=[GEORGE, DIANA],
+        ),
     ]
 
-    d.tag_groups = [
-        dict(name="Project type", single_select=True, sort_order=0),
-        dict(name="Area", single_select=False, sort_order=1),
+    d.equipment = [
+        dict(name="HPLC System 1", type="Analytical", sites=[WINTERTHUR], teams=[]),
+        # Shared by both sites: one row per site in the equipment lists. Limited
+        # to the Analytical Lab at Winterthur, open to the whole Frankfurt site.
+        dict(
+            name="Mass Spectrometer",
+            type="Analytical",
+            sites=[WINTERTHUR, FRANKFURT],
+            teams=[(WINTERTHUR, "Analytical Lab")],
+        ),
+        dict(name="PCR Thermocycler", type="Molecular Biology", sites=[WINTERTHUR], teams=[]),
+        dict(name="Biosafety Cabinet", type="Cell Culture", sites=[WINTERTHUR], teams=[]),
+        dict(name="Centrifuge", type="General Lab", sites=[WINTERTHUR], teams=[]),
+        dict(name="HPLC System 2", type="Analytical", sites=[FRANKFURT], teams=[]),
+        dict(
+            name="Plate Reader",
+            type="Analytical",
+            sites=[FRANKFURT],
+            teams=[(FRANKFURT, "QA & Compliance")],
+        ),
+        dict(name="Freeze Dryer", type="Processing", sites=[FRANKFURT], teams=[]),
+    ]
+
+    # The former tag groups (converted by the 2.0.0 migration): "Project type"
+    # is a single-select field, "Area" a multiselect one; items keep the tags'
+    # colours and order. Every item is available at every site.
+    def item(name: str, color: str, sort_order: int) -> Row:
+        return dict(name=name, color=color, sort_order=sort_order, sites=None, teams=[])
+
+    d.project_fields = [
+        dict(
+            name="Project type",
+            field_type="select",
+            sort_order=0,
+            options=[item("Internal", "#6366f1", 0), item("Customer", "#0ea5e9", 1)],
+        ),
+        dict(
+            name="Area",
+            field_type="multiselect",
+            sort_order=1,
+            options=[
+                item("Process", "#f97316", 0),
+                item("Analytics", "#8b5cf6", 1),
+                item("QA", "#10b981", 2),
+            ],
+        ),
     ]
     d.tags = [
-        dict(name="Internal", color="#6366f1", group="Project type", sort_order=0, sites=None),
-        dict(name="Customer", color="#0ea5e9", group="Project type", sort_order=1, sites=None),
-        dict(name="Process", color="#f97316", group="Area", sort_order=0, sites=None),
-        dict(name="Analytics", color="#8b5cf6", group="Area", sort_order=1, sites=None),
-        dict(name="QA", color="#10b981", group="Area", sort_order=2, sites=None),
-        dict(name="Critical", color="#ef4444", group=None, sort_order=0, sites=None),
-        dict(name="Tech Transfer", color="#14b8a6", group=None, sort_order=1, sites=None),
-        # Site-restricted: only Frankfurt projects may carry it.
-        dict(name="GMP", color="#a855f7", group=None, sort_order=2, sites=[FRANKFURT]),
+        dict(name="Critical", color="#ef4444", sort_order=0, sites=None, teams=[]),
+        dict(
+            name="Tech Transfer",
+            color="#14b8a6",
+            sort_order=1,
+            sites=None,
+            teams=[],
+        ),
+        # Site-restricted: only Frankfurt projects may carry it, and there only
+        # projects of the QA & Compliance team.
+        dict(
+            name="GMP",
+            color="#a855f7",
+            sort_order=2,
+            sites=[FRANKFURT],
+            teams=[(FRANKFURT, "QA & Compliance")],
+        ),
     ]
 
     def project(
@@ -363,6 +486,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         pm: str | None = None,
         sales_pm: str | None = None,
         tags: tuple[str, ...] = (),
+        fields: dict[str, list[str]] | None = None,
+        teams: tuple[str, ...] = (),
         archived: bool = False,
         notes: str | None = None,
     ) -> Row:
@@ -376,6 +501,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             pm=pm,
             sales_pm=sales_pm,
             tags=list(tags),
+            fields=dict(fields or {}),  # {project field name: [item names]}
+            teams=list(teams),  # team names at the project's site
             archived=archived,
             notes=notes,
         )
@@ -389,7 +516,9 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today - day(30),
             today + day(150),
             sales_pm="M. Keller",
-            tags=("Internal", "Critical", "Analytics"),
+            tags=("Critical",),
+            fields={"Project type": ["Internal"], "Area": ["Analytics"]},
+            teams=("Analytical Lab",),
         ),
         project(
             BIOPROCESS,
@@ -399,7 +528,9 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today - day(15),
             today + day(200),
             pm=BOB,
-            tags=("Customer", "Critical", "Process", "Tech Transfer"),
+            tags=("Critical", "Tech Transfer"),
+            fields={"Project type": ["Customer"], "Area": ["Process"]},
+            teams=("Process Development", "Analytical Lab"),
         ),
         project(
             ANALYTICAL,
@@ -410,7 +541,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today + day(120),
             pm=CHARLIE,  # a plain user who manages one project (PM rule)
             sales_pm="S. Weber",
-            tags=("Customer", "Analytics", "QA"),
+            fields={"Project type": ["Customer"], "Area": ["Analytics", "QA"]},
         ),
         project(
             QUALITY,
@@ -419,7 +550,9 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             True,
             today - day(60),
             today + day(90),
-            tags=("Internal", "QA", "GMP"),
+            tags=("GMP",),
+            fields={"Project type": ["Internal"], "Area": ["QA"]},
+            teams=("QA & Compliance",),
         ),
         project(
             LEGACY,
@@ -556,6 +689,21 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
                     dict(project=p["name"], phase=ph["type"], staff=second, allocation=25)
                 )
 
+    # Charlie works the Analytics phase of Bioprocess in two stays instead of
+    # throughout: unlinked segments on days 1-3 and 8-10 of the phase, at the
+    # allocation the rotation gave him (the Gantt's per-person overview row).
+    analytics_start, _ = phase_window[(BIOPROCESS, "Analytics")]
+    at = next(
+        i
+        for i, a in enumerate(d.phase_assignments)
+        if (a["project"], a["phase"], a["staff"]) == (BIOPROCESS, "Analytics", CHARLIE)
+    )
+    single = d.phase_assignments[at]
+    d.phase_assignments[at : at + 1] = [
+        dict(single, start_date=analytics_start, end_date=analytics_start + day(2)),
+        dict(single, start_date=analytics_start + day(7), end_date=analytics_start + day(9)),
+    ]
+
     trial_start, _ = phase_window[(BIOPROCESS, "Trial")]
     d.project_assignments = [
         dict(
@@ -578,6 +726,20 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(project=BIOPROCESS, subphase="Pilot batch 1", staff=ALICE, allocation=100),
         dict(project=BIOPROCESS, subphase="Pilot batch 2", staff=CHARLIE, allocation=60),
         dict(project=CATALYST, subphase="Screening", staff=DIANA, allocation=50),
+    ]
+
+    # Diana asks to join the Analytics phase of Bob's project: a pending row
+    # (dashed in the plan) and the request Bob is told about below.
+    d.approval_requests = [
+        dict(
+            requester=DIANA,
+            action="assignments.self_create",
+            project=BIOPROCESS,
+            level="phase",
+            target="Analytics",
+            allocation=50,
+            note="I can take the statistics of the analytics runs.",
+        )
     ]
 
     d.equipment_bookings = [
@@ -642,6 +804,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=today + day(13),
             color="#f59e0b",
             counts_as_unavailable=False,
+            teams=[],
         ),
         dict(
             name="Year-end shutdown",
@@ -650,14 +813,18 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=date(shutdown_start.year + 1, 1, 2),
             color="#ef4444",
             counts_as_unavailable=True,
+            teams=[],
         ),
         dict(
-            name="Town hall",
+            name="Formulation stability review",
             sites=[FRANKFURT],
             date=today + day(30),
             end_date=None,
             color="#3b82f6",
             counts_as_unavailable=False,
+            # Limited to the Formulation team: a plain event like this one still
+            # shows to the whole site; only a closure would spare non-members.
+            teams=[(FRANKFURT, "Formulation")],
         ),
     ]
 
@@ -838,6 +1005,19 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             read=False,
         ),
     ]
+
+    d.notifications.append(
+        dict(
+            user=BOB,
+            type="approval_requested",
+            actor=DIANA,
+            entity=("approval_request", BIOPROCESS, "Analytics"),
+            project=BIOPROCESS,
+            title="Diana Davis asks to join Analytics at 50%",
+            body=None,
+            read=False,
+        )
+    )
 
     d.staff_notes = [
         dict(

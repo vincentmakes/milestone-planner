@@ -85,6 +85,8 @@ def test_action_for_method(method, action):
         ("/api/sites/2/holidays", "bank_holiday"),
         ("/api/sites/2", "site"),
         ("/api/skills", "skill"),
+        ("/api/teams", "team"),
+        ("/api/teams/3", "team"),
         ("/api/custom-columns/values", "custom_column"),
         ("/api/predefined-phases/reorder", "predefined_phase"),
         ("/api/settings/instance_title", "settings"),

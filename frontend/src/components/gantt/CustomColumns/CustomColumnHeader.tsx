@@ -9,11 +9,14 @@
 
 import { useRef, useState, useCallback, useMemo } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 import { updateCustomColumn } from '@/api';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useAppStore } from '@/stores/appStore';
 import type { CustomColumn } from '@/types';
 import styles from './CustomColumnHeader.module.css';
+import { can } from '@/utils/permissions';
+import { Icon, FilterIcon, NotesIcon, ChevronDownIcon, CheckBoxIcon, CheckIcon, CloseIcon } from '@/components/common/Icon';
 
 interface CustomColumnHeaderProps {
   column: CustomColumn;
@@ -28,10 +31,12 @@ export function CustomColumnHeader({
 }: CustomColumnHeaderProps) {
   const headerRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   // Global gate: custom-column definitions are admin-only
-  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  // Column definitions: custom_columns.manage
+  const canManageColumns = useAppStore((s) => can(s.currentUser, 'custom_columns.manage'));
   
   const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
   const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
@@ -52,12 +57,14 @@ export function CustomColumnHeader({
     return Array.from(values).sort();
   }, [column.id, customColumnValues]);
   
-  // The header wraps the filter button and its panel, so it is the dismiss boundary
+  // The header wraps the filter button, so it is the dismiss boundary; the
+  // panel is portaled (AnchoredPanel) and counts as inside through panelRef.
   const { onBlur: onFilterBlur } = useDismissableOverlay({
     open: showFilter,
     onClose: () => setShowFilter(false),
     wrapperRef: headerRef,
     triggerRef: filterTriggerRef,
+    panelRef: filterPanelRef,
   });
   
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -97,7 +104,7 @@ export function CustomColumnHeader({
   }, [column.id, column.width, onWidthChange]);
   
   const handleDoubleClick = () => {
-    if (!isAdmin) return;
+    if (!canManageColumns) return;
     onEdit(column);
   };
   
@@ -132,25 +139,15 @@ export function CustomColumnHeader({
     switch (column.column_type) {
       case 'boolean':
         return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-            <polyline points="9 11 12 14 22 4" />
-          </svg>
+          <Icon icon={CheckBoxIcon} size={12} />
         );
       case 'list':
         return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <Icon icon={ChevronDownIcon} size={12} />
         );
       default:
         return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="17" y1="10" x2="3" y2="10" />
-            <line x1="21" y1="6" x2="3" y2="6" />
-            <line x1="21" y1="14" x2="3" y2="14" />
-            <line x1="17" y1="18" x2="3" y2="18" />
-          </svg>
+          <Icon icon={NotesIcon} size={12} />
         );
     }
   };
@@ -162,7 +159,7 @@ export function CustomColumnHeader({
       style={{ width: column.width }}
       onDoubleClick={handleDoubleClick}
       onBlur={onFilterBlur}
-      title={isAdmin ? `${column.name} (double-click to edit)` : column.name}
+      title={canManageColumns ? `${column.name} (double-click to edit)` : column.name}
     >
       <div className={styles.content}>
         <span className={styles.icon}>{getTypeIcon()}</span>
@@ -180,63 +177,71 @@ export function CustomColumnHeader({
         aria-expanded={showFilter}
         aria-haspopup="dialog"
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-        </svg>
+        <Icon icon={FilterIcon} size={12} />
       </button>
       
-      {/* Filter dropdown */}
-      {showFilter && (
-        <div className={styles.filterDropdown} role="dialog" aria-label={`Filter ${column.name}`}>
-          <div className={styles.filterHeader}>
-            <span>Filter by value</span>
-            {hasActiveFilter && (
-              <button className={styles.clearFilterBtn} onClick={handleClearFilter}>
-                Clear
-              </button>
-            )}
-          </div>
-          
-          {uniqueValues.length === 0 ? (
-            <div className={styles.filterEmpty}>No values</div>
-          ) : (
-            <>
-              <div className={styles.filterActions}>
-                <button onClick={handleSelectAll}>Select All</button>
-                <button onClick={handleClearFilter}>Clear All</button>
-              </div>
-              <div className={styles.filterOptions}>
-                {/* Empty/null option */}
-                <label className={styles.filterOption}>
-                  <input
-                    type="checkbox"
-                    checked={activeFilter.includes('__empty__')}
-                    onChange={() => handleFilterToggle('__empty__')}
-                  />
-                  <span className={styles.filterValueEmpty}>(Empty)</span>
-                </label>
-                {uniqueValues.map(value => (
-                  <label key={value} className={styles.filterOption}>
-                    <input
-                      type="checkbox"
-                      checked={activeFilter.includes(value)}
-                      onChange={() => handleFilterToggle(value)}
-                    />
-                    <span className={styles.filterValue}>
-                      {column.column_type === 'boolean' 
-                        ? (value === 'true' ? '✓ Yes' : '✗ No')
-                        : value
-                      }
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </>
+      {/* Filter dropdown (portaled: the Gantt pane cannot clip it) */}
+      <AnchoredPanel
+        ref={filterPanelRef}
+        open={showFilter}
+        triggerRef={filterTriggerRef}
+        align="start"
+        className={styles.filterDropdown}
+        role="dialog"
+        aria-label={`Filter ${column.name}`}
+      >
+        <div className={styles.filterHeader}>
+          <span>Filter by value</span>
+          {hasActiveFilter && (
+            <button className={styles.clearFilterBtn} onClick={handleClearFilter}>
+              Clear
+            </button>
           )}
         </div>
-      )}
+        
+        {uniqueValues.length === 0 ? (
+          <div className={styles.filterEmpty}>No values</div>
+        ) : (
+          <>
+            <div className={styles.filterActions}>
+              <button onClick={handleSelectAll}>Select All</button>
+              <button onClick={handleClearFilter}>Clear All</button>
+            </div>
+            <div className={styles.filterOptions}>
+              {/* Empty/null option */}
+              <label className={styles.filterOption}>
+                <input
+                  type="checkbox"
+                  checked={activeFilter.includes('__empty__')}
+                  onChange={() => handleFilterToggle('__empty__')}
+                />
+                <span className={styles.filterValueEmpty}>(Empty)</span>
+              </label>
+              {uniqueValues.map(value => (
+                <label key={value} className={styles.filterOption}>
+                  <input
+                    type="checkbox"
+                    checked={activeFilter.includes(value)}
+                    onChange={() => handleFilterToggle(value)}
+                  />
+                  <span className={styles.filterValue}>
+                    {column.column_type === 'boolean' ? (
+                      <span className={styles.booleanValue}>
+                        <Icon icon={value === 'true' ? CheckIcon : CloseIcon} size={12} />
+                        {value === 'true' ? 'Yes' : 'No'}
+                      </span>
+                    ) : (
+                      value
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </AnchoredPanel>
       
-      {isAdmin && (
+      {canManageColumns && (
         <div 
           className={styles.resizeHandle}
           onMouseDown={handleMouseDown}
