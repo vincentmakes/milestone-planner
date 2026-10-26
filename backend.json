@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "label": "backend coverage",
-  "message": "89%",
-  "color": "green"
+  "message": "93%",
+  "color": "brightgreen"
 }
