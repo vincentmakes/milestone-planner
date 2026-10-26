@@ -1,5 +1,8 @@
 # API Reference
 
+!!! note "Route gates and side effects"
+    This page documents request and response shapes for API users. The auth gate, site scoping and side effects (broadcasts, notifications, validation rules) of every route are documented in [Route auth gates and side effects](routes.md) — update both when a route changes.
+
 ## Interactive Documentation
 
 When the application is running, interactive API documentation is available at:

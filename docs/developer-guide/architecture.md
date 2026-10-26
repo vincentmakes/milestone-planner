@@ -1,5 +1,8 @@
 # Architecture
 
+!!! note "File-by-file map"
+    This page is the overview. The file-by-file map of the repository, the terminology, the environment variables and the CI workflows are in the [Codebase map](codebase-map.md).
+
 ## Overview
 
 Milestone Planner is a full-stack application with a FastAPI backend serving a React SPA frontend, backed by PostgreSQL with per-tenant database isolation.

@@ -54,6 +54,9 @@ markdown_extensions:
   - toc:
       permalink: true
 
+validation:
+  anchors: warn
+
 extra_css:
   - stylesheets/extra.css
 
@@ -89,5 +92,14 @@ nav:
     - Architecture: developer-guide/architecture.md
     - Local Development: developer-guide/local-development.md
     - API Reference: developer-guide/api-reference.md
+    - Codebase Reference:
+      - Codebase Map: developer-guide/codebase-map.md
+      - Database Schema: developer-guide/database-schema.md
+      - Route Auth Gates & Side Effects: developer-guide/routes.md
+      - Authentication & Tenancy: developer-guide/auth-and-tenancy.md
+      - Real-Time Internals: developer-guide/realtime.md
+      - Frontend Architecture: developer-guide/frontend-architecture.md
+      - Conventions in Depth: developer-guide/conventions-in-depth.md
+      - Working with AI Agents: developer-guide/ai-workflow.md
     - Contributing: developer-guide/contributing.md
     - Release Notes: release-notes.md

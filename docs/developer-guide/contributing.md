@@ -8,6 +8,8 @@
 4. Run tests and linting locally
 5. Submit a pull request
 
+Working with AI agents on this repository (rounds, model routing, which checks to run when)? See [Working with AI agents](ai-workflow.md).
+
 ## Licensing of Contributions
 
 From 1.6.1 onward, Milestone Planner is licensed under the
