@@ -604,7 +604,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   
   return (
     <div 
-      className={`${styles.container} compact-ui ${embedded ? styles.embedded : ''}`}
+      className={`${styles.container} ${embedded ? `${styles.embedded} compact-ui` : ''}`}
       style={containerStyle}
     >
       {/* Left Panel - Staff List */}
@@ -711,7 +711,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
             </AnchoredPanel>
           </div>
         </div>
-        <div className={styles.panelBody} ref={panelRef}>
+        <div className={`${styles.panelBody} compact-ui`} ref={panelRef}>
           {siteStaff.length === 0 ? (
             <div className={styles.empty}>
               <p>No staff found</p>
@@ -896,7 +896,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
       />
       
       {/* Right Side - Timeline */}
-      <div className={styles.timeline}>
+      <div className={`${styles.timeline} compact-ui`}>
         {/* Purple header spacer in embedded mode - stays fixed above scroll */}
         {embedded && <div className={styles.timelineHeaderSpacer} />}
         

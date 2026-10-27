@@ -66,13 +66,13 @@ export function ArchivedView() {
   const showHighlighting = viewMode === 'week' || viewMode === 'month';
   
   return (
-    <div className={`${styles.container} compact-ui`}>
+    <div className={styles.container}>
       {/* Left Panel - Project List */}
       <div className={styles.projectPanel}>
         <div className={styles.panelHeader}>
           Archived Projects
         </div>
-        <div className={styles.panelContent} ref={panelRef}>
+        <div className={`${styles.panelContent} compact-ui`} ref={panelRef}>
           {archivedProjects.length === 0 ? (
             <div className={styles.emptyState}>
               <p>No archived projects</p>
@@ -126,7 +126,7 @@ export function ArchivedView() {
       </div>
       
       {/* Right Side - Timeline (matches Gantt Timeline structure) */}
-      <div className={styles.timelineWrapper}>
+      <div className={`${styles.timelineWrapper} compact-ui`}>
         <div className={styles.timelineScroll}>
           <div className={styles.timelineContent} style={{ width: totalWidth }}>
             {/* Timeline Header */}

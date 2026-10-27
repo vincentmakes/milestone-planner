@@ -54,6 +54,13 @@ beforeEach(() => {
   });
 });
 
+describe('Timeline scale', () => {
+  it('keeps its header and body compact (compact-ui on its root)', () => {
+    const { container } = renderTimeline();
+    expect(container.firstElementChild).toHaveClass('compact-ui');
+  });
+});
+
 describe('Timeline initial position', () => {
   it("restores this session's scroll offset", async () => {
     useViewStore.setState({ timelineScrollLeft: 450 });

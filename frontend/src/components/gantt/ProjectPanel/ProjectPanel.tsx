@@ -280,7 +280,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
           
           {/* Custom Column Headers (if any) */}
           {visibleColumns.length > 0 && (
-            <div className={styles.columnHeaders}>
+            <div className={`${styles.columnHeaders} compact-ui`}>
               <div className={styles.nameColumnHeader} style={{ width }} />
               {visibleColumns.map(column => (
                 <CustomColumnHeader
@@ -294,7 +294,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
           )}
 
           {/* Scrollable body */}
-          <div ref={ref} className={styles.body}>
+          <div ref={ref} className={`${styles.body} compact-ui`}>
             {projects.length === 0 ? (
               <div className={styles.empty}>
                 <p>{isFiltered ? 'No projects match the filter' : 'No projects found'}</p>

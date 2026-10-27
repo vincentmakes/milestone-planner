@@ -43,9 +43,12 @@ beforeEach(() => {
 });
 
 describe('CrossSiteView', () => {
-  it('keeps the compact text and icon scale on its root (compact-ui)', () => {
+  it('keeps the title strip at the app scale and the rows and timeline compact (compact-ui)', () => {
     const { container } = render(<CrossSiteView />);
-    expect(container.firstElementChild).toHaveClass('compact-ui');
+    expect(container.firstElementChild).not.toHaveClass('compact-ui');
+    expect(container.querySelector('[class*="panelHeader"]')!.closest('.compact-ui')).toBeNull();
+    expect(container.querySelector('[class*="panelBody"]')).toHaveClass('compact-ui');
+    expect(container.querySelector('[class*="timeline"]')).toHaveClass('compact-ui');
   });
 
   it('lists each site with its active projects, real names and customers for every site', () => {

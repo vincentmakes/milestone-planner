@@ -54,10 +54,10 @@ beforeEach(() => {
 });
 
 describe('GanttContainer default overview panel', () => {
-  it('keeps the compact text and icon scale on its root (compact-ui)', () => {
+  it('leaves its root at the app scale: the compact scale sits on the data areas inside', () => {
     seed('none');
     const { container } = render(<GanttContainer />);
-    expect(container.firstElementChild).toHaveClass('compact-ui');
+    expect(container.firstElementChild).not.toHaveClass('compact-ui');
   });
 
   it('opens the Staff panel when the default is staff', () => {

@@ -266,15 +266,24 @@ uses `--font-size-base` and `--line-height-normal`.
 | `--font-size-3xl` | 30 px | 32 px | unchanged | Login title |
 | `--icon-scale` | 1.125 | 1.125 | 1 | Multiplies every `Icon` `size` and the `Button` / `Input` / `Select` icon slots (§3.14) |
 
-**Compact scale.** The five timeline views — Gantt, Staff Overview, Equipment, Cross-site and
-Archived — keep the denser scale: their root element carries the global class `compact-ui`
+**Compact scale.** The data of the five timeline views — Gantt, Staff Overview, Equipment,
+Cross-site and Archived — keeps the denser scale through the global class `compact-ui`
 (`styles/global.css`), which re-declares `--font-size-xs` … `--font-size-base` and
-`--icon-scale` and resets the inherited text size to its own base. Everything rendered inside
-(rows, toolbars, the embedded Staff and Equipment panels, the shared `common/` pickers) reads the
-compact values; popovers, menus and dialogs that portal to `<body>` take the app scale, so a
-dialog opened from the Gantt matches the rest of the app. Custom properties resolve where they
-are declared, so the scope must re-declare the tokens themselves: a factor on the root tokens
-could not be undone by a child. A new timeline view puts `compact-ui` on its root.
+`--icon-scale` and resets the inherited text size to its own base. It sits on the data areas,
+not on the view's root, so the **title strip** above them (the Gantt project panel's `.header`
+with "Projects", its count, its 28 px icon buttons and **New**; the `.panelHeader` of Staff
+Overview, Equipment, Cross-site and Archived with its title, count and Filter trigger) takes the
+app scale like the rest of the app. Compact: the Gantt's custom-column headers and project rows
+(`ProjectPanel` `.columnHeaders`, `.body`) and the whole `Timeline` (header and bars); in the
+four other views the list (`.panelBody`, Archived `.panelContent`) and the timeline
+(`.timeline`, Archived `.timelineWrapper`); the Staff and Equipment panels embedded below the
+Gantt are compact as a whole, their 36 px header included. The strips keep their pinned heights
+(`--timeline-header-total`, 36 px embedded), so the rows still line up with the timeline header.
+A panel rendered inline inside a compact area reads the compact values; popovers, menus and
+dialogs that portal to `<body>` take the app scale, so a dialog opened from the Gantt matches the
+rest of the app. Custom properties resolve where they are declared, so the scope must re-declare
+the tokens themselves: a factor on the root tokens could not be undone by a child. A new timeline
+view puts `compact-ui` on its rows and its timeline, not on its title strip.
 
 **Read the tokens.** Outside the timeline directories (`components/gantt/`, `views/StaffView/`,
 `views/EquipmentView/`, `views/CrossSiteView/`, `views/ArchivedView/`) a `font-size` in a
@@ -864,8 +873,9 @@ import { Icon, EditIcon, PlusIcon } from '@/components/common/Icon';
   (`CheckCircleOutlinedIcon`).
 - **Sized by `size`** (px at the compact scale, default 16), which becomes the svg's font size
   `calc(<size>px * var(--icon-scale))` — Material icons are 1em square. `--icon-scale` is 1.125
-  across the app and 1 inside the `.compact-ui` timeline views (§2.10), so one `size` reads right
-  in both and no call site changes with the scale; the sizes in the table below are compact px. A
+  across the app and 1 inside `.compact-ui` (the rows and timelines of the timeline views,
+  §2.10), so one `size` reads right in both and no call site changes with the scale; the sizes
+  in the table below are compact px. A
   stylesheet that sets the svg's `width` / `height` (the `Button` icon slot, a row's `.chevron`)
   wins — multiply it by `var(--icon-scale)` too, as the `Button`, `Input` and `Select` slots do —
   and rotations by CSS keep working on the svg element.
@@ -908,7 +918,8 @@ next to its `title`.
 **Documented exception — the Gantt header.** The project panel's header actions (staff and
 equipment toggle, project filter, group by, colour by, column visibility, custom-column manager,
 import, new project) are compact 28 px buttons, mostly icon-only, because the header sits above
-a dense timeline where 36 px labelled buttons would take too much room. Keep them compact, give
+a dense timeline where 36 px labelled buttons would take too much room. The strip takes the app
+scale (§2.10), so their icons are ×1.125 inside the same 28 px boxes. Keep them compact, give
 each a `title` *and* an `aria-label`, mark svgs `aria-hidden`, give on/off toggles
 `aria-pressed` and dropdown triggers `aria-expanded` + `aria-haspopup` (debt: `.newProjectBtn`
 has no fixed height).

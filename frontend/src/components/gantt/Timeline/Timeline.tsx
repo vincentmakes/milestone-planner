@@ -301,7 +301,7 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
     }, []);
 
     return (
-      <div className={styles.timeline}>
+      <div className={`${styles.timeline} compact-ui`}>
         <div 
           ref={horizontalScrollRef} 
           className={styles.horizontalScroll}

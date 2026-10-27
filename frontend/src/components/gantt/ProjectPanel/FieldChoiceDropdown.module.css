@@ -55,7 +55,7 @@
 
 .header {
   padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -76,7 +76,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.75rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: var(--text-primary);
   cursor: pointer;
   transition: background var(--transition-fast);
@@ -142,7 +142,7 @@
 
 .footerBtn {
   padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   font-family: inherit;
   color: var(--accent-blue);
