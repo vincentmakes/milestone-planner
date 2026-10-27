@@ -12,14 +12,23 @@
  * `data-density` attribute, so every rule selects on that rather than on a
  * width. **CSS in the header must contain no pixel breakpoints.**
  *
- * The tiers come from an actual width budget for the worst realistic case —
- * admin, Gantt view, instance title set, several people online:
+ * The tiers come from the width each one needs before a label truncates,
+ * measured at the 2.2 type scale (text one step up, icons x1.125) on the
+ * demo — admin, Gantt view, instance title "Demo Instance", site
+ * "Winterthur", team filter "Whole site", one person online (each extra
+ * avatar adds ~22px):
  *
- *   full      >= 1600   ~1627px needed: everything at full size
- *   compact   >= 1280   ~1437px: labels become icons, dividers go, dates shorten
- *   condensed >= 1024   ~1067px: zoom and undo/redo move into the overflow menu
- *   minimal    < 1024    ~697px: view modes, theme and What If follow them,
+ *   full      >= 1650   1613px needed: everything at full size
+ *   compact   >= 1280   1399px: labels become icons, dividers go, dates shorten;
+ *                                the instance title and site name ellipsize below
+ *   condensed >= 1024   1031px: zoom and undo/redo move into the overflow menu;
+ *                                the site selector drops to its icon below
+ *   minimal    < 1024    641px: view modes, theme and What If follow them,
  *                                and the logo drops its wordmark
+ *
+ * Before 2.2 the same measure gave 1580 / 1374 / 1012 / 641, so only `full`
+ * moved (from 1600): the other tiers' gaps grew by 20-25px, not enough to
+ * give up a tier at those widths.
  *
  * Zoom and undo/redo are demoted first because both already have keyboard
  * equivalents in useKeyboardShortcuts (`+`/`-`, Ctrl+Z / Ctrl+Y). View modes
@@ -32,7 +41,7 @@ export type HeaderDensity = 'full' | 'compact' | 'condensed' | 'minimal';
 
 /** Ordered widest-first; the first match wins, anything narrower is 'minimal'. */
 const TIERS: readonly (readonly [HeaderDensity, string])[] = [
-  ['full', '(min-width: 1600px)'],
+  ['full', '(min-width: 1650px)'],
   ['compact', '(min-width: 1280px)'],
   ['condensed', '(min-width: 1024px)'],
 ] as const;

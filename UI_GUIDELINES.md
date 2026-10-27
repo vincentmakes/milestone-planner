@@ -316,7 +316,7 @@ Debt: 103 raw `z-index` literals versus 14 token reads. New code uses the scale.
 | 641–1024 px | Tablet | Narrower panels |
 | > 1024 px | Desktop | Full layout |
 
-The header does not use these. Its four density tiers (`full` ≥ 1600, `compact` ≥ 1280,
+The header does not use these. Its four density tiers (`full` ≥ 1650, `compact` ≥ 1280,
 `condensed` ≥ 1024, `minimal` below) are defined once in `hooks/useHeaderDensity.ts` and applied
 as `data-density` (§3.11). Every other `@media` width in a stylesheet is 640 or 1024 px — don't
 add an off-scale one.
@@ -786,7 +786,7 @@ from the inline `project.tags[].color`, which is stale during What-If.
 
 ### 3.11 Header density
 
-`useHeaderDensity()` is the one definition of the header's width tiers (`full` ≥ 1600 px,
+`useHeaderDensity()` is the one definition of the header's width tiers (`full` ≥ 1650 px,
 `compact` ≥ 1280, `condensed` ≥ 1024, `minimal` below). The header applies it as
 `data-density` and every header rule selects on that attribute. The same tier decides which
 controls move into `HeaderOverflowMenu`: zoom and undo/redo at `condensed` (they have keyboard
