@@ -39,7 +39,7 @@
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.5px;
   box-shadow: 0 0 0 2px var(--bg-secondary);
@@ -51,7 +51,7 @@
 }
 
 .title {
-  font-size: 13px;
+  font-size: var(--font-size-md);
   line-height: 1.35;
   display: flex;
   flex-wrap: wrap;
@@ -76,7 +76,7 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   line-height: 1;
   padding: 0 0.25rem;
   border-radius: 4px;

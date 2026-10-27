@@ -9,7 +9,7 @@
 /* Toolbar contents (layout comes from the shared PanelToolbar) */
 
 .count {
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -25,7 +25,7 @@
 }
 
 .emptyHint {
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   margin-top: 0.5rem;
 }
 
@@ -62,7 +62,7 @@
 }
 
 .typeCount {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -112,7 +112,7 @@
   margin-top: 1rem;
   background: rgba(59, 130, 246, 0.1);
   border-radius: var(--radius-md);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: var(--accent-blue);
 }
 
@@ -136,7 +136,7 @@
 
 .formHeader h3 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--font-size-xl);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -150,7 +150,7 @@
   background: rgba(245, 158, 11, 0.1);
   border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: var(--radius-md);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: #f59e0b;
 }
 

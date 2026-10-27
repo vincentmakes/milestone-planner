@@ -22,14 +22,15 @@
   --font-family: 'Inter', 'Arial MT', Arial, -apple-system, BlinkMacSystemFont, sans-serif;
   
   /* Font sizes (minimum 12px for readability) */
-  --font-size-xs: 12px;   /* Minimum readable size */
-  --font-size-sm: 12px;   /* Minimum readable size */
-  --font-size-md: 12px;   /* Callout/Sublines */
-  --font-size-base: 14px; /* Body */
+  --font-size-xs: 13px;   /* Minimum readable size (12 px in .compact-ui) */
+  --font-size-sm: 13px;   /* Minimum readable size (12 px in .compact-ui) */
+  --font-size-md: 13px;   /* Callout/Sublines (12 px in .compact-ui) */
+  --font-size-base: 15px; /* Body (14 px in .compact-ui) */
   --font-size-lg: 16px;   /* Paragraphs */
   --font-size-xl: 18px;   /* S Title */
   --font-size-2xl: 24px;  /* M Title */
   --font-size-3xl: 32px;  /* L Title */
+  --icon-scale: 1.125;    /* Icons (1 in .compact-ui) */
   
   /* Line height - 1.5x recommended */
   --line-height-tight: 1.3;
@@ -181,14 +182,15 @@
   --font-family: 'Inter', 'Arial MT', Arial, -apple-system, BlinkMacSystemFont, sans-serif;
   
   /* Font sizes (minimum 12px for readability) */
-  --font-size-xs: 12px;   /* Minimum readable size */
-  --font-size-sm: 12px;   /* Minimum readable size */
-  --font-size-md: 12px;   /* Callout/Sublines */
-  --font-size-base: 14px; /* Body */
+  --font-size-xs: 13px;   /* Minimum readable size (12 px in .compact-ui) */
+  --font-size-sm: 13px;   /* Minimum readable size (12 px in .compact-ui) */
+  --font-size-md: 13px;   /* Callout/Sublines (12 px in .compact-ui) */
+  --font-size-base: 15px; /* Body (14 px in .compact-ui) */
   --font-size-lg: 16px;   /* Paragraphs */
   --font-size-xl: 18px;   /* S Title */
   --font-size-2xl: 24px;  /* M Title */
   --font-size-3xl: 32px;  /* L Title */
+  --icon-scale: 1.125;    /* Icons (1 in .compact-ui) */
   
   /* Line height - 1.5x recommended */
   --line-height-tight: 1.3;

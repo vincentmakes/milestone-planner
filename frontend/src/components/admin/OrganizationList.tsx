@@ -177,10 +177,10 @@ export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: Orga
 
       {/* Info Panel */}
       <div className={styles.panel} style={{ padding: '1rem 1.25rem' }}>
-        <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+        <h3 style={{ margin: '0 0 0.5rem', fontSize: 'var(--font-size-base)', color: 'var(--text-primary)' }}>
           About Organizations
         </h3>
-        <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        <p style={{ margin: 0, fontSize: 'var(--font-size-md)', color: 'var(--text-muted)', lineHeight: 1.6 }}>
           Organizations allow multiple tenants to share a single SSO configuration. This is useful for enterprises 
           with multiple departments or subsidiaries that use the same Microsoft Entra ID tenant. Each tenant within 
           an organization can have its own group-based access requirements to control which Entra groups can access 

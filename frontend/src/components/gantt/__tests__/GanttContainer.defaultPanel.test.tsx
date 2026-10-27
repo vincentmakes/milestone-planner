@@ -54,6 +54,12 @@ beforeEach(() => {
 });
 
 describe('GanttContainer default overview panel', () => {
+  it('keeps the compact text and icon scale on its root (compact-ui)', () => {
+    seed('none');
+    const { container } = render(<GanttContainer />);
+    expect(container.firstElementChild).toHaveClass('compact-ui');
+  });
+
   it('opens the Staff panel when the default is staff', () => {
     seed('staff');
     render(<GanttContainer />);

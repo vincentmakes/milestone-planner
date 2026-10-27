@@ -66,7 +66,7 @@ export function ArchivedView() {
   const showHighlighting = viewMode === 'week' || viewMode === 'month';
   
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} compact-ui`}>
       {/* Left Panel - Project List */}
       <div className={styles.projectPanel}>
         <div className={styles.panelHeader}>

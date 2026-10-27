@@ -353,7 +353,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
               onClick={() => setActiveTab(tab)}
               style={{
                 padding: '0.5rem 1rem',
-                fontSize: '0.875rem',
+                fontSize: 'var(--font-size-base)',
                 fontWeight: 500,
                 background: activeTab === tab ? 'var(--bg-secondary)' : 'transparent',
                 border: activeTab === tab ? '1px solid var(--border-color)' : '1px solid transparent',
@@ -474,7 +474,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                       color: 'var(--accent-green)',
                       borderRadius: 'var(--radius-md)',
                       marginBottom: '1rem',
-                      fontSize: '0.875rem'
+                      fontSize: 'var(--font-size-base)'
                     }}>
                       {ssoSuccess}
                     </div>
@@ -487,7 +487,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                       onChange={setSsoEnabled}
                       label="Enable SSO for this organization"
                     />
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                       When enabled, all tenants in this organization can use SSO login.
                       Organization SSO takes precedence over any SSO a member tenant
                       configured for itself, so tenant-level SSO settings are overridden.
@@ -574,7 +574,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                       {isTestingSSO ? 'Testing...' : 'Test configuration'}
                     </button>
                   </div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem', display: 'block' }}>
+                  <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginTop: '0.5rem', display: 'block' }}>
                     The test checks the configuration that is <strong>saved</strong> — save your
                     changes first.
                   </span>
@@ -596,7 +596,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                       color: 'var(--text-primary)',
                       borderRadius: 'var(--radius-md)',
                       marginBottom: '1rem',
-                      fontSize: '0.875rem',
+                      fontSize: 'var(--font-size-base)',
                     }}>
                       {tenantNotice}
                     </div>
@@ -650,7 +650,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                               <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
                                 {tenant.name}
                               </div>
-                              <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                              <div style={{ fontSize: 'var(--font-size-md)', color: 'var(--text-muted)' }}>
                                 <code>{tenant.slug}</code> • {tenant.status}
                               </div>
                             </div>
@@ -658,7 +658,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                               <button
                                 className={`${styles.btn} ${styles.btnSecondary}`}
                                 onClick={() => handleEditTenantGroups(tenant)}
-                                style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+                                style={{ padding: '0.375rem 0.75rem', fontSize: 'var(--font-size-md)' }}
                               >
                                 Configure Groups
                               </button>
@@ -666,7 +666,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                                 className={`${styles.btn} ${styles.btnSecondary}`}
                                 onClick={() => handleRemoveTenant(tenant.id)}
                                 disabled={isBusy}
-                                style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem', color: 'var(--accent-red)' }}
+                                style={{ padding: '0.375rem 0.75rem', fontSize: 'var(--font-size-md)', color: 'var(--accent-red)' }}
                               >
                                 Remove
                               </button>
@@ -697,21 +697,21 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                                   className={`${styles.btn} ${styles.btnPrimary}`}
                                   onClick={handleSaveTenantGroups}
                                   disabled={isBusy}
-                                  style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+                                  style={{ padding: '0.375rem 0.75rem', fontSize: 'var(--font-size-md)' }}
                                 >
                                   Save
                                 </button>
                                 <button
                                   className={`${styles.btn} ${styles.btnSecondary}`}
                                   onClick={() => setEditingTenant(null)}
-                                  style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+                                  style={{ padding: '0.375rem 0.75rem', fontSize: 'var(--font-size-md)' }}
                                 >
                                   Cancel
                                 </button>
                               </div>
                             </div>
                           ) : tenant.required_group_ids.length > 0 ? (
-                            <div style={{ marginTop: '0.75rem', fontSize: '0.8125rem' }}>
+                            <div style={{ marginTop: '0.75rem', fontSize: 'var(--font-size-md)' }}>
                               <span style={{ color: 'var(--text-muted)' }}>Required groups: </span>
                               <span style={{ color: 'var(--text-secondary)' }}>
                                 {tenant.required_group_ids.length} group(s) ({tenant.group_membership_mode} mode)

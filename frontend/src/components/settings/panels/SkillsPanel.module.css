@@ -9,7 +9,7 @@
 /* Toolbar contents (layout comes from the shared PanelToolbar) */
 
 .count {
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -25,7 +25,7 @@
 }
 
 .emptyHint {
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   margin-top: 0.5rem;
 }
 
@@ -78,7 +78,7 @@
 }
 
 .skillDesc {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -137,7 +137,7 @@
 
 .formHeader h3 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--font-size-xl);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -150,7 +150,7 @@
 }
 
 .field label {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -180,7 +180,7 @@
 }
 
 .previewText {
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 

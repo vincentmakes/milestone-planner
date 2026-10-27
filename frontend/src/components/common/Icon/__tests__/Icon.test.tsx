@@ -1,6 +1,7 @@
 /**
  * The app's icons are Material icons drawn through `Icon`: decorative
- * (`aria-hidden`) unless given a title, sized in px, coloured by the text.
+ * (`aria-hidden`) unless given a title, sized in compact px times the
+ * stylesheet's `--icon-scale`, coloured by the text.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -13,19 +14,19 @@ import { iconStyleCache } from '../iconStyleCache';
 const names = Object.keys(icons) as Array<keyof typeof icons>;
 
 describe('Icon', () => {
-  it('renders a decorative svg at 16 px by default', () => {
+  it('renders a decorative svg at 16 px times the icon scale by default', () => {
     const { container } = render(<Icon icon={icons.EditIcon} />);
     const svg = container.querySelector('svg') as SVGElement;
     expect(svg).toHaveAttribute('aria-hidden', 'true');
     expect(svg).not.toHaveAttribute('role');
-    expect(svg.style.fontSize).toBe('16px');
+    expect(svg.style.fontSize).toBe('calc(16px * var(--icon-scale))');
     expect(svg).toHaveAttribute('viewBox', '0 0 24 24');
   });
 
   it('takes a size and a class name', () => {
     const { container } = render(<Icon icon={icons.CheckIcon} size={12} className="tick" />);
     const svg = container.querySelector('svg') as SVGElement;
-    expect(svg.style.fontSize).toBe('12px');
+    expect(svg.style.fontSize).toBe('calc(12px * var(--icon-scale))');
     expect(svg).toHaveClass('tick');
   });
 

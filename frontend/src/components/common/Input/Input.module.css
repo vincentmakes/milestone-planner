@@ -90,8 +90,8 @@
 
 .leftIcon svg,
 .rightIcon svg {
-  width: 16px;
-  height: 16px;
+  width: calc(16px * var(--icon-scale));
+  height: calc(16px * var(--icon-scale));
 }
 
 .errorText {

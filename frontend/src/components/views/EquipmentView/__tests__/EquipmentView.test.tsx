@@ -113,6 +113,12 @@ describe('EquipmentView panel', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('keeps the compact text and icon scale on its root (compact-ui)', () => {
+    useAppStore.setState({ currentSite: makeSite(), currentUser: makeUser(), equipment: [] });
+    const { container } = render(<EquipmentView />);
+    expect(container.firstElementChild).toHaveClass('compact-ui');
+  });
+
   it('shows the empty state and no type filter without equipment', () => {
     useAppStore.setState({ currentSite: makeSite(), currentUser: makeUser(), equipment: [] });
     render(<EquipmentView />);

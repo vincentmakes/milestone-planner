@@ -61,7 +61,7 @@ exempt a token: the fallback hides a typo instead of fixing it.
 - A component that needs the theme in JavaScript watches the attribute with a
   `MutationObserver` (`Header.tsx`, `ThemeToggle`, `LoginScreen`, `AdminDashboard`,
   `AdminLoginScreen` do this). Never read the stored preference directly.
-- The S-Theme blocks override the font (Inter), the font-size scale (12 px minimum), radii and
+- The S-Theme blocks override the font (Inter), the font-size scale (13 px minimum, 12 px in `.compact-ui`), radii and
   the whole palette; anything they don't override falls back to the `:root` dark value, so a
   token added to `:root` must be added to both S-Theme blocks too (and to `light`).
 - `@media print` overrides the light theme to pure white, black text and no shadows.
@@ -254,16 +254,36 @@ the default theme.
 Font: `--font-family` = DM Sans, system fallbacks (S-Theme: Inter). `html` is 16 px; `body`
 uses `--font-size-base` and `--line-height-normal`.
 
-| Token | Default | S-Theme | Use |
-| --- | --- | --- | --- |
-| `--font-size-xs` | 11 px | 12 px | Badges, timeline cells, row metadata. 88 uses |
-| `--font-size-sm` | 12 px | 12 px | Buttons `md`, table text, most UI copy. 119 uses |
-| `--font-size-md` | 13 px | 12 px | Dense body copy |
-| `--font-size-base` | 14 px | 14 px | Body, inputs, `lg` buttons |
-| `--font-size-lg` | 16 px | 16 px | `h3` |
-| `--font-size-xl` | 18 px | 18 px | `h2`, modal titles |
-| `--font-size-2xl` | 24 px | 24 px | `h1` |
-| `--font-size-3xl` | 30 px | 32 px | Login title |
+| Token | Default | S-Theme | Compact (`.compact-ui`) | Use |
+| --- | --- | --- | --- | --- |
+| `--font-size-xs` | 12 px | 13 px | 11 px (S-Theme 12) | Badges, timeline cells, row metadata |
+| `--font-size-sm` | 13 px | 13 px | 12 px (S-Theme 12) | Buttons `md`, table text, most UI copy |
+| `--font-size-md` | 14 px | 13 px | 13 px (S-Theme 12) | Dense body copy |
+| `--font-size-base` | 15 px | 15 px | 14 px (S-Theme 14) | Body, inputs, `lg` buttons |
+| `--font-size-lg` | 16 px | 16 px | unchanged | `h3` |
+| `--font-size-xl` | 18 px | 18 px | unchanged | `h2`, modal titles |
+| `--font-size-2xl` | 24 px | 24 px | unchanged | `h1` |
+| `--font-size-3xl` | 30 px | 32 px | unchanged | Login title |
+| `--icon-scale` | 1.125 | 1.125 | 1 | Multiplies every `Icon` `size` and the `Button` / `Input` / `Select` icon slots (§3.14) |
+
+**Compact scale.** The five timeline views — Gantt, Staff Overview, Equipment, Cross-site and
+Archived — keep the denser scale: their root element carries the global class `compact-ui`
+(`styles/global.css`), which re-declares `--font-size-xs` … `--font-size-base` and
+`--icon-scale` and resets the inherited text size to its own base. Everything rendered inside
+(rows, toolbars, the embedded Staff and Equipment panels, the shared `common/` pickers) reads the
+compact values; popovers, menus and dialogs that portal to `<body>` take the app scale, so a
+dialog opened from the Gantt matches the rest of the app. Custom properties resolve where they
+are declared, so the scope must re-declare the tokens themselves: a factor on the root tokens
+could not be undone by a child. A new timeline view puts `compact-ui` on its root.
+
+**Read the tokens.** Outside the timeline directories (`components/gantt/`, `views/StaffView/`,
+`views/EquipmentView/`, `views/CrossSiteView/`, `views/ArchivedView/`) a `font-size` in a
+`*.module.css` is `var(--font-size-*)` or `inherit` — never a raw `rem` or `px`, which would stay
+put when the scale moves. `src/styles/__tests__/fontSizeTokens.test.ts` is the ratchet; its
+`ALLOWED` list holds the documented exceptions: counters and initials inside a fixed circle under
+11 px (the notification count, the Kanban and presence avatars, the filter and panel counts —
+12 px text does not fit a 16 px badge) and display sizes above `xl` (the instance title, the
+admin stat numerals and sign-in title).
 
 Weights `--font-weight-normal` 400, `--font-weight-medium` 500 (buttons, labels),
 `--font-weight-semibold` 600 (headings), `--font-weight-bold` 700. Line heights
@@ -292,7 +312,7 @@ Debt: 103 raw `z-index` literals versus 14 token reads. New code uses the scale.
 
 | Range | Name | What changes |
 | --- | --- | --- |
-| ≤ 640 px | Mobile | Panels go full width, rows shrink (2.9), body 13 px, 44 px touch targets (§7) |
+| ≤ 640 px | Mobile | Panels go full width, rows shrink (2.9), body `--font-size-md`, 44 px touch targets (§7) |
 | 641–1024 px | Tablet | Narrower panels |
 | > 1024 px | Desktop | Full layout |
 
@@ -376,8 +396,10 @@ Don't use `sm` in a toolbar. A small primary button next to medium ones was the 
 guide was written to stop.
 
 **Icons.** Pass icons through the `icon` prop (`iconPosition="right"` puts it after the label).
-The button sizes the svg — 14 px in `md`, 12 px in `sm`, 20 px in `lg`, whatever `size` the `Icon`
-was given — and the icon inherits the text colour through `currentColor`. Don't put an icon with a
+The button sizes the svg — 14 px in `md`, 12 px in `sm`, 20 px in `lg`, each times
+`--icon-scale` (so 15.75 / 13.5 / 22.5 px outside the timelines), whatever `size` the `Icon` was
+given — and the icon inherits the text colour through `currentColor`. Heights stay 36 / 28 /
+44 px at either scale. Don't put an icon with a
 hand-tuned margin in the children.
 
 **States.** `disabled` dims to 50 % opacity (the global `button:disabled` rule). `loading` is
@@ -840,9 +862,13 @@ import { Icon, EditIcon, PlusIcon } from '@/components/common/Icon';
   name), so a button's accessible name is its label alone and tests select buttons by role
   and exact name. A test that needs to tell icons apart reads the Material `data-testid`
   (`CheckCircleOutlinedIcon`).
-- **Sized by `size`** (px, default 16), which is the svg's font size — Material icons are 1em
-  square. A stylesheet that sets the svg's `width` / `height` (the `Button` icon slot, a row's
-  `.chevron`) wins, and rotations by CSS keep working on the svg element.
+- **Sized by `size`** (px at the compact scale, default 16), which becomes the svg's font size
+  `calc(<size>px * var(--icon-scale))` — Material icons are 1em square. `--icon-scale` is 1.125
+  across the app and 1 inside the `.compact-ui` timeline views (§2.10), so one `size` reads right
+  in both and no call site changes with the scale; the sizes in the table below are compact px. A
+  stylesheet that sets the svg's `width` / `height` (the `Button` icon slot, a row's `.chevron`)
+  wins — multiply it by `var(--icon-scale)` too, as the `Button`, `Input` and `Select` slots do —
+  and rotations by CSS keep working on the svg element.
 - **Colour** is `currentColor`: colour the parent, or give the `Icon` a `className`.
 - **No inline `<svg>`.** `components/__tests__/noInlineIcons.test.ts` fails on any `<svg>`
   outside `noInlineIconsAllowlist.json` (the Gantt dependency arrows and the Microsoft logo on
@@ -947,7 +973,7 @@ has no fixed height).
 ## 7. Mobile and touch
 
 - `@media (max-width: 640px)` (so 640 px inclusive) shrinks the layout tokens (§2.9), sets
-  `body` to 13 px, and raises `button`, `[role="button"]`, `input` and `select` to **44 × 44 px**
+  `body` (and `.compact-ui`) to `--font-size-md` (14 px; 13 px in the timelines), and raises `button`, `[role="button"]`, `input` and `select` to **44 × 44 px**
   (`min-height` and `min-width`). Exclusions are by class-name substring, **case-sensitive**:
   `Badge`, `badge`, `Level`, `level`, `expandBtn`, `collapseBtn`, `dragHandle`, `levelBtn`,
   `wbsLevel` for buttons; `Badge`/`badge`/`Level`/`level` for `[role="button"]`; `Cell`/`cell`
@@ -1018,8 +1044,9 @@ plus an entry in `THEMES` and, if it is a new family, `THEME_FAMILIES` in `utils
 | --- | --- |
 | `frontend/src/styles/variables.css` | Default dark and light tokens, layout dimensions, typography, z-index scale |
 | `frontend/src/styles/themes/themes.css` | S-Theme dark and light |
-| `frontend/src/styles/global.css` | Resets, native controls, focus ring, What-If frame, scrollbar, print, mobile and touch rules |
+| `frontend/src/styles/global.css` | Resets, the `.compact-ui` timeline scale, native controls, focus ring, What-If frame, scrollbar, print, mobile and touch rules |
 | `frontend/src/styles/__tests__/cssTokens.test.ts` | Guard: every `var(--x)` read is defined |
+| `frontend/src/styles/__tests__/fontSizeTokens.test.ts` | Ratchet: font sizes read the tokens outside the timeline views (§2.10) |
 | `frontend/src/components/common/` | `Icon` (the icon set, §3.14), `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `ProjectFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `RoleChecklist`, `PendingBadge`, `ApprovalActions`, `CardComments`, `useSubmitGuard` |
 | `frontend/src/components/settings/PanelToolbar.tsx` | Toolbar layout |
 | `frontend/src/components/common/Modal/Modal.test.tsx`, `components/admin/modals/CredentialsModal.test.tsx`, `components/common/Button/Button.test.tsx` | Executable guards of the modal and button rules |

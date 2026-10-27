@@ -604,7 +604,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   
   return (
     <div 
-      className={`${styles.container} ${embedded ? styles.embedded : ''}`}
+      className={`${styles.container} compact-ui ${embedded ? styles.embedded : ''}`}
       style={containerStyle}
     >
       {/* Left Panel - Staff List */}

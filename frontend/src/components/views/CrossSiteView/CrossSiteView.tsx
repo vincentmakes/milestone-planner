@@ -137,7 +137,7 @@ export function CrossSiteView() {
   }, [sites, projectsBySite, currentSite, customerHidden]);
   
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} compact-ui`}>
       {/* Left Panel */}
       <div className={styles.panel}>
         <div className={styles.panelHeader}>

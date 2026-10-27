@@ -43,6 +43,11 @@ beforeEach(() => {
 });
 
 describe('CrossSiteView', () => {
+  it('keeps the compact text and icon scale on its root (compact-ui)', () => {
+    const { container } = render(<CrossSiteView />);
+    expect(container.firstElementChild).toHaveClass('compact-ui');
+  });
+
   it('lists each site with its active projects, real names and customers for every site', () => {
     const { container } = render(<CrossSiteView />);
     expect(screen.getByText('Cross-Site Overview')).toBeInTheDocument();

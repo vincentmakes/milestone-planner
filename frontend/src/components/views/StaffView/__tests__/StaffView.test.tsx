@@ -223,6 +223,12 @@ describe('StaffView panel', () => {
     expect(within(rowFor('Alice Ames')).getByText('0% available')).toBeInTheDocument();
   });
 
+  it('keeps the compact text and icon scale on its root (compact-ui)', () => {
+    useAppStore.setState({ currentSite: site, currentUser: makeUser(), staff: [] });
+    const { container } = render(<StaffView />);
+    expect(container.firstElementChild).toHaveClass('compact-ui');
+  });
+
   it('shows the empty state when the site has no staff', () => {
     useAppStore.setState({ currentSite: site, currentUser: makeUser(), staff: [] });
     render(<StaffView />);

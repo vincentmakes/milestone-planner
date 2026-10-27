@@ -38,7 +38,7 @@
 }
 
 .subtitle {
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-muted);
   margin: 0;
 }
@@ -51,7 +51,7 @@
 
 .error {
   padding: 0.75rem;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--accent-red);
   background: var(--accent-red-alpha);
   border-radius: var(--radius-md);
@@ -59,7 +59,7 @@
 
 .success {
   padding: 0.75rem;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--accent-green);
   background: var(--accent-green-alpha);
   border-radius: var(--radius-md);

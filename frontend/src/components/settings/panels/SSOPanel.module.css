@@ -22,7 +22,7 @@
   border: 1px solid rgba(16, 185, 129, 0.3);
   border-radius: var(--radius-md);
   color: #10b981;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
 }
 
 .notice {
@@ -31,7 +31,7 @@
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   line-height: 1.5;
 }
 
@@ -61,7 +61,7 @@
 
 .section h4 {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
   padding-bottom: 0.5rem;
@@ -69,7 +69,7 @@
 }
 
 .hint {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   margin-top: 0.25rem;
 }
@@ -80,7 +80,7 @@
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 

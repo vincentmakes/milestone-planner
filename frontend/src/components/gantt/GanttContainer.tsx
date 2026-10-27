@@ -276,7 +276,7 @@ export function GanttContainer() {
   // This prevents remounting when overview panels are toggled
   return (
     <TimelineScrollProvider>
-      <div className={styles.container}>
+      <div className={`${styles.container} compact-ui`}>
         {ganttContent}
       </div>
     </TimelineScrollProvider>

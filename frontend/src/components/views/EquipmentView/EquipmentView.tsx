@@ -379,7 +379,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   
   return (
     <div 
-      className={`${styles.container} ${embedded ? styles.embedded : ''}`}
+      className={`${styles.container} compact-ui ${embedded ? styles.embedded : ''}`}
       style={containerStyle}
     >
       {/* Left Panel - Equipment List */}

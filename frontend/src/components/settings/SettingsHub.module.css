@@ -1,9 +1,9 @@
 /* SettingsHub - section list (left) + active panel (right)
  *
  * Text scale inside the hub (the panels follow it too):
- *   primary text, labels, inputs, table cells  --font-size-base (14px)
- *   secondary text, descriptions, messages     --font-size-md   (13px)
- *   hints, badges, chips                       --font-size-sm   (12px)
+ *   primary text, labels, inputs, table cells  --font-size-base (15px)
+ *   secondary text, descriptions, messages     --font-size-md   (14px)
+ *   hints, badges, chips                       --font-size-sm   (13px)
  *   --font-size-xs is for the uppercase group labels only.
  */
 

@@ -51,6 +51,12 @@ beforeEach(() => {
 });
 
 describe('ArchivedView edit button', () => {
+  it('sits in the compact text and icon scale (compact-ui on its root)', () => {
+    seed({ id: 1, role: 'admin' });
+    const { container } = render(<ArchivedView />);
+    expect(container.firstElementChild).toHaveClass('compact-ui');
+  });
+
   it.each(['admin', 'superuser'] as const)('is offered to a %s and opens the editor', (role) => {
     seed({ id: 1, role });
     render(<ArchivedView />);

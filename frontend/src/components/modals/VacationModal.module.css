@@ -36,7 +36,7 @@
   background: linear-gradient(135deg, var(--accent-purple), #7c3aed);
   color: white;
   font-weight: var(--font-weight-semibold);
-  font-size: 1.125rem;
+  font-size: var(--font-size-xl);
   flex-shrink: 0;
 }
 

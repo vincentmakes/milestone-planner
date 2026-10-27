@@ -21,7 +21,7 @@
 }
 
 .statCard h3 {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -55,7 +55,7 @@
 }
 
 .panelHeader h2 {
-  font-size: 1rem;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
@@ -79,7 +79,7 @@
 }
 
 .table th {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -111,7 +111,7 @@
 }
 
 .companyName {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   margin-top: 0.25rem;
 }
@@ -119,7 +119,7 @@
 .slug {
   display: inline-block;
   font-family: monospace;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   padding: 0.25rem 0.5rem;
   background: var(--bg-tertiary);
   color: var(--accent-blue);
@@ -137,7 +137,7 @@
 .badge {
   display: inline-block;
   padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   border-radius: var(--radius-sm);
   text-transform: capitalize;
@@ -216,7 +216,7 @@
 }
 
 .loading {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -231,7 +231,7 @@
   .table th,
   .table td {
     padding: 0.5rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-md);
   }
   
   .actions {
