@@ -153,4 +153,42 @@ describe('notificationStore', () => {
     useNotificationStore.getState().togglePanel();
     expect(useNotificationStore.getState().panelOpen).toBe(true);
   });
+
+  it('removing an unread row drops it and decrements the badge; a read one leaves the badge', () => {
+    const store = useNotificationStore.getState();
+    store.setItems([notification(1), notification(2, { read_at: at(5) }), notification(3)]);
+    store.setUnreadCount(2);
+
+    useNotificationStore.getState().removeLocal(1);
+    expect(useNotificationStore.getState().items.map((n) => n.id)).toEqual([2, 3]);
+    expect(useNotificationStore.getState().unreadCount).toBe(1);
+
+    useNotificationStore.getState().removeLocal(2);
+    expect(useNotificationStore.getState().items.map((n) => n.id)).toEqual([3]);
+    expect(useNotificationStore.getState().unreadCount).toBe(1);
+  });
+
+  it('removing an unknown id or a derived reminder changes nothing', () => {
+    const store = useNotificationStore.getState();
+    store.setItems([notification(-1, { source: 'derived' }), notification(2)]);
+    store.setUnreadCount(1);
+    const before = useNotificationStore.getState().items;
+
+    useNotificationStore.getState().removeLocal(99);
+    useNotificationStore.getState().removeLocal(-1);
+
+    expect(useNotificationStore.getState().items).toBe(before);
+    expect(useNotificationStore.getState().unreadCount).toBe(1);
+  });
+
+  it('clearing empties the inbox and zeroes the badge, keeping the panel open', () => {
+    const store = useNotificationStore.getState();
+    store.setItems([notification(1), notification(2)]);
+    store.setUnreadCount(7);
+    store.setPanelOpen(true);
+
+    useNotificationStore.getState().clearLocal();
+
+    expect(useNotificationStore.getState()).toMatchObject({ items: [], unreadCount: 0, panelOpen: true });
+  });
 });

@@ -9,10 +9,12 @@
  * The trade-off, stated plainly: nothing fires while the app is closed, and
  * there is no email or push. Dismissals live in localStorage, keyed by card
  * and due date so a card that becomes overdue again after a reschedule
- * notifies afresh.
+ * notifies afresh. A dismissal re-derives the list in every mounted user of
+ * the hook at once (they subscribe to the dismissal map): the localStorage
+ * write alone would not re-render anything.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { collectCardsForProjects, dueStateOf } from '@/utils/kanbanCards';
 import { getLocalStorage, setLocalStorage, STORAGE_KEYS } from '@/utils/storage';
@@ -25,10 +27,22 @@ function dismissalKey(cardKey: string, endDate: string): string {
   return `${cardKey}@${endDate}`;
 }
 
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** The dismissal map as a string: a snapshot compared by value, read fresh each render. */
+const readDismissed = (): string =>
+  JSON.stringify(getLocalStorage<DismissedMap>(STORAGE_KEYS.KANBAN_DUE_DISMISSED, {}));
+
 export function dismissDerivedNotification(cardKey: string, endDate: string): void {
   const map = getLocalStorage<DismissedMap>(STORAGE_KEYS.KANBAN_DUE_DISMISSED, {});
   map[dismissalKey(cardKey, endDate)] = new Date().toISOString();
   setLocalStorage(STORAGE_KEYS.KANBAN_DUE_DISMISSED, map);
+  listeners.forEach((listener) => listener());
 }
 
 /**
@@ -38,10 +52,11 @@ export function dismissDerivedNotification(cardKey: string, endDate: string): vo
 export function useDerivedDueNotifications(): AppNotification[] {
   const projects = useAppStore((s) => s.projects);
   const currentUser = useAppStore((s) => s.currentUser);
+  const dismissedJson = useSyncExternalStore(subscribe, readDismissed, readDismissed);
 
   return useMemo(() => {
     if (!currentUser) return [];
-    const dismissed = getLocalStorage<DismissedMap>(STORAGE_KEYS.KANBAN_DUE_DISMISSED, {});
+    const dismissed = (JSON.parse(dismissedJson) ?? {}) as DismissedMap;
 
     return collectCardsForProjects(projects)
       .filter((card) => card.assigneeIds.includes(currentUser.id))
@@ -64,5 +79,5 @@ export function useDerivedDueNotifications(): AppNotification[] {
         created_at: new Date().toISOString(),
         source: 'derived',
       }));
-  }, [projects, currentUser]);
+  }, [projects, currentUser, dismissedJson]);
 }

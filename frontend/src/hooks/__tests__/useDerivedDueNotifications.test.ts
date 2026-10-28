@@ -102,6 +102,18 @@ describe('useDerivedDueNotifications', () => {
     expect(result.current.map((n) => n.title)).toContain('Late phase is overdue');
   });
 
+  it('drops a reminder as soon as it is dismissed, in every mounted user of the hook', () => {
+    seed();
+    const first = renderHook(() => useDerivedDueNotifications());
+    const second = renderHook(() => useDerivedDueNotifications());
+    expect(first.result.current).toHaveLength(2);
+
+    act(() => dismissDerivedNotification('subphase-20', iso(3)));
+
+    expect(first.result.current.map((n) => n.title)).toEqual(['Late phase is overdue']);
+    expect(second.result.current.map((n) => n.title)).toEqual(['Late phase is overdue']);
+  });
+
   it('is empty when nobody is signed in', () => {
     seed();
     useAppStore.setState({ currentUser: null });

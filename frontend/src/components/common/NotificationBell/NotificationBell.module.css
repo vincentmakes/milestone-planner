@@ -74,18 +74,10 @@
   color: var(--text-primary);
 }
 
-.markAll {
-  background: none;
-  border: none;
-  color: var(--accent-primary);
-  font-size: var(--font-size-xs);
-  font-family: inherit;
-  cursor: pointer;
-  padding: 2px 4px;
-}
-
-.markAll:hover {
-  text-decoration: underline;
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .list {
@@ -95,22 +87,15 @@
   overflow-y: auto;
 }
 
-.item {
+/* One notification: the row button and, beside it, its delete ×. */
+.row {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  width: 100%;
-  padding: 9px 12px;
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  font-family: inherit;
   border-bottom: 1px solid var(--border-subtle);
   transition: background var(--transition-fast);
 }
 
-.item:hover {
+.row:hover {
   background: var(--bg-hover);
 }
 
@@ -118,18 +103,41 @@
   background: var(--accent-blue-alpha);
 }
 
-/* Card links are out of reach during What-If (the board is another view). */
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 9px 4px 9px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Card links are out of reach during What-If (the board is another view);
+   the × beside them still works. */
 .item:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-.item:disabled:hover {
+.row:has(> .item:disabled):hover {
   background: none;
 }
 
-.item.unread:disabled:hover {
+.row.unread:has(> .item:disabled):hover {
   background: var(--accent-blue-alpha);
+}
+
+/* A compact square ×, aligned with the title line. */
+.row .rowAction {
+  flex-shrink: 0;
+  width: 28px;
+  padding: 0;
+  margin: 5px 6px 0 0;
 }
 
 .whatIfNote {

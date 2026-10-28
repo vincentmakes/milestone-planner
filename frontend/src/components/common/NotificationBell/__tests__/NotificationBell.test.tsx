@@ -3,12 +3,15 @@
  * browser-derived due reminders, opens the card on click (marking a server
  * notification read, dismissing a derived one locally) — or the project on
  * the Gantt, switching site, for a project or when the board is out of
- * reach —, mark-all, and closes on outside click (a popover, not a modal).
+ * reach —, mark-all, delete one (× beside the row) and clear all (behind a
+ * confirmation), and closes on outside click (a popover, not a modal).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NotificationBell } from '../NotificationBell';
 import {
+  clearNotifications,
+  deleteNotification,
   getNotifications,
   getUnreadCount,
   markAllNotificationsRead,
@@ -25,6 +28,7 @@ import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { makePhase, makeProject, makeSite, makeSubphase, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { AppNotification } from '@/types';
 
 vi.mock('@/api/endpoints/notifications', () => ({
@@ -32,6 +36,8 @@ vi.mock('@/api/endpoints/notifications', () => ({
   getUnreadCount: vi.fn(),
   markNotificationRead: vi.fn(),
   markAllNotificationsRead: vi.fn(),
+  deleteNotification: vi.fn(),
+  clearNotifications: vi.fn(),
 }));
 vi.mock('@/hooks/useDerivedDueNotifications', () => ({
   useDerivedDueNotifications: vi.fn(() => []),
@@ -78,6 +84,8 @@ beforeEach(() => {
   vi.mocked(getUnreadCount).mockReset().mockResolvedValue(0);
   vi.mocked(markNotificationRead).mockReset().mockResolvedValue({ success: true });
   vi.mocked(markAllNotificationsRead).mockReset().mockResolvedValue({ success: true });
+  vi.mocked(deleteNotification).mockReset().mockResolvedValue();
+  vi.mocked(clearNotifications).mockReset().mockResolvedValue({ deleted: 2 });
   vi.mocked(useDerivedDueNotifications).mockReset().mockReturnValue([]);
   vi.mocked(dismissDerivedNotification).mockReset();
   vi.mocked(selectSite).mockReset().mockResolvedValue();
@@ -555,5 +563,166 @@ describe('NotificationBell', () => {
     expect(useNotificationStore.getState().panelOpen).toBe(true);
     fireEvent.mouseDown(document.body);
     expect(useNotificationStore.getState().panelOpen).toBe(false);
+  });
+
+  describe('delete and clear all', () => {
+    const deleteButtons = () => screen.getAllByRole('button', { name: 'Delete notification' });
+
+    async function openWith(list: AppNotification[], unread: number) {
+      vi.mocked(getNotifications).mockResolvedValue(list);
+      vi.mocked(getUnreadCount).mockResolvedValue(unread);
+      await renderBell();
+      fireEvent.click(bell());
+    }
+
+    it('puts the × beside the row button, never inside it', async () => {
+      await openWith([note()], 1);
+      const row = screen.getByRole('button', { name: /Bob commented/ });
+      const [remove] = deleteButtons();
+      expect(row).not.toContainElement(remove);
+      expect(remove.parentElement).toBe(row.parentElement);
+      expect(remove.parentElement?.tagName).toBe('LI');
+      expect(remove).toHaveAttribute('title', 'Delete notification');
+    });
+
+    it('deletes one row optimistically, fixes the badge and keeps focus in the list', async () => {
+      await openWith([note({ id: 1 }), note({ id: 2, title: 'Second', read_at: minutesAgo(1) })], 1);
+      const [first, second] = deleteButtons();
+      first.focus();
+
+      await act(async () => {
+        fireEvent.click(first);
+      });
+
+      expect(deleteNotification).toHaveBeenCalledWith(1);
+      expect(useNotificationStore.getState().items.map((n) => n.id)).toEqual([2]);
+      expect(useNotificationStore.getState().unreadCount).toBe(0);
+      expect(screen.queryByRole('button', { name: /Bob commented/ })).not.toBeInTheDocument();
+      expect(second).toHaveFocus();
+      expect(useNotificationStore.getState().panelOpen).toBe(true);
+      // The row was not opened.
+      expect(markNotificationRead).not.toHaveBeenCalled();
+      expect(useViewStore.getState().currentView).not.toBe('kanban');
+
+      // The last row: focus falls back to the bell.
+      await act(async () => {
+        fireEvent.click(second);
+      });
+      expect(bell()).toHaveFocus();
+      expect(screen.getByText('Nothing new')).toBeInTheDocument();
+    });
+
+    it('reloads the inbox when a delete fails', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await openWith([note()], 1);
+      vi.mocked(deleteNotification).mockRejectedValue(new Error('500'));
+
+      await act(async () => {
+        fireEvent.click(deleteButtons()[0]);
+      });
+
+      expect(error).toHaveBeenCalledWith('[Notifications] Failed to delete:', expect.any(Error));
+      await waitFor(() => expect(useNotificationStore.getState().items).toHaveLength(1));
+      expect(getNotifications).toHaveBeenCalledTimes(2);
+    });
+
+    it('dismisses a derived reminder from its × without calling the API', async () => {
+      vi.mocked(useDerivedDueNotifications).mockReturnValue([
+        note({ id: -5, type: 'overdue', source: 'derived', title: 'Overdue: Lab work', entity_type: 'subphase', entity_id: 20, body: 'Lab work was due 2026-10-01' }),
+      ]);
+      await openWith([], 0);
+
+      await act(async () => {
+        fireEvent.click(deleteButtons()[0]);
+      });
+
+      expect(dismissDerivedNotification).toHaveBeenCalledWith('subphase-20', '2026-10-01');
+      expect(deleteNotification).not.toHaveBeenCalled();
+      expect(useViewStore.getState().currentView).not.toBe('kanban');
+    });
+
+    it('a derived reminder whose card is unknown is left alone', async () => {
+      vi.mocked(useDerivedDueNotifications).mockReturnValue([
+        note({ id: -6, type: 'due_soon', source: 'derived', title: 'Due soon', entity_type: 'project', body: null }),
+      ]);
+      await openWith([], 0);
+      await act(async () => {
+        fireEvent.click(deleteButtons()[0]);
+      });
+      expect(dismissDerivedNotification).not.toHaveBeenCalled();
+      expect(deleteNotification).not.toHaveBeenCalled();
+    });
+
+    it('the × works on a row What-If keeps from opening', async () => {
+      useAppStore.setState({ sites: [BASEL], currentSite: BASEL });
+      useWhatIfStore.getState().enterWhatIfMode([]);
+      await openWith([note()], 1);
+      expect(screen.getByRole('button', { name: /Bob commented/ })).toBeDisabled();
+      const [remove] = deleteButtons();
+      expect(remove).toBeEnabled();
+      await act(async () => {
+        fireEvent.click(remove);
+      });
+      expect(deleteNotification).toHaveBeenCalledWith(1);
+    });
+
+    it('clears all after a destructive confirmation, keeping derived reminders', async () => {
+      const confirm = stubConfirm(true);
+      vi.mocked(useDerivedDueNotifications).mockReturnValue([
+        note({ id: -1, type: 'due_soon', source: 'derived', title: 'Soon task is due soon' }),
+      ]);
+      await openWith([note({ id: 1 }), note({ id: 2, title: 'Second' })], 2);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      });
+
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Clear all notifications?',
+          message: 'Every notification in your inbox is deleted, for you only. Due-soon reminders stay.',
+          confirmLabel: 'Clear all',
+          destructive: true,
+        })
+      );
+      expect(clearNotifications).toHaveBeenCalledTimes(1);
+      expect(useNotificationStore.getState()).toMatchObject({ items: [], unreadCount: 0 });
+      expect(screen.getByRole('button', { name: /Soon task is due soon/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
+    });
+
+    it('a cancelled Clear all deletes nothing', async () => {
+      stubConfirm(false);
+      await openWith([note()], 1);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      });
+
+      expect(clearNotifications).not.toHaveBeenCalled();
+      expect(useNotificationStore.getState().items).toHaveLength(1);
+      expect(useNotificationStore.getState().unreadCount).toBe(1);
+    });
+
+    it('reloads the inbox when Clear all fails', async () => {
+      stubConfirm(true);
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await openWith([note()], 1);
+      vi.mocked(clearNotifications).mockRejectedValue(new Error('500'));
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      });
+
+      expect(error).toHaveBeenCalledWith('[Notifications] Failed to clear:', expect.any(Error));
+      await waitFor(() => expect(useNotificationStore.getState().items).toHaveLength(1));
+      expect(useNotificationStore.getState().unreadCount).toBe(1);
+    });
+
+    it('offers no Clear all with an empty inbox', async () => {
+      await openWith([], 0);
+      expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument();
+    });
   });
 });

@@ -65,6 +65,8 @@ describe('apiRequest', () => {
       ['PUT', '/api/settings/instance_title'],
       ['PATCH', '/api/admin/organizations/tenants/abc/groups'],
       ['PUT', '/api/notifications/read-all'],
+      ['DELETE', '/api/notifications/5'],
+      ['DELETE', '/api/notifications'],
       ['PUT', '/api/kanban/comments/5'],
       ['POST', '/api/kanban/cards/phase/12/comments'],
       ['POST', '/api/kanban/cards/subphase/7/comments'],

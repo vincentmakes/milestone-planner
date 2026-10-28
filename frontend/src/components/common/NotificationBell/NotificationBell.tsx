@@ -14,6 +14,12 @@
  * on the Gantt instead, switching site when it sits on another one (blocked
  * during What-If too); one without a project (a deleted project) is only
  * marked read.
+ *
+ * Each row has a × beside it (a sibling of the row button, never inside it):
+ * it deletes a server notification, or dismisses a derived reminder like
+ * opening it does. **Clear all** deletes every server notification of the
+ * user, behind a confirmation; the derived reminders stay. Both are
+ * optimistic: the store changes first, a failed call reloads the inbox.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
@@ -25,6 +31,8 @@ import { useUIStore } from '@/stores/uiStore';
 import { useWorkStore } from '@/stores/workStore';
 import type { RequestsFilter, WorkTab } from '@/stores/workStore';
 import {
+  clearNotifications,
+  deleteNotification,
   getNotifications,
   getUnreadCount,
   markAllNotificationsRead,
@@ -40,11 +48,13 @@ import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
 import { selectSite } from '@/hooks/useDataLoader';
 import { relativeTime } from '@/utils/relativeTime';
+import { confirmAction } from '@/utils/confirmDialog';
+import { Button } from '@/components/common/Button';
 import type { AppNotification, NotificationType, Project, Site } from '@/types';
 import styles from './NotificationBell.module.css';
 import { useHasPermission } from '@/hooks/useCan';
 import type { IconComponent } from '@/components/common/Icon';
-import { Icon, AssignedIcon, CommentIcon, MentionIcon, CheckBoxIcon, ClockIcon, WarningIcon, ShieldIcon, CheckCircleIcon, ManageAccountsIcon, EditCalendarIcon, BellIcon } from '@/components/common/Icon';
+import { Icon, AssignedIcon, CommentIcon, MentionIcon, CheckBoxIcon, ClockIcon, WarningIcon, ShieldIcon, CheckCircleIcon, ManageAccountsIcon, EditCalendarIcon, BellIcon, CloseIcon } from '@/components/common/Icon';
 
 const TYPE_ICONS: Record<string, IconComponent> = {
   assigned: AssignedIcon,
@@ -152,6 +162,22 @@ const OPEN_WORK_ACTION = 'Opening My Work from a notification';
 const OPEN_OTHER_SITE_ACTION = 'Opening a project on another site from a notification';
 const MISSING_PROJECT_MESSAGE = 'This project is no longer available';
 
+const CLEAR_ALL_CONFIRM = {
+  title: 'Clear all notifications?',
+  // No count: the server deletes every row, beyond the page the bell loaded.
+  message: 'Every notification in your inbox is deleted, for you only. Due-soon reminders stay.',
+  confirmLabel: 'Clear all',
+  destructive: true,
+} as const;
+
+/** Dismiss a derived reminder for the due date it was raised for (no server row). */
+function dismissDerived(n: AppNotification): void {
+  if ((n.entity_type === 'phase' || n.entity_type === 'subphase') && n.entity_id && n.body) {
+    const due = n.body.split('due ').pop() ?? '';
+    dismissDerivedNotification(cardKey(n.entity_type, n.entity_id), due);
+  }
+}
+
 export function NotificationBell() {
   const panelRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -166,6 +192,8 @@ export function NotificationBell() {
   const togglePanel = useNotificationStore((s) => s.togglePanel);
   const markReadLocal = useNotificationStore((s) => s.markReadLocal);
   const markAllReadLocal = useNotificationStore((s) => s.markAllReadLocal);
+  const removeLocal = useNotificationStore((s) => s.removeLocal);
+  const clearLocal = useNotificationStore((s) => s.clearLocal);
 
   const currentUser = useAppStore((s) => s.currentUser);
   const projects = useAppStore((s) => s.projects);
@@ -257,10 +285,7 @@ export function NotificationBell() {
 
     if (n.source === 'derived') {
       // Derived reminders are dismissed locally; there is no server row.
-      if ((n.entity_type === 'phase' || n.entity_type === 'subphase') && n.entity_id && n.body) {
-        const due = n.body.split('due ').pop() ?? '';
-        dismissDerivedNotification(cardKey(n.entity_type, n.entity_id), due);
-      }
+      dismissDerived(n);
       return;
     }
 
@@ -281,6 +306,39 @@ export function NotificationBell() {
       await markAllNotificationsRead();
     } catch (err) {
       console.error('[Notifications] Failed to mark all read:', err);
+      void refresh();
+    }
+  };
+
+  const handleDelete = async (n: AppNotification, button: HTMLButtonElement) => {
+    // The row goes away with the focused ×: keep the keyboard in the list
+    // (the next row's ×, else the previous one's, else the bell).
+    const row = button.closest('li');
+    const neighbour = (row?.nextElementSibling ?? row?.previousElementSibling)?.querySelector<HTMLButtonElement>(
+      '[data-row-delete]'
+    );
+    (neighbour ?? bellRef.current)?.focus();
+
+    if (n.source === 'derived') {
+      dismissDerived(n);
+      return;
+    }
+    removeLocal(n.id);
+    try {
+      await deleteNotification(n.id);
+    } catch (err) {
+      console.error('[Notifications] Failed to delete:', err);
+      void refresh();
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!(await confirmAction(CLEAR_ALL_CONFIRM))) return;
+    clearLocal();
+    try {
+      await clearNotifications();
+    } catch (err) {
+      console.error('[Notifications] Failed to clear:', err);
       void refresh();
     }
   };
@@ -310,11 +368,18 @@ export function NotificationBell() {
         <div id={panelId} className={styles.panel} role="dialog" aria-label="Notifications">
           <div className={styles.panelHeader}>
             <span className={styles.panelTitle}>Notifications</span>
-            {unreadCount > 0 && (
-              <button type="button" className={styles.markAll} onClick={handleMarkAll}>
-                Mark all read
-              </button>
-            )}
+            <span className={styles.headerActions}>
+              {unreadCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={handleMarkAll}>
+                  Mark all read
+                </Button>
+              )}
+              {items.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={handleClearAll}>
+                  Clear all
+                </Button>
+              )}
+            </span>
           </div>
 
           {whatIf.blocked && (
@@ -328,10 +393,13 @@ export function NotificationBell() {
               const target = targetFor(n, canOpenCards, projects, visibleSites);
               const reason = blockedReason(target);
               return (
-                <li key={`${n.source ?? 'server'}-${n.id}`}>
+                <li
+                  key={`${n.source ?? 'server'}-${n.id}`}
+                  className={`${styles.row} ${!n.read_at ? styles.unread : ''}`}
+                >
                   <button
                     type="button"
-                    className={`${styles.item} ${!n.read_at ? styles.unread : ''}`}
+                    className={styles.item}
                     onClick={() => handleOpen(n, target)}
                     disabled={Boolean(reason)}
                     title={reason}
@@ -346,6 +414,16 @@ export function NotificationBell() {
                     </span>
                     {!n.read_at && <span className={styles.dot} aria-hidden="true" />}
                   </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={styles.rowAction}
+                    icon={<Icon icon={CloseIcon} size={14} />}
+                    data-row-delete=""
+                    aria-label="Delete notification"
+                    title="Delete notification"
+                    onClick={(e) => void handleDelete(n, e.currentTarget)}
+                  />
                 </li>
               );
             })}

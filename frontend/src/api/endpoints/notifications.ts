@@ -5,7 +5,7 @@
  * no user id to pass, by design.
  */
 
-import { apiGet, apiPut } from '../client';
+import { apiDelete, apiGet, apiPut } from '../client';
 import type { AppNotification } from '@/types';
 
 export async function getNotifications(unreadOnly = false, limit = 50): Promise<AppNotification[]> {
@@ -26,4 +26,14 @@ export function markNotificationRead(id: number): Promise<{ success: boolean }> 
 
 export function markAllNotificationsRead(): Promise<{ success: boolean }> {
   return apiPut('/api/notifications/read-all', {});
+}
+
+/** Delete one of the user's notifications (204; 404 when it is gone or not theirs). */
+export async function deleteNotification(id: number): Promise<void> {
+  await apiDelete<void>(`/api/notifications/${id}`);
+}
+
+/** Delete every notification of the user, beyond the loaded page too. */
+export function clearNotifications(): Promise<{ deleted: number }> {
+  return apiDelete('/api/notifications');
 }

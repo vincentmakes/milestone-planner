@@ -434,6 +434,10 @@ The status endpoint returns the resulting `{status, completion}` pair, because t
 | `GET` | `/t/{slug}/api/notifications/unread-count` | Unread count for the bell badge |
 | `PUT` | `/t/{slug}/api/notifications/{id}/read` | Mark one as read |
 | `PUT` | `/t/{slug}/api/notifications/read-all` | Mark all as read |
+| `DELETE` | `/t/{slug}/api/notifications/{id}` | Delete one (`204`, no body; `404` when it is not yours or does not exist) |
+| `DELETE` | `/t/{slug}/api/notifications` | Delete all of yours, read or unread → `{"deleted": n}` |
+
+**Retention.** A notification read more than 30 days ago is deleted when its owner's list is fetched (`GET /notifications`); unread notifications are kept until read or deleted.
 
 Notification `type` is one of `assigned`, `comment`, `mention`, `status_change`, `approval_requested`, `approval_decided`, `assignment_changed` and `project_changed`. The last two report a change someone else made to the recipient's plan:
 

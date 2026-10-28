@@ -195,11 +195,13 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/notifications?unread_only&limit` | user | Own notifications, newest first |
+| GET | `/notifications?unread_only&limit` | user | Own notifications, newest first. First purges the caller's rows read more than `READ_RETENTION_DAYS` (30) ago (`purge_read_notifications`, `app/services/notifications.py`; unread rows never), so it uses `get_db` and commits, not `get_db_readonly` |
 | GET | `/notifications/unread-count` | user | Badge count (served by the partial unread index) |
 | PUT | `/notifications/{id}/read`, `/notifications/read-all` | user | Mark read |
+| DELETE | `/notifications/{id}` | user | Delete one own row → 204; another user's or a missing id → 404 |
+| DELETE | `/notifications` | user | Delete every own row, read or not → `{deleted: n}` |
 
-⚠ Every query is pinned to `Notification.user_id == user.id` — there is **no `user_id` parameter**, by design (it would be an IDOR). Due-soon/overdue are derived client-side (`useDerivedDueNotifications`), never stored.
+⚠ Every query is pinned to `Notification.user_id == user.id` — there is **no `user_id` parameter**, by design (it would be an IDOR). Due-soon/overdue are derived client-side (`useDerivedDueNotifications`), never stored. The whole prefix is broadcast-skipped (`SKIP_PATTERNS`, any method) and What-If-exempt (`isWhatIfExempt`). The change-notification coalescing reads its candidate row `FOR UPDATE`, so a delete or a purge of that row waits for the short `deliver` transaction instead of failing its batch.
 
 ### Permissions & roles (`roles.py`)
 

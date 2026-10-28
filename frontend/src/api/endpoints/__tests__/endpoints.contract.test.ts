@@ -185,6 +185,8 @@ describe('notification endpoints', () => {
   runCases([
     ['markNotificationRead', () => notifications.markNotificationRead(3), 'PUT', '/api/notifications/3/read', {}],
     ['markAllNotificationsRead', () => notifications.markAllNotificationsRead(), 'PUT', '/api/notifications/read-all', {}],
+    ['deleteNotification', () => notifications.deleteNotification(3), 'DELETE', '/api/notifications/3'],
+    ['clearNotifications', () => notifications.clearNotifications(), 'DELETE', '/api/notifications'],
   ]);
 
   it('tags fetched notifications as server-sourced', async () => {

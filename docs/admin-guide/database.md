@@ -202,6 +202,8 @@ python migrations/run_migration.py add_rbac
 python migrations/run_migration.py add_change_notifications
 ```
 
+Read notifications are not kept forever: since 2.1.0 a notification read more than 30 days ago is deleted when its owner's inbox is loaded, and users can delete one or all of theirs from the bell. This needs no migration and no scheduled job; an inbox nobody opens keeps its old rows.
+
 ### Bookable Users (1.16.0)
 
 `add_user_is_resource` adds `users.is_resource` (`BOOLEAN NOT NULL DEFAULT TRUE`), the **Bookable as a resource** flag: only bookable people are listed in the Staff view and panel and can receive new bookings (see [Settings → Users](../user-guide/settings.md#bookable-as-a-resource)). When it adds the column it back-fills existing administrators as **not bookable** and leaves everyone else bookable, so the upgrade changes nobody's bookability. It does nothing when the column already exists, so a second run never resets a choice made since. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.

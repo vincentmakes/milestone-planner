@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [2.1.0] - 2026-10-28
 
+### Added
+
+- Notifications can be deleted: the × beside each one in the bell removes it (or dismisses a due-soon reminder), and **Clear all** empties your inbox after a confirmation, for you only; a notification you have read now disappears by itself 30 days later, while unread ones stay until you read them
+
 ### Changed
 
 - The company event form says who a closure affects: once teams are ticked, the switch reads "Site closure — staff of the selected teams on these sites are unavailable", with a note that everyone else on the sites is unaffected, and the Closure badge in the list says the same
