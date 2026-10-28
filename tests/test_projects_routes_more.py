@@ -1,6 +1,6 @@
 """
 More route tests for the project tree API: the project list (filters,
-pagination, cross-site masking) and detail (phase/subphase tree with
+pagination, the cross-site list) and detail (phase/subphase tree with
 assignments), project create/update field handling, and phase/subphase
 creation (append vs. insert-at-index, depth limit).
 
@@ -106,7 +106,9 @@ async def test_list_projects_for_site(authed_client, mock_db_session):
 
 
 @pytest.mark.asyncio
-async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client, mock_db_session):
+async def test_list_projects_shows_every_visible_site_in_full_in_cross_site_view(
+    authed_client, mock_db_session
+):
     client, set_user = authed_client
     set_user(FakeUser(5, "user", site_ids=[1, 2]))
     mock_db_session.execute.side_effect = [
@@ -124,16 +126,14 @@ async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client,
     response = await client.get("/api/projects?siteId=1&includeOtherSites=true")
 
     assert response.status_code == 200
-    own, external = response.json()["items"]
+    own, other = response.json()["items"]
     assert own["name"] == "Project 1"
     assert own["notes"] == "secret notes"
-    assert (external["name"], external["customer"], external["sales_pm"]) == (
-        "[External Project]",
-        "[Hidden]",
-        "[Hidden]",
-    )
-    assert (external["notes"], external["volume"], external["tags"]) == (None, None, [])
-    assert external["site_name"] == "Basel"  # where it is stays visible
+    # Another visible site's project keeps its real details (no masking).
+    assert (other["name"], other["customer"], other["sales_pm"]) == ("Project 2", "ACME", "Sam")
+    assert (other["notes"], other["volume"]) == ("secret notes", 1000)
+    assert other["tags"] == [{"id": 4, "name": "Priority", "color": "#ff0000"}]
+    assert other["site_name"] == "Basel"
     # Not limited to siteId, but to the visible sites (RBAC decision 6).
     assert "projects.site_id = " not in sql(mock_db_session, 0)
     assert "projects.site_id IN (1, 2)" in sql(mock_db_session, 0)

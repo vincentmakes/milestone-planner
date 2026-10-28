@@ -33,7 +33,7 @@ An open-source R&D project management platform for multi-site organizations.
 - **Equipment scheduling** — Book equipment across projects with conflict detection and maintenance blocks
 - **Multi-tenant architecture** — Separate databases per organization
 - **Organization-level SSO** — Microsoft Entra ID with group-based access control
-- **Cross-site visibility** — View resources across locations while maintaining confidentiality
+- **Cross-site visibility** — Compare the projects of every site you can see on one timeline; sites outside your account stay out of reach
 - **What-If planning** — Scenario planning without affecting production data
 - **Real-time collaboration** — WebSocket-powered live updates
 - **Notifications** — In-app inbox for assignments, comments, mentions and status changes

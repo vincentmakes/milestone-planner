@@ -24,7 +24,7 @@ export function MainLayout() {
   const hasUser = useAppStore((s) => s.currentUser !== null);
   const sitesLoaded = useAppStore((s) => s.sites.length > 0);
   const currentSiteId = useAppStore((s) => s.currentSite?.id ?? null);
-  const { visible, disabledReason } = useAllowedViews();
+  const { visible } = useAllowedViews();
   const visibleSites = useVisibleSites();
 
   // Enable global keyboard shortcuts
@@ -32,13 +32,13 @@ export function MainLayout() {
 
   // The persisted view may not be allowed (anymore): a role edit took its
   // key away, or Cross-site lost its second visible site. Fall back to the
-  // Gantt, which is always available. Cross-site waits for the sites to load,
-  // so the first render before the data load does not drop it.
+  // Gantt, which is always available. Every view waits for the sites to load,
+  // so the first render before the data load does not drop Cross-site (hidden
+  // while fewer than two sites are visible).
   useEffect(() => {
-    if (!hasUser || currentView === 'gantt') return;
-    const listed = visible.includes(currentView);
-    if (!listed || (sitesLoaded && disabledReason[currentView])) setCurrentView('gantt');
-  }, [hasUser, currentView, visible, disabledReason, sitesLoaded, setCurrentView]);
+    if (!hasUser || !sitesLoaded || currentView === 'gantt') return;
+    if (!visible.includes(currentView)) setCurrentView('gantt');
+  }, [hasUser, currentView, visible, sitesLoaded, setCurrentView]);
 
   // A currentUser refresh (change:user / change:role) may take the current
   // site away: switch to the first visible one, like the site selector would.

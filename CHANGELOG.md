@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The company event form says who a closure affects: once teams are ticked, the switch reads "Site closure — staff of the selected teams on these sites are unavailable", with a note that everyone else on the sites is unaffected, and the Closure badge in the list says the same
 - In every list of people or equipment with a search box, Tab now picks the highlighted match once you have typed, then moves on to the next field
 - A new phase or subphase starts with empty dates, so the calendar opens on the current month, and Add asks for the dates (a milestone needs only its date) instead of silently using the parent's range
+- The Cross-Site view shows the real project names and customers of every site you can see, not only of your current site
+- The Cross-Site entry no longer appears in the sidebar when you can see only one site, instead of being shown disabled
+
+### Removed
+
+- The "Confidential Project" masking of other sites' projects in the Cross-Site view (and the "[External Project]" rows of the project list API); sites you cannot see still stay out of the view entirely, so site visibility keeps protecting them
 
 ## [2.0.0] - 2026-10-23
 

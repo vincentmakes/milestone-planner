@@ -2,7 +2,7 @@
 Route tests for project-field values on /api/projects (2.0.0).
 
 Responses carry ``field_values: {field_id: value}`` read in two column queries
-for the whole list (masked cross-site rows carry ``{}`` and are not queried);
+for the whole list (cross-site rows included, every visible site's in full);
 ``POST`` / ``PUT`` accept ``field_values``: values are checked by
 ``validate_field_values`` (types, items of their field, site / team scope,
 one item on a ``select`` field), only the fields given change, and a team
@@ -134,7 +134,7 @@ def _body(**overrides):
 
 
 @pytest.mark.asyncio
-async def test_list_carries_field_values_and_masked_rows_carry_none(authed_client, mock_db_session):
+async def test_list_carries_field_values_for_every_visible_site(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(5, "user", site_ids=[1, 2]))
     own, external = make_project(1, site_id=1), make_project(2, site_id=2)
@@ -146,6 +146,7 @@ async def test_list_carries_field_values_and_masked_rows_carry_none(authed_clien
                 (1, 1, "text", "Pilot", None, None),
                 (1, 2, "number", None, 1250.0, None),
                 (1, 3, "toggle", None, None, False),
+                (2, 1, "text", "Partner", None, None),
             ]
         ),
         rows_result([(1, 4, "select", 42), (1, 5, "multiselect", 51), (1, 5, "multiselect", 52)]),
@@ -163,14 +164,15 @@ async def test_list_carries_field_values_and_masked_rows_carry_none(authed_clien
         "4": 42,
         "5": [51, 52],
     }
-    assert external_row["field_values"] == {}
-    # The list loads no field relationship; the two column queries cover the
-    # shown (unmasked) projects only.
+    # Another visible site's project carries its values too (no masking).
+    assert external_row["field_values"] == {"1": "Partner"}
+    # The list loads no field relationship; the two column queries cover
+    # every project of the page.
     assert {"Project.field_values", "Project.field_selections"} <= loader_paths(
         mock_db_session.execute.await_args_list[1].args[0]
     )
-    assert "project_field_values.project_id IN (1)" in sql(mock_db_session, 2)
-    assert "project_field_selections.project_id IN (1)" in sql(mock_db_session, 3)
+    assert "project_field_values.project_id IN (1, 2)" in sql(mock_db_session, 2)
+    assert "project_field_selections.project_id IN (1, 2)" in sql(mock_db_session, 3)
     assert mock_db_session.execute.await_count == 4
 
 
@@ -187,19 +189,22 @@ async def test_an_empty_list_runs_no_field_query(authed_client, mock_db_session)
 
 
 @pytest.mark.asyncio
-async def test_a_page_of_masked_rows_runs_no_field_query(authed_client, mock_db_session):
+async def test_a_page_of_other_site_rows_queries_their_field_values(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(5, "user", site_ids=[1, 2]))
     mock_db_session.execute.side_effect = [
         scalar_result(1),
         rows_result([(make_project(2, site_id=2), "Basel", None)]),
+        rows_result([]),  # project-field values
+        rows_result([(2, 4, "select", 42)]),
     ]
 
     response = await client.get("/api/projects?siteId=1&includeOtherSites=true")
 
     assert response.status_code == 200
-    assert response.json()["items"][0]["field_values"] == {}
-    assert mock_db_session.execute.await_count == 2
+    assert response.json()["items"][0]["field_values"] == {"4": 42}
+    assert "project_field_values.project_id IN (2)" in sql(mock_db_session, 2)
+    assert mock_db_session.execute.await_count == 4
 
 
 @pytest.mark.asyncio

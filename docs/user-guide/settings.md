@@ -147,7 +147,7 @@ Some permissions worth knowing:
 
 ### Who Sees Which Sites
 
-A role without **See all sites** limits its holders to the sites in their account: the site selector lists only those, and every project, person, piece of equipment, holiday and event elsewhere stays out of reach — also for editing. The **Cross-Site** view needs at least two visible sites; with one it is shown disabled with the reason.
+A role without **See all sites** limits its holders to the sites in their account: the site selector lists only those, and every project, person, piece of equipment, holiday and event elsewhere stays out of reach — also for editing. The **Cross-Site** view needs at least two visible sites; with one it is not listed. It shows the real names and customers of every visible site's projects — the sites a user cannot see stay out of it.
 
 ### Giving People a Role
 

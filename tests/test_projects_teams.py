@@ -1,7 +1,7 @@
 """
 Route tests for a project's teams on /api/projects.
 
-Responses carry ``team_ids`` (masked cross-site rows carry none); writes
+Responses carry ``team_ids`` (cross-site rows included); writes
 accept ``team_ids``: the teams must be at the project's site, unknown ids are
 dropped (a What-If replay may carry a deleted team), and a team change
 re-validates the project's tags against its new teams.
@@ -103,9 +103,9 @@ def added_project(db) -> Project:
 
 
 @pytest.mark.asyncio
-async def test_list_rows_carry_team_ids_and_masked_rows_carry_none(authed_client, mock_db_session):
+async def test_list_rows_carry_team_ids_for_every_visible_site(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, "user", site_ids=[1, 2]))
     own = make_project(1, site_id=1, teams=[make_team(5, 1, "B"), make_team(3, 1, "A")])
     external = make_project(2, site_id=2, teams=[make_team(9, 2)])
     mock_db_session.execute.side_effect = [
@@ -120,8 +120,9 @@ async def test_list_rows_carry_team_ids_and_masked_rows_carry_none(authed_client
     assert response.status_code == 200
     own_row, external_row = response.json()["items"]
     assert own_row["team_ids"] == [3, 5]
-    assert external_row["name"] == "[External Project]"
-    assert external_row["team_ids"] == []
+    # Another visible site's project keeps its name and teams (no masking).
+    assert external_row["name"] == "Project 2"
+    assert external_row["team_ids"] == [9]
 
 
 @pytest.mark.asyncio

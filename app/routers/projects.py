@@ -60,7 +60,6 @@ from app.services.project_field_rules import (
     validate_field_values,
 )
 from app.services.site_access import (
-    EXTERNAL_PROJECT_NAME,
     PROJECT_NOT_VISIBLE_DETAIL,
     SITE_NOT_VISIBLE_DETAIL,
     ensure_project_visible,
@@ -375,8 +374,9 @@ async def get_projects(
 
     Query params:
     - siteId: Filter by site (a site outside the visible ones: 403)
-    - includeOtherSites: If 'true', show every visible site but mask the
-      projects of the other sites (needs ``views.crosssite``)
+    - includeOtherSites: If 'true', list the projects of every visible site,
+      ``siteId`` notwithstanding (needs ``views.crosssite``); projects keep
+      their real details, as everywhere a site is visible
     - archived: 'true' for archived only (needs ``views.archived``), 'all'
       for all (archived ones only with ``views.archived``), default is
       non-archived
@@ -440,70 +440,37 @@ async def get_projects(
     result = await db.execute(query)
     rows = result.all()
 
-    def masked(project: Project) -> bool:
-        """An external project in the cross-site view: its details are hidden."""
-        return bool(cross_site and siteId and project.site_id != int(siteId))
-
     # Field values of the shown projects: two queries for the whole page.
-    field_values = await load_project_field_values(
-        db, [row[0].id for row in rows if not masked(row[0])]
-    )
+    field_values = await load_project_field_values(db, [row[0].id for row in rows])
 
     projects = []
     for row in rows:
         project = row[0]
         site_name = row[1]
         pm_name = row[2]
-
-        # Mask external project details if viewing cross-site
-        if masked(project):
-            projects.append(
-                {
-                    "id": project.id,
-                    "name": EXTERNAL_PROJECT_NAME,
-                    "site_id": project.site_id,
-                    "site_name": site_name,
-                    "customer": "[Hidden]",
-                    "pm_id": project.pm_id,
-                    "pm_name": pm_name,
-                    "sales_pm": "[Hidden]",
-                    "confirmed": project.confirmed,
-                    "volume": None,
-                    "start_date": project.start_date,
-                    "end_date": project.end_date,
-                    "notes": None,
-                    "archived": project.archived,
-                    "created_at": project.created_at,
-                    "updated_at": project.updated_at,
-                    "tags": [],
-                    "team_ids": [],
-                    "field_values": {},
-                }
-            )
-        else:
-            projects.append(
-                {
-                    "id": project.id,
-                    "name": project.name,
-                    "site_id": project.site_id,
-                    "site_name": site_name,
-                    "customer": project.customer,
-                    "pm_id": project.pm_id,
-                    "pm_name": pm_name,
-                    "sales_pm": project.sales_pm,
-                    "confirmed": project.confirmed,
-                    "volume": project.volume,
-                    "start_date": project.start_date,
-                    "end_date": project.end_date,
-                    "notes": project.notes,
-                    "archived": project.archived,
-                    "created_at": project.created_at,
-                    "updated_at": project.updated_at,
-                    "tags": [_tag_dict(t) for t in project.tags],
-                    "team_ids": project.team_ids,
-                    "field_values": field_values[project.id],
-                }
-            )
+        projects.append(
+            {
+                "id": project.id,
+                "name": project.name,
+                "site_id": project.site_id,
+                "site_name": site_name,
+                "customer": project.customer,
+                "pm_id": project.pm_id,
+                "pm_name": pm_name,
+                "sales_pm": project.sales_pm,
+                "confirmed": project.confirmed,
+                "volume": project.volume,
+                "start_date": project.start_date,
+                "end_date": project.end_date,
+                "notes": project.notes,
+                "archived": project.archived,
+                "created_at": project.created_at,
+                "updated_at": project.updated_at,
+                "tags": [_tag_dict(t) for t in project.tags],
+                "team_ids": project.team_ids,
+                "field_values": field_values[project.id],
+            }
+        )
 
     return {
         "items": projects,

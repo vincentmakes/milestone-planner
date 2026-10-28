@@ -75,26 +75,34 @@ describe('MainLayout', () => {
     expect(screen.getByRole('main')).toHaveTextContent('Gantt view');
   });
 
-  it('falls back to the Gantt when the persisted view is no longer allowed', () => {
+  it('falls back to the Gantt when the persisted view is no longer allowed, once the sites load', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'viewer', permissions: ['projects.view', 'views.kanban'] }) });
     useViewStore.setState({ currentView: 'staff' });
+    // Every view waits for the sites to load before falling back
     render(<MainLayout />);
+    expect(useViewStore.getState().currentView).toBe('staff');
+
+    act(() => useAppStore.setState({ sites: [makeSite({ id: 1 })] }));
     expect(useViewStore.getState().currentView).toBe('gantt');
     expect(screen.getByRole('main')).toHaveTextContent('Gantt view');
   });
 
-  it('leaves Cross-site once the loaded sites show a single visible one', () => {
+  it('keeps Cross-site through a reload, and leaves it once a single site is visible', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
     useViewStore.setState({ currentView: 'crosssite' });
-    // Before the data load (no sites yet) the persisted view is kept
+    // Before the data load (no sites yet) the entry is hidden, but the
+    // persisted view is kept
     render(<MainLayout />);
     expect(useViewStore.getState().currentView).toBe('crosssite');
+    expect(screen.queryByRole('button', { name: 'Cross-Site' })).not.toBeInTheDocument();
 
     act(() => useAppStore.setState({ sites: [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })] }));
     expect(useViewStore.getState().currentView).toBe('crosssite');
+    expect(screen.getByRole('main')).toHaveTextContent('Cross-site view');
 
     act(() => useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [2] }) }));
     expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(screen.queryByRole('button', { name: 'Cross-Site' })).not.toBeInTheDocument();
   });
 
   it('switches to a visible site when the current one stops being visible', () => {
