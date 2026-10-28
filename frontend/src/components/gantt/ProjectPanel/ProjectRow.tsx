@@ -5,7 +5,7 @@
 
 import { memo, useMemo, useCallback, Fragment, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import { isBuiltInFieldHidden } from '@/utils/instanceSettings';
+import { isBuiltInFieldHidden, isSettingOn } from '@/utils/instanceSettings';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -125,6 +125,8 @@ export const ProjectRow = memo(function ProjectRow({
 
   const isExpanded = expandedProjects.has(project.id);
   const completion = useMemo(() => calculateProjectCompletion(project), [project]);
+  // Admin setting: the % badge can be hidden (the bar fill stays).
+  const showBadge = useAppStore((s) => isSettingOn(s.instanceSettings, 'gantt_completion_badges'));
   
   // Get critical path items for this project
   const projectCriticalPathItems = criticalPathItems.get(project.id) || new Set<string>();
@@ -303,8 +305,8 @@ export const ProjectRow = memo(function ProjectRow({
             onClick={handleToggle}
           />
 
-          {/* Completion badge */}
-          {completion !== null && (
+          {/* Completion badge, unless the admin setting hides it */}
+          {showBadge && completion !== null && (
             <span 
               className={styles.completionBadge}
               title="Project completion (calculated from phases)"

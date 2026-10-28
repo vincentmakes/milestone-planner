@@ -6,7 +6,7 @@
  * custom-column filters, the phantom row and drag-to-reorder.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { SubphaseRow } from '../SubphaseRow';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { resetAllStores, useAppStore, useUIStore, useViewStore, useCustomColumnStore } from '@/stores';
@@ -335,5 +335,24 @@ describe('SubphaseRow per-person booking groups', () => {
     expect(screen.getByRole('button', { name: "Expand Bob Brown's bookings" })).toHaveAttribute('aria-expanded', 'false');
     expect(badges()).toHaveLength(1);
     expect(screen.getByTitle('Dana Diaz')).toBeInTheDocument();
+  });
+});
+
+describe('SubphaseRow completion badge setting', () => {
+  it('hides the badge when the admin setting is off', () => {
+    useAppStore.setState({ instanceSettings: { gantt_completion_badges: 'false' } });
+    renderRow(leaf);
+    expect(screen.queryByText('25%')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Report')).toBeInTheDocument();
+  });
+
+  it('opens the slider on the subphase name when the menu asks for it, and clears the request', () => {
+    useAppStore.setState({ instanceSettings: { gantt_completion_badges: 'false' } });
+    renderRow(leaf);
+
+    act(() => useUIStore.getState().openCompletionSlider('subphase', 40));
+
+    expect(screen.getByRole('slider')).toBeInTheDocument();
+    expect(useUIStore.getState().completionSliderFor).toBeNull();
   });
 });

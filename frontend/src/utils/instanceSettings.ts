@@ -16,7 +16,8 @@ export type SwitchSettingKey =
   | 'show_weekends'
   | 'kanban_enabled'
   | 'nager_enabled'
-  | 'new_project_preselect_phases';
+  | 'new_project_preselect_phases'
+  | 'gantt_completion_badges';
 
 export type GanttDefaultPanel = 'none' | 'staff' | 'equipment';
 

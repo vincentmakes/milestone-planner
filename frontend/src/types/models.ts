@@ -608,6 +608,8 @@ export interface InstanceSettings {
   nager_enabled?: string;
   /** `false`: a new project starts with no predefined phase selected */
   new_project_preselect_phases?: string;
+  /** `false` hides the completion (%) badges on the Gantt rows */
+  gantt_completion_badges?: string;
   /** Compact JSON object: custom labels of the built-in project fields (customer, sales_pm, volume, confirmed) */
   project_field_labels?: string;
   /** Compact JSON array of the hidden built-in project fields (customer, sales_pm, volume) */

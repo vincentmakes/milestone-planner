@@ -242,8 +242,10 @@ Click the phase name in its badge to scroll the timeline to the person's first b
 Each project and phase has a completion slider (0–100%):
 
 - The filled portion of the bar represents progress
-- Click on the completion area to adjust
+- Click the completion badge (*40%*) of a phase or subphase to adjust it, or right-click the row and choose **Set progress…** (the slider opens under its name). A completion calculated from the subphases cannot be set by hand
 - Purely informational — does not affect scheduling
+
+An administrator can hide the completion badges for everyone (**Show completion badges in the Gantt** in [Settings → Features & defaults](settings.md#features-defaults)); the bars stay filled and **Set progress…** stays available.
 
 The slider also drives the item's column on the [Kanban board](kanban-board.md): 0% is To Do, 100% is Done, and anything in between is In Progress. Moving a card on the board changes the percentage here in the same way. A card you have marked **Blocked** keeps that status when you edit its percentage, since a number cannot express why work has stalled.
 

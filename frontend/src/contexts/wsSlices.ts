@@ -111,8 +111,13 @@ export function slicesForEntity(entityType: string): Slice[] {
       // server to the site's projects (FK CASCADE), site-only tags, site-only
       // project field items and site-only equipment, which other clients
       // would otherwise keep showing — so those slices reload too, and so do
-      // the site's teams.
-      return ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams'];
+      // the site's teams. The signed-in user's own record (their sites) and
+      // the staff rows (their site lists) move with a delete too: a user whose
+      // only site vanished is re-evaluated instead of staying on it.
+      return [
+        'sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams',
+        'currentUser', 'staff',
+      ];
     case 'skill':
       return ['skills', 'staff'];
     case 'tag':

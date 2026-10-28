@@ -32,11 +32,17 @@ DEFAULTS = {
     "kanban_enabled": "true",
     "nager_enabled": "true",
     "new_project_preselect_phases": "true",
+    "gantt_completion_badges": "true",
     "project_field_labels": "{}",
     "project_fields_hidden": "[]",
 }
 
-BOOLEAN_KEYS = ["kanban_enabled", "nager_enabled", "new_project_preselect_phases"]
+BOOLEAN_KEYS = [
+    "kanban_enabled",
+    "nager_enabled",
+    "new_project_preselect_phases",
+    "gantt_completion_badges",
+]
 
 
 def test_the_known_keys_and_their_defaults():

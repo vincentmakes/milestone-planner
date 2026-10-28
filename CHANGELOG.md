@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Notifications can be deleted: the × beside each one in the bell removes it (or dismisses a due-soon reminder), and **Clear all** empties your inbox after a confirmation, for you only; a notification you have read now disappears by itself 30 days later, while unread ones stay until you read them
 - Number project fields can keep a set number of decimals: pick As typed or 0 to 3 for each number field in Settings → Project fields; new values are rounded half up when saved, values entered before are shown (and exported) rounded but never changed, and the site export lists each field's decimals
+- Administrators can hide the completion badges (40%) of the Gantt rows for everyone with **Show completion badges in the Gantt** in Settings → Features & defaults; the bars stay filled, and a phase's or subphase's progress can still be set from its right-click menu with the new **Set progress…**
+- Sites can be deleted from Settings → Sites: the bin on a site's row asks you to type the site's name and says what goes with it; the last active site cannot be deleted, and everyone signed in moves off a deleted site straight away
 
 ### Changed
 

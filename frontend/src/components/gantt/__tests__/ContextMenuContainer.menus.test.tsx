@@ -392,3 +392,40 @@ describe('assignment menus', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('"Set progress…" (the completion slider, also with the badges hidden)', () => {
+  it('asks the phase row to open its slider and closes the menu', () => {
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    fireEvent.click(item('Set progress…'));
+    expect(useUIStore.getState().completionSliderFor).toEqual({ level: 'phase', id: 10 });
+    expect(useUIStore.getState().contextMenu.visible).toBe(false);
+  });
+
+  it('asks the subphase row to open its slider', () => {
+    useUIStore.getState().showContextMenu('subphase', 20, 0, 0, 1, 10);
+    render(<ContextMenuContainer />);
+    fireEvent.click(item('Set progress…'));
+    expect(useUIStore.getState().completionSliderFor).toEqual({ level: 'subphase', id: 20 });
+  });
+
+  it('is disabled, saying why, when the completion is calculated from children', () => {
+    const calculated = structuredClone(project);
+    calculated.phases[0].children[0].completion = 50;
+    useAppStore.setState({ projects: [calculated] });
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Set progress…')).toBeDisabled();
+    expect(item('Set progress…')).toHaveAttribute('title', 'Calculated from children');
+    fireEvent.click(item('Set progress…'));
+    expect(useUIStore.getState().completionSliderFor).toBeNull();
+  });
+
+  it('is disabled for someone who may not edit the project', () => {
+    seed(makeUser({ id: 9, role: 'user' }));
+    useUIStore.getState().showContextMenu('subphase', 20, 0, 0, 1, 10);
+    render(<ContextMenuContainer />);
+    expect(item('Set progress…')).toBeDisabled();
+    expect(item('Set progress…')).not.toHaveAttribute('title');
+  });
+});

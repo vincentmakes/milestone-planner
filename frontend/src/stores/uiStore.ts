@@ -287,6 +287,11 @@ interface UIState {
   
   // Zoom trigger: { direction: 1 for in, -1 for out, newCellWidth }
   zoomTrigger: { direction: 1 | -1; newCellWidth: number; timestamp: number } | null;
+
+  // The phase / subphase row asked to open its completion slider (the
+  // context menu's "Set progress…"): the row anchors it to its name, then
+  // clears the request.
+  completionSliderFor: { level: 'phase' | 'subphase'; id: number } | null;
   
   // ---------------------------------------------
   // ACTIONS - Modals
@@ -417,6 +422,8 @@ interface UIState {
   clearScrollToDateTrigger: () => void;
   triggerZoom: (direction: 1 | -1, newCellWidth: number) => void;
   clearZoomTrigger: () => void;
+  openCompletionSlider: (level: 'phase' | 'subphase', id: number) => void;
+  clearCompletionSlider: () => void;
   
   // ---------------------------------------------
   // RESOURCE DRAG-DROP STATE (from ResourcePanel)
@@ -529,6 +536,8 @@ const initialState = {
   
   // Zoom trigger
   zoomTrigger: null,
+
+  completionSliderFor: null,
   
   // Resource Drag-Drop
   resourceDrag: {
@@ -853,6 +862,10 @@ export const useUIStore = create<UIState>()((set) => ({
   }),
   
   clearScrollToDateTrigger: () => set({ scrollToDateTrigger: null }),
+
+  openCompletionSlider: (level, id) => set({ completionSliderFor: { level, id } }),
+
+  clearCompletionSlider: () => set({ completionSliderFor: null }),
   
   triggerZoom: (direction, newCellWidth) => set({
     zoomTrigger: { direction, newCellWidth, timestamp: Date.now() },

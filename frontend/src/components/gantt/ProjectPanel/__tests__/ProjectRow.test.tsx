@@ -107,6 +107,13 @@ describe('ProjectRow summary', () => {
     expect(screen.getByTitle('Project completion (calculated from phases)')).toHaveTextContent('50%');
   });
 
+  it('hides the completion badge when the admin setting is off', () => {
+    useAppStore.setState({ instanceSettings: { gantt_completion_badges: 'false' } });
+    renderRow(buildProject());
+    expect(screen.queryByTitle('Project completion (calculated from phases)')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Bioprocess Scale-Up')).toBeInTheDocument();
+  });
+
   it('leaves out the customer while the Customer field is hidden', () => {
     useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
     renderRow(buildProject());

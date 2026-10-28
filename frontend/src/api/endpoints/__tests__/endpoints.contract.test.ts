@@ -240,6 +240,7 @@ describe('settings endpoints', () => {
       kanban_enabled: 'false',
       nager_enabled: 'false',
       new_project_preselect_phases: 'false',
+      gantt_completion_badges: 'false',
       project_field_labels: '{"customer":"Client"}',
       project_fields_hidden: '["volume"]',
     });
@@ -253,6 +254,7 @@ describe('settings endpoints', () => {
       kanban_enabled: 'false',
       nager_enabled: 'false',
       new_project_preselect_phases: 'false',
+      gantt_completion_badges: 'false',
       project_field_labels: '{"customer":"Client"}',
       project_fields_hidden: '["volume"]',
     });
@@ -270,10 +272,11 @@ describe('settings endpoints', () => {
       kanban_enabled: 'true',
       nager_enabled: 'true',
       new_project_preselect_phases: 'true',
+      gantt_completion_badges: 'true',
       project_field_labels: '{}',
       project_fields_hidden: '[]',
     });
-    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(11);
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(12);
   });
 });
 

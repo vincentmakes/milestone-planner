@@ -54,6 +54,8 @@ export { default as CircleIcon } from '@mui/icons-material/RadioButtonUnchecked'
 export { default as CancelIcon } from '@mui/icons-material/CancelOutlined';
 /** Features & defaults */
 export { default as TuneIcon } from '@mui/icons-material/TuneOutlined';
+/** A phase's or subphase's progress (the completion slider) */
+export { default as ProgressIcon } from '@mui/icons-material/DonutLargeOutlined';
 /** Roles and approvals */
 export { default as ShieldIcon } from '@mui/icons-material/ShieldOutlined';
 /** Sites */

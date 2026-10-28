@@ -481,7 +481,7 @@ Besides the tenant-wide `change:<entity>` events (now also `change:role`, `chang
 | `GET` | `/t/{slug}/api/sites` | List the caller's visible sites |
 | `POST` | `/t/{slug}/api/sites` | Create a site (`sites.manage`, like update and delete) |
 | `PUT` | `/t/{slug}/api/sites/{id}` | Update a site — an explicit `null` clears `location`, `city`, `country_code` or `region_code`; an omitted field is unchanged |
-| `DELETE` | `/t/{slug}/api/sites/{id}` | Delete a site **and its projects** (with their comments and custom-column values); equipment and company events shared with other sites are kept |
+| `DELETE` | `/t/{slug}/api/sites/{id}` | Delete a site **and its projects** (with their comments and custom-column values); equipment and company events shared with other sites are kept. `409` for the last active site (*The last active site cannot be deleted: add or reactivate another site first*) |
 | `GET` | `/t/{slug}/api/skills` | List skills |
 | `POST` | `/t/{slug}/api/skills` | Create a skill |
 | `PUT` | `/t/{slug}/api/skills/{id}` | Update a skill |
@@ -512,6 +512,7 @@ The admin defaults and feature switches set in [Settings → Features & defaults
 | `kanban_enabled` | `true` or `false` | `true` | `false` takes `views.kanban` away from everyone |
 | `nager_enabled` | `true` or `false` | `true` | `false` stops the holiday refresh (`409`) and the automatic fetch on site create/update |
 | `new_project_preselect_phases` | `true` or `false` | `true` | Whether the New Project dialog pre-selects the active predefined phases |
+| `gantt_completion_badges` | `true` or `false` | `true` | `false` hides the completion (%) badges on the Gantt rows |
 | `project_field_labels` | JSON object, keys among `customer`, `sales_pm`, `volume`, `confirmed`, labels trimmed to 1–60 characters, stored compact in that key order (`{"customer":"Client"}`) | `{}` | Instance-wide labels of the built-in project fields ([Settings → Project fields](../user-guide/settings.md#project-fields)) |
 | `project_fields_hidden` | JSON array, entries among `customer`, `sales_pm`, `volume` (`confirmed` → `422`), stored in that order | `[]` | Built-in project fields hidden from the dialog and the views; their values stay stored and writable |
 

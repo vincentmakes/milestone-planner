@@ -59,6 +59,8 @@ describe('isSettingOn', () => {
 
   it('is on before the settings are loaded', () => {
     expect(isSettingOn(null, 'new_project_preselect_phases')).toBe(true);
+    expect(isSettingOn(null, 'gantt_completion_badges')).toBe(true);
+    expect(isSettingOn({ gantt_completion_badges: 'false' }, 'gantt_completion_badges')).toBe(false);
     expect(isSettingOn(undefined, 'show_weekends')).toBe(true);
   });
 });

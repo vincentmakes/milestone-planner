@@ -38,6 +38,7 @@ DEFAULTS = {
     "kanban_enabled": "true",
     "nager_enabled": "true",
     "new_project_preselect_phases": "true",
+    "gantt_completion_badges": "true",
     "project_field_labels": "{}",
     "project_fields_hidden": "[]",
 }
@@ -190,6 +191,7 @@ async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_sess
         ("kanban_enabled", "OFF", "false"),
         ("nager_enabled", "0", "false"),
         ("new_project_preselect_phases", "Yes", "true"),
+        ("gantt_completion_badges", "off", "false"),
         (
             "project_field_labels",
             '{"confirmed": " Won ", "customer": "Client"}',
@@ -239,6 +241,7 @@ async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_se
         ("kanban_enabled", "maybe"),
         ("nager_enabled", ""),
         ("new_project_preselect_phases", "2"),
+        ("gantt_completion_badges", "hidden"),
         ("project_field_labels", '{"name": "Title"}'),
         ("project_field_labels", '{"customer": "   "}'),
         ("project_field_labels", '{"customer": "' + "x" * 61 + '"}'),

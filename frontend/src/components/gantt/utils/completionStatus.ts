@@ -10,7 +10,8 @@
  * the frontend mirror of `apply_completion()`.
  */
 import { CARD_STATUSES, statusFromCompletion } from '@/utils/kanbanCards';
-import type { CardStatus } from '@/types';
+import { daysBetweenDateStrings } from '@/utils/date';
+import type { CardStatus, Phase, Subphase } from '@/types';
 
 export function statusAfterCompletionWrite(
   response: unknown,
@@ -22,4 +23,25 @@ export function statusAfterCompletionWrite(
     return echoed as CardStatus;
   }
   return statusFromCompletion(completion, currentStatus);
+}
+
+/**
+ * A phase's or subphase's completion as the Gantt shows it: once a child has
+ * a value (its own or calculated), the duration-weighted average of the
+ * children, unset ones counting 0% (`isCalculated`: read-only, the slider is
+ * not offered); otherwise the item's own completion.
+ */
+export function effectiveCompletion(item: Phase | Subphase): { completion: number | null; isCalculated: boolean } {
+  const children: Subphase[] = item.children ?? [];
+  if (children.some((child) => effectiveCompletion(child).completion !== null)) {
+    let totalWeight = 0;
+    let weightedSum = 0;
+    for (const child of children) {
+      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
+      weightedSum += (effectiveCompletion(child).completion ?? 0) * days;
+      totalWeight += days;
+    }
+    return { completion: Math.round(weightedSum / totalWeight), isCalculated: true };
+  }
+  return { completion: item.completion ?? null, isCalculated: false };
 }

@@ -150,6 +150,8 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "kanban_enabled": SettingSpec(_boolean, "true"),
     "nager_enabled": SettingSpec(_boolean, "true"),
     "new_project_preselect_phases": SettingSpec(_boolean, "true"),
+    # 2.1.0: false hides the % badges on the Gantt rows (the bar fill stays).
+    "gantt_completion_badges": SettingSpec(_boolean, "true"),
     "project_field_labels": SettingSpec(_field_labels, "{}"),
     "project_fields_hidden": SettingSpec(_hidden_fields, "[]"),
 }

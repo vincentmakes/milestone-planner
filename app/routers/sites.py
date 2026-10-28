@@ -72,6 +72,7 @@ router = APIRouter()
 
 HOLIDAY_DUPLICATE_DETAIL = "A holiday with this name already exists on this date"
 NAGER_OFF_DETAIL = "Holiday refresh from Nager is turned off"
+LAST_SITE_DETAIL = "The last active site cannot be deleted: add or reactivate another site first"
 
 
 def _validate_range(start: date, end: date | None, label: str = "End date") -> None:
@@ -287,7 +288,12 @@ async def delete_site(
     """
     Delete a site.
 
-    Requires ``sites.manage``.
+    Requires ``sites.manage``. The last active site cannot go (409
+    ``LAST_SITE_DETAIL``): every active site row is locked ``FOR UPDATE`` (in
+    id order, so concurrent deletes queue instead of deadlocking) before
+    counting them, so two deletes of the last two active sites cannot both
+    pass -- the second one waits, then no longer sees the first's site.
+    Deleting an inactive site never lowers the count and takes no lock.
     Matches: DELETE /api/sites/:id
     """
     result = await db.execute(select(Site).where(Site.id == site_id))
@@ -295,6 +301,19 @@ async def delete_site(
 
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
+
+    if site.active:
+        active_ids = (
+            (
+                await db.execute(
+                    select(Site.id).where(Site.active == 1).order_by(Site.id).with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if all(active_id == site_id for active_id in active_ids):
+            raise HTTPException(status_code=409, detail=LAST_SITE_DETAIL)
 
     # Events and equipment linked to this site; the junction rows go with the
     # site (ON DELETE CASCADE), so remember the ids to clean up orphans afterwards.

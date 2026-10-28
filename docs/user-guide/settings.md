@@ -81,6 +81,7 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 | **Kanban board** | Turns the [Kanban board](kanban-board.md) on or off for the whole workspace | On |
 | **Bank-holiday import (Nager)** | Turns the automatic [public-holiday fetching](#automatic-fetching) on or off | On |
 | **Pre-select predefined phases in new projects** | Whether a new project starts with every active [predefined phase](#predefined-phases) selected, or with none | On |
+| **Show completion badges in the Gantt** | Whether the project, phase and subphase rows of the Gantt chart show their completion badge (*40%*). Off hides the badges only: the bars stay filled to their completion, and the progress slider stays available through **Set progress…** in a phase's or subphase's right-click menu | On |
 
 The default filters are a starting point, not a restriction: people change them as usual, and the default applies again the next time the panel below the Gantt chart opens. The standalone Staff and Equipment views always open unfiltered. A skill that was deleted or an equipment type that was renamed is shown as *(no longer exists)* so you can untick it; until then it is simply ignored.
 
@@ -237,7 +238,7 @@ People whose role has **See all sites** (administrators by default) see every ac
 
 ### Deactivating and Deleting a Site
 
-The Sites section has no delete button: untick **Active** to hide a site from the site selector while keeping its data. Deleting a site is only possible through the API (`DELETE /api/sites/{id}`) and **deletes all of its projects** — with their phases, subphases, assignments, equipment bookings, comments and custom-column values — and its holidays. This now happens consistently, both in the application and at the database level. Equipment and company events shared with other sites stay on those sites; equipment or an event left without any site is deleted.
+To hide a site from the site selector while keeping its data, untick **Active** in its form. To **delete** a site, click the bin on its row (people who may manage sites) and type the site's name to confirm. Deleting a site **cannot be undone**: it deletes all of its projects — with their phases, subphases, bookings, equipment bookings, comments and custom-column values —, its bank holidays, closures and events, its teams and their memberships, equipment linked only to this site, and tags or dropdown-field items limited to it. Equipment and company events shared with other sites stay on those sites. People assigned only to this site keep their account but no longer see its data. The last active site cannot be deleted: add or reactivate another site first. Everyone signed in sees the site disappear straight away; someone who was looking at it moves to their first remaining site.
 
 !!! danger
     Deleting a site is irreversible and removes all data associated with it. To keep its projects, move them to another site first, or deactivate the site instead.
