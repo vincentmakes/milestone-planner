@@ -302,6 +302,11 @@
   flex: 0 0 auto;
 }
 
+/* A number field's decimals picker in its row */
+.decimals {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 1024px) {
   .editRow {
     padding-left: 0;

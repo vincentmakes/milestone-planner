@@ -8,8 +8,10 @@
  *   default ordering and the counts). Stored in the settings
  *   `project_field_labels` / `project_fields_hidden`.
  * - Custom fields: text, number, switch, dropdown and multi-select dropdown,
- *   in a drag-reorderable list. The type is fixed at creation. Deleting a
- *   field removes every project's value (the confirmation names the count).
+ *   in a drag-reorderable list. The type is fixed at creation. A number
+ *   field keeps a chosen number of decimals (As typed / 0-3), saved on
+ *   change: new values are rounded to it, stored ones shown rounded. Deleting
+ *   a field removes every project's value (the confirmation names the count).
  * - Items of the dropdown fields: colour, and like tags, all sites or only
  *   some, per site optionally only some teams. Drag to reorder within the field.
  *
@@ -41,7 +43,7 @@ import {
   parseHiddenFields,
 } from '@/utils/instanceSettings';
 import type { BuiltInFieldKey } from '@/utils/instanceSettings';
-import { FIELD_TYPE_LABELS, isDropdownField } from '@/utils/projectFields';
+import { FIELD_DECIMALS, FIELD_TYPE_LABELS, isDropdownField } from '@/utils/projectFields';
 import type { ProjectField, ProjectFieldOption, ProjectFieldType, Site, Team } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
@@ -64,6 +66,19 @@ const TYPE_OPTIONS: { value: ProjectFieldType; label: string }[] = [
   { value: 'number', label: FIELD_TYPE_LABELS.number },
   { value: 'toggle', label: FIELD_TYPE_LABELS.toggle },
 ];
+
+/** A number field's decimals: '' = as typed (null). */
+const DECIMALS_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'As typed' },
+  ...FIELD_DECIMALS.map((d) => ({ value: String(d), label: String(d) })),
+];
+
+/** Under the custom fields while a number field exists or is being added. */
+export const DECIMALS_HINT = 'Decimals apply to new values; existing ones are shown rounded';
+
+function decimalsFromChoice(value: string): number | null {
+  return value === '' ? null : Number(value);
+}
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -129,6 +144,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   // Custom fields
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<ProjectFieldType>('select');
+  const [newFieldDecimals, setNewFieldDecimals] = useState('');
   const [renamingFieldId, setRenamingFieldId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [expandedFieldId, setExpandedFieldId] = useState<number | null>(null);
@@ -267,12 +283,23 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       const name = newFieldName.trim();
       if (!name) return;
       await run(async () => {
-        const created = await projectFieldsApi.create({ name, field_type: newFieldType });
+        const created = await projectFieldsApi.create({
+          name,
+          field_type: newFieldType,
+          ...(newFieldType === 'number' ? { decimals: decimalsFromChoice(newFieldDecimals) } : {}),
+        });
         setNewFieldName('');
+        setNewFieldDecimals('');
         // A new dropdown opens on its items, ready for the first one
         if (isDropdownField(created)) setExpandedFieldId(created.id);
       }, 'Failed to add field');
     });
+
+  const handleDecimalsChange = (field: ProjectField, value: string) =>
+    run(
+      () => projectFieldsApi.update(field.id, { decimals: decimalsFromChoice(value) }),
+      'Failed to change the decimals'
+    );
 
   const startRename = (field: ProjectField) => {
     setRenamingFieldId(field.id);
@@ -494,6 +521,16 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                         {field.options.length} item{field.options.length === 1 ? '' : 's'}
                       </span>
                     )}
+                    {field.field_type === 'number' && (
+                      <Select
+                        className={styles.decimals}
+                        value={field.decimals == null ? '' : String(field.decimals)}
+                        options={DECIMALS_OPTIONS}
+                        onChange={(e) => void handleDecimalsChange(field, e.target.value)}
+                        aria-label={`Decimals of ${field.name}`}
+                        title="Decimals"
+                      />
+                    )}
                     <div className={styles.actions}>
                       {isRenaming ? (
                         <>
@@ -591,6 +628,16 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
               onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
               aria-label="Type"
             />
+            {newFieldType === 'number' && (
+              <Select
+                className={styles.addType}
+                value={newFieldDecimals}
+                options={DECIMALS_OPTIONS}
+                onChange={(e) => setNewFieldDecimals(e.target.value)}
+                aria-label="Decimals"
+                title="Decimals"
+              />
+            )}
             <Button
               type="submit"
               icon={<Icon icon={PlusIcon} />}
@@ -600,6 +647,9 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
               Add field
             </Button>
           </div>
+          {(newFieldType === 'number' || fields.some((f) => f.field_type === 'number')) && (
+            <p className={styles.hint}>{DECIMALS_HINT}</p>
+          )}
         </form>
       </section>
     </div>

@@ -1,6 +1,7 @@
 /**
  * ProjectFieldInputs - the project fields in the project dialog, in field
- * order: text → Input, number → Input type=number, toggle → ToggleSwitch,
+ * order: text → Input, number → Input type=number (step and blur formatting
+ * from the field's decimals), toggle → ToggleSwitch,
  * select → Select with an empty choice, multiselect → MultiSelectDropdown
  * (the same box, ticking several items).
  *
@@ -17,6 +18,7 @@ import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { MultiSelectDropdown } from '@/components/common/MultiSelectDropdown';
 import { useAppStore } from '@/stores/appStore';
 import { can } from '@/utils/permissions';
+import { fieldNumberInputText } from '@/utils/projectFields';
 import type { FieldDraft } from '@/utils/projectFields';
 import type { ProjectField, ProjectFieldOption } from '@/types';
 import { ManageSettingsLink } from './ManageSettingsLink';
@@ -99,18 +101,30 @@ function FieldInput({ field, options, draft, onChange, disabled }: FieldInputPro
           <ToggleSwitch checked={draft === true} onChange={onChange} label={field.name} disabled={disabled} />
         </div>
       );
-    case 'number':
+    case 'number': {
+      const decimals = field.decimals ?? null;
       return (
         <Input
           label={field.name}
           type="number"
-          step="any"
-          className={styles.field}
+          // 10^-d: the spinner steps by the last kept decimal
+          step={decimals === null ? 'any' : String(10 ** -decimals)}
+          inputMode="decimal"
+          className={`${styles.field} ${styles.numberField}`}
           value={text}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={() => {
+            // Shows what will be stored: rounded half-up to the field's decimals
+            const n = text.trim() === '' ? NaN : Number(text);
+            if (decimals !== null && Number.isFinite(n)) {
+              const formatted = fieldNumberInputText(n, decimals);
+              if (formatted !== text) onChange(formatted);
+            }
+          }}
           disabled={disabled}
         />
       );
+    }
     case 'select':
       return (
         <Select

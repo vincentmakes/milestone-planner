@@ -235,6 +235,68 @@ describe('ProjectModal project fields', () => {
   });
 });
 
+describe('ProjectModal number field decimals', () => {
+  const withCost = (decimals: number | null) =>
+    useAppStore.setState({
+      projectFields: [makeProjectField({ id: 6, name: 'Cost', field_type: 'number', sort_order: 5, decimals })],
+    });
+
+  it('steps by the last kept decimal and reformats on blur, half-up', async () => {
+    withCost(2);
+    act(() => useUIStore.getState().openProjectModal({ ...project, field_values: { 6: 0.125 } }));
+    render(<ProjectModal />);
+
+    const cost = screen.getByLabelText('Cost');
+    // A stored value is shown rounded (never rewritten unless edited).
+    expect(cost).toHaveValue(0.13);
+    expect(cost).toHaveAttribute('step', '0.01');
+    expect(cost).toHaveAttribute('inputmode', 'decimal');
+
+    fireEvent.change(cost, { target: { value: '1.005' } });
+    fireEvent.blur(cost);
+    expect(cost).toHaveDisplayValue('1.01');
+    fireEvent.change(cost, { target: { value: '12.5' } });
+    fireEvent.blur(cost);
+    expect(cost).toHaveDisplayValue('12.50');
+    await save();
+
+    expect(sent(updateProject).field_values).toEqual({ 6: 12.5 });
+  });
+
+  it('does not resend a stored value that is only shown rounded', async () => {
+    withCost(2);
+    act(() => useUIStore.getState().openProjectModal({ ...project, field_values: { 6: 0.125 } }));
+    render(<ProjectModal />);
+    fireEvent.blur(screen.getByLabelText('Cost'));
+    await save();
+
+    expect(sent(updateProject).field_values).toBeUndefined();
+  });
+
+  it('keeps a field without decimals as typed', () => {
+    withCost(null);
+    act(() => useUIStore.getState().openProjectModal({ ...project, field_values: { 6: 0.125 } }));
+    render(<ProjectModal />);
+
+    const cost = screen.getByLabelText('Cost');
+    expect(cost).toHaveAttribute('step', 'any');
+    fireEvent.change(cost, { target: { value: '1.005' } });
+    fireEvent.blur(cost);
+    expect(cost).toHaveDisplayValue('1.005');
+  });
+
+  it('leaves an empty or unparsable number alone on blur', () => {
+    withCost(0);
+    act(() => useUIStore.getState().openProjectModal({ ...project, field_values: {} }));
+    render(<ProjectModal />);
+
+    const cost = screen.getByLabelText('Cost');
+    fireEvent.blur(cost);
+    expect(cost).toHaveDisplayValue('');
+    expect(cost).toHaveAttribute('step', '1');
+  });
+});
+
 describe('ProjectModal built-in field labels and hidden fields', () => {
   it('names the built-in fields with the defaults Settings shows', () => {
     act(() => useUIStore.getState().openProjectModal(project));

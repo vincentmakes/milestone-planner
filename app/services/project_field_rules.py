@@ -16,7 +16,8 @@ the tag counters of ``tag_rules`` over ``project_field_selections``, and the
 409 details share the tag texts' shape ("... use this item").
 
 A project's values travel as ``field_values: {field_id: value}``: text a
-string (trimmed, at most 2000 characters), number a finite number, toggle a
+string (trimmed, at most 2000 characters), number a finite number (rounded
+half-up to the field's ``decimals``, ``round_field_number``), toggle a
 boolean, select an item id (or a one-item list), multiselect a list of item
 ids. ``null``, ``""`` and ``[]`` clear. ``validate_field_values`` checks a
 write, ``apply_field_values`` writes it onto the project, and
@@ -29,6 +30,7 @@ Error details are plain strings (the frontend renders ``detail`` as text).
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
@@ -60,6 +62,26 @@ ITEM_NOUN = "item"
 # dropdown value may list.
 MAX_TEXT_VALUE_LENGTH = 2000
 MAX_ITEMS_PER_VALUE = 500
+
+
+# Doubles from 2**53 up hold no fraction: rounding them is the identity (and
+# would exceed the decimal context's precision near 1e308).
+_ROUNDING_LIMIT = 2.0**53
+
+
+def round_field_number(value: float, decimals: int | None) -> float:
+    """
+    A number field's value rounded to its ``decimals`` (None = as typed):
+    half-up, away from zero, on the value's shortest decimal string -- so
+    0.125 -> 0.13 and 1.005 -> 1.01 at 2, 2.5 -> 3 and -2.5 -> -3 at 0 (Python's
+    ``round`` is half-to-even on the binary double). Mirrored by
+    ``roundFieldNumber`` in ``frontend/src/utils/projectFields.ts``; the
+    ``ROUNDING_CASES`` tables of both test files are the contract.
+    """
+    if decimals is None or not math.isfinite(value) or abs(value) >= _ROUNDING_LIMIT:
+        return value
+    rounded = Decimal(repr(value)).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+    return float(rounded) + 0.0  # + 0.0: no negative zero
 
 
 def invalid_value_detail(field_name: str) -> str:
@@ -209,8 +231,13 @@ def _is_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _scalar(field_type: str, name: str, value: Any) -> ScalarValue | None:
-    """The stored form of a text / number / toggle value (None = clear); 422 otherwise."""
+def _scalar(
+    field_type: str, name: str, value: Any, decimals: int | None = None
+) -> ScalarValue | None:
+    """
+    The stored form of a text / number / toggle value (None = clear); 422
+    otherwise. A number is rounded to the field's ``decimals``.
+    """
     if _is_clear(value):
         return None
     if field_type == "text":
@@ -231,7 +258,7 @@ def _scalar(field_type: str, name: str, value: Any) -> ScalarValue | None:
             raise HTTPException(status_code=422, detail=invalid_value_detail(name)) from exc
         if not math.isfinite(number):
             raise HTTPException(status_code=422, detail=invalid_value_detail(name))
-        return ScalarValue(value_number=number)
+        return ScalarValue(value_number=round_field_number(number, decimals))
     # toggle
     if not isinstance(value, bool):
         raise HTTPException(status_code=422, detail=invalid_value_detail(name))
@@ -276,19 +303,19 @@ async def validate_field_values(
         return normalised
 
     result = await db.execute(
-        select(ProjectField.id, ProjectField.name, ProjectField.field_type).where(
-            ProjectField.id.in_(set(field_values))
-        )
+        select(
+            ProjectField.id, ProjectField.name, ProjectField.field_type, ProjectField.decimals
+        ).where(ProjectField.id.in_(set(field_values)))
     )
-    fields = {row[0]: (row[1], row[2]) for row in result.all()}
+    fields = {row[0]: (row[1], row[2], row[3]) for row in result.all()}
     wanted: dict[int, list[int]] = {}
     for field_id in sorted(fields):
-        name, field_type = fields[field_id]
+        name, field_type, decimals = fields[field_id]
         value = field_values[field_id]
         if field_type in DROPDOWN_FIELD_TYPES:
             wanted[field_id] = _item_ids(field_type, name, value)
         else:
-            normalised.scalars[field_id] = _scalar(field_type, name, value)
+            normalised.scalars[field_id] = _scalar(field_type, name, value, decimals)
 
     options: dict[int, ProjectFieldOption] = {}
     all_ids = {option_id for ids in wanted.values() for option_id in ids}
@@ -303,7 +330,7 @@ async def validate_field_values(
 
     project_team_ids = set(team_ids)
     for field_id, ids in wanted.items():
-        name, field_type = fields[field_id]
+        name, field_type, _decimals = fields[field_id]
         chosen = [options[option_id] for option_id in ids if option_id in options]
         for option in chosen:
             if option.field_id != field_id:

@@ -100,7 +100,7 @@ The per-project levels are checked inside the handler (`app/services/project_acc
 
 Project list and detail responses carry `team_ids`; create and update accept `team_ids` (omitted = unchanged, `[]` = no team). Every team must be at the project's site (`400`; a project without a site cannot have teams). Unknown team ids are dropped silently, like unknown tag ids, so a What-If replay survives a team deleted in the meantime. Changing the teams re-checks the project's tags and dropdown-field items: a tag or item limited to teams the project no longer shares is refused (`400`).
 
-**Project field values.** List and detail responses carry `field_values`, an object keyed by the [project field](#project-fields) id as a string: a text field → string, number → number, toggle → boolean (`false` is a value), select → the item id, multiselect → the item ids in item order, e.g. `{"1": "Pilot plant", "2": 1250, "3": false, "4": 42, "5": [51, 52]}`. Fields without a value are absent; `includeOtherSites` rows carry their values like any other. `POST` and `PUT` accept `field_values: {field_id: value}` (at most 500 keys, `422` beyond); only the fields given change, and `null`, `""` or `[]` clears one. A select takes an item id or a one-item list, a multiselect a list (at most 500 items, duplicates folded). Unknown field and item ids are dropped silently, like unknown tag ids (What-If replay).
+**Project field values.** List and detail responses carry `field_values`, an object keyed by the [project field](#project-fields) id as a string: a text field → string, number → number (rounded half-up to the field's `decimals` when written; stored values are never rewritten when `decimals` changes), toggle → boolean (`false` is a value), select → the item id, multiselect → the item ids in item order, e.g. `{"1": "Pilot plant", "2": 1250, "3": false, "4": 42, "5": [51, 52]}`. Fields without a value are absent; `includeOtherSites` rows carry their values like any other. `POST` and `PUT` accept `field_values: {field_id: value}` (at most 500 keys, `422` beyond); only the fields given change, and `null`, `""` or `[]` clears one. A select takes an item id or a one-item list, a multiselect a list (at most 500 items, duplicates folded). Unknown field and item ids are dropped silently, like unknown tag ids (What-If replay).
 
 | Status | Detail |
 |--------|--------|
@@ -326,9 +326,9 @@ Fields every project carries besides the built-in ones (see [Settings — Projec
 |--------|----------|-------------|
 | `GET` | `/t/{slug}/api/project-fields` | Every field in `sort_order, id` with its items |
 | `GET` | `/t/{slug}/api/project-fields/{id}/usage` | `{projects: n}` — projects holding a value or an item of the field |
-| `POST` | `/t/{slug}/api/project-fields` | `{name, field_type}` → `201`, appended last |
+| `POST` | `/t/{slug}/api/project-fields` | `{name, field_type, decimals?}` → `201`, appended last; `decimals` (0–3, number fields only, `422` otherwise) |
 | `PUT` | `/t/{slug}/api/project-fields/reorder` | `{field_order: [ids]}` (≤ 500; unknown ids ignored) |
-| `PUT` | `/t/{slug}/api/project-fields/{id}` | `{name?, field_type?}` — the type cannot change (`422`) |
+| `PUT` | `/t/{slug}/api/project-fields/{id}` | `{name?, field_type?, decimals?}` — the type cannot change (`422`); `decimals` applies whenever sent, `null` = as typed (a non-null value on another type `422`) |
 | `DELETE` | `/t/{slug}/api/project-fields/{id}` | `204`; its items, values and selections go with it |
 | `POST` | `/t/{slug}/api/project-fields/{id}/options` | Add an item `{name, color?, all_sites?, site_ids?, team_ids?}` → `201` (dropdown fields only) |
 | `PUT` | `/t/{slug}/api/project-fields/{id}/options/reorder` | `{option_order: [ids]}` within the field |

@@ -28,6 +28,7 @@ from app.models.project_field import ProjectField, ProjectFieldOption
 from app.models.site import Site
 from app.models.team import Team
 from app.routers.project_fields import (
+    DECIMALS_NUMBER_ONLY_DETAIL,
     DUPLICATE_FIELD_NAME_DETAIL,
     DUPLICATE_OPTION_NAME_DETAIL,
     EMPTY_FIELD_NAME_DETAIL,
@@ -76,6 +77,7 @@ def _field(field_id: int = 5, name: str = "Project type", field_type: str = "sel
         name=name,
         field_type=field_type,
         sort_order=kw.get("sort_order", 0),
+        decimals=kw.get("decimals"),
         options=kw.get("options", []),
         created_at=STAMP,
         updated_at=STAMP,
@@ -161,7 +163,7 @@ async def test_any_user_lists_the_fields_with_their_items(authed_client, mock_db
             ),
         ],
     )
-    budget = _field(6, "Budget", "number", sort_order=1)
+    budget = _field(6, "Budget", "number", sort_order=1, decimals=2)
     mock_db_session.execute.return_value = scalars_result([select_field, budget])
 
     response = await client.get("/api/project-fields")
@@ -173,6 +175,7 @@ async def test_any_user_lists_the_fields_with_their_items(authed_client, mock_db
             "name": "Project type",
             "field_type": "select",
             "sort_order": 0,
+            "decimals": None,
             "options": [
                 {
                     "id": 9,
@@ -194,7 +197,14 @@ async def test_any_user_lists_the_fields_with_their_items(authed_client, mock_db
                 },
             ],
         },
-        {"id": 6, "name": "Budget", "field_type": "number", "sort_order": 1, "options": []},
+        {
+            "id": 6,
+            "name": "Budget",
+            "field_type": "number",
+            "sort_order": 1,
+            "decimals": 2,
+            "options": [],
+        },
     ]
     (sql,) = _sql(mock_db_session)
     assert sql.endswith("ORDER BY project_fields.sort_order, project_fields.id")
@@ -250,6 +260,7 @@ async def test_a_key_holder_creates_a_field_appended_at_the_end(authed_client, s
         "name": "Budget",
         "field_type": "number",
         "sort_order": 4,
+        "decimals": None,
         "options": [],
     }
     taken, max_order = _sql(db)
@@ -282,8 +293,22 @@ async def test_the_first_field_gets_sort_order_zero(authed_client, stamp_on_refr
         ({"name": "", "field_type": "text"}, 422, None),
         ({"name": "x" * 101, "field_type": "text"}, 422, None),
         ({"name": "Budget"}, 422, None),
+        ({"name": "Budget", "field_type": "number", "decimals": 4}, 422, None),
+        ({"name": "Budget", "field_type": "number", "decimals": -1}, 422, None),
+        ({"name": "Budget", "field_type": "number", "decimals": 1.5}, 422, None),
+        ({"name": "Remark", "field_type": "text", "decimals": 2}, 422, DECIMALS_NUMBER_ONLY_DETAIL),
     ],
-    ids=["blank", "unknown-type", "empty", "too-long", "no-type"],
+    ids=[
+        "blank",
+        "unknown-type",
+        "empty",
+        "too-long",
+        "no-type",
+        "decimals-too-many",
+        "decimals-negative",
+        "decimals-fraction",
+        "decimals-on-text",
+    ],
 )
 async def test_create_rejects_bad_input(authed_client, mock_db_session, body, status, detail):
     client, set_user = authed_client
@@ -1094,3 +1119,115 @@ async def test_site_delete_removes_restricted_items_left_without_a_site(
     assert "project_field_option_sites.option_id = project_field_options.id" in sql[6]
     mock_db_session.delete.assert_awaited_once_with(site)
     mock_db_session.commit.assert_awaited()
+
+
+# ---------------------------------------------------------
+# Decimals of a number field (2.1.0)
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_number_field_is_created_with_its_decimals(authed_client, stamp_on_refresh):
+    client, set_user = authed_client
+    set_user(MANAGER)
+    db = stamp_on_refresh
+    db.execute.side_effect = [scalar_result(None), scalar_result(None)]
+
+    response = await client.post(
+        "/api/project-fields", json={"name": "Cost", "field_type": "number", "decimals": 2}
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["decimals"] == 2
+    (field,) = (c.args[0] for c in db.add.call_args_list)
+    assert field.decimals == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("decimals", [0, 3])
+async def test_set_the_decimals_of_a_number_field(authed_client, mock_db_session, decimals):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    field = _field(6, "Budget", "number")
+    mock_db_session.execute.side_effect = [scalar_result(field)]
+
+    response = await client.put("/api/project-fields/6", json={"decimals": decimals})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["decimals"] == decimals
+    assert field.decimals == decimals
+    mock_db_session.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_null_decimals_reset_a_number_field_to_as_typed(authed_client, mock_db_session):
+    # null is a real value (back to "as typed"), read from model_fields_set.
+    client, set_user = authed_client
+    set_user(ADMIN)
+    field = _field(6, "Budget", "number", decimals=2)
+    mock_db_session.execute.side_effect = [scalar_result(field)]
+
+    response = await client.put("/api/project-fields/6", json={"name": "Budget", "decimals": None})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["decimals"] is None
+    assert field.decimals is None
+
+
+@pytest.mark.asyncio
+async def test_a_rename_leaves_the_decimals_alone(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    field = _field(6, "Budget", "number", decimals=2)
+    mock_db_session.execute.side_effect = [scalar_result(field), scalar_result(None)]
+
+    response = await client.put("/api/project-fields/6", json={"name": "Cost"})
+
+    assert response.status_code == 200, response.text
+    assert (field.name, field.decimals) == ("Cost", 2)
+
+
+@pytest.mark.asyncio
+async def test_decimals_on_a_field_that_is_not_a_number_is_a_422(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    field = _field(5, field_type="select")
+    mock_db_session.execute.side_effect = [scalar_result(field)]
+
+    response = await client.put("/api/project-fields/5", json={"decimals": 1})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == DECIMALS_NUMBER_ONLY_DETAIL
+    assert field.decimals is None
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_whole_select_field_sent_back_with_null_decimals_is_fine(
+    authed_client, mock_db_session
+):
+    # Clients send the whole field back: null decimals on another type passes.
+    client, set_user = authed_client
+    set_user(ADMIN)
+    field = _field(5, field_type="select")
+    mock_db_session.execute.side_effect = [scalar_result(field)]
+
+    response = await client.put(
+        "/api/project-fields/5",
+        json={"name": "Project type", "field_type": "select", "decimals": None},
+    )
+
+    assert response.status_code == 200, response.text
+    assert field.decimals is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("decimals", [4, -1, "two"])
+async def test_out_of_range_decimals_are_a_422(authed_client, mock_db_session, decimals):
+    client, set_user = authed_client
+    set_user(ADMIN)
+
+    response = await client.put("/api/project-fields/6", json={"decimals": decimals})
+
+    assert response.status_code == 422
+    mock_db_session.execute.assert_not_awaited()

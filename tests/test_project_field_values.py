@@ -53,8 +53,9 @@ def rows_result(rows):
     return result
 
 
-def _fields_result(*field_ids):
-    return rows_result([(fid, *FIELDS[fid]) for fid in field_ids])
+def _fields_result(*field_ids, decimals=None):
+    """The fields query: (id, name, type, decimals) per field (decimals: {id: n})."""
+    return rows_result([(fid, *FIELDS[fid], (decimals or {}).get(fid)) for fid in field_ids])
 
 
 def _option(option_id, field_id, name, sort_order=0, site_ids=None, teams=()):
@@ -172,6 +173,21 @@ async def test_numbers_are_stored_as_floats(value):
     normalised = await validate_field_values(_db(_fields_result(2)), 1, [], {2: value})
 
     assert normalised.scalars[2] == ScalarValue(value_number=float(value))
+
+
+async def test_a_number_is_rounded_half_up_to_the_fields_decimals():
+    db = _db(_fields_result(2, decimals={2: 2}))
+
+    normalised = await validate_field_values(db, 1, [], {2: 0.125})
+
+    assert normalised.scalars[2] == ScalarValue(value_number=0.13)
+    assert "project_fields.decimals" in _sql(db)[0]
+
+
+async def test_a_number_without_decimals_is_kept_as_typed():
+    normalised = await validate_field_values(_db(_fields_result(2)), 1, [], {2: 0.125})
+
+    assert normalised.scalars[2] == ScalarValue(value_number=0.125)
 
 
 @pytest.mark.parametrize(

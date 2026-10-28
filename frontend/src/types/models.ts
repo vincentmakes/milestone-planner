@@ -110,6 +110,12 @@ export interface ProjectField {
   /** Fixed at creation */
   field_type: ProjectFieldType;
   sort_order: number;
+  /**
+   * A number field's decimals (0-3): new values are rounded half-up to it on
+   * write, stored ones are shown rounded. null / absent = as typed (and on
+   * every other type).
+   */
+  decimals?: number | null;
   /** Items in display order; empty for text, number and toggle fields */
   options: ProjectFieldOption[];
 }

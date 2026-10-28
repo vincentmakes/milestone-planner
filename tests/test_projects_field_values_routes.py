@@ -53,8 +53,9 @@ def first_result(row):
     return result
 
 
-def fields_result(*field_ids):
-    return rows_result([(fid, *FIELDS[fid]) for fid in field_ids])
+def fields_result(*field_ids, decimals=None):
+    """The fields query: (id, name, type, decimals) per field (decimals: {id: n})."""
+    return rows_result([(fid, *FIELDS[fid], (decimals or {}).get(fid)) for fid in field_ids])
 
 
 def make_option(option_id, field_id, name, sort_order=0, site_ids=None, teams=()):
@@ -368,6 +369,22 @@ async def test_create_project_ignores_an_unknown_field(authed_client, mock_db_se
     assert [(r.field_id, r.value_number) for r in project.field_values] == [(2, 5.0)]
     assert project.field_selections == []
     mock_db_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_project_rounds_a_number_to_its_fields_decimals(
+    authed_client, mock_db_session, broadcast
+):
+    # Budget keeps 0 decimals: 1249.5 is stored as 1250 (half-up, not to even).
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result(1), fields_result(2, decimals={2: 0})]
+
+    response = await client.post("/api/projects", json=_body(field_values={"2": 1249.5}))
+
+    assert response.status_code == 200, response.text
+    project = added_project(mock_db_session)
+    assert [(r.field_id, r.value_number) for r in project.field_values] == [(2, 1250.0)]
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Notifications can be deleted: the × beside each one in the bell removes it (or dismisses a due-soon reminder), and **Clear all** empties your inbox after a confirmation, for you only; a notification you have read now disappears by itself 30 days later, while unread ones stay until you read them
+- Number project fields can keep a set number of decimals: pick As typed or 0 to 3 for each number field in Settings → Project fields; new values are rounded half up when saved, values entered before are shown (and exported) rounded but never changed, and the site export lists each field's decimals
 
 ### Changed
 

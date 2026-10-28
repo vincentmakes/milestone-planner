@@ -6,11 +6,14 @@ import { describe, it, expect } from 'vitest';
 import {
   FIELD_TYPE_LABELS,
   draftFromValue,
+  fieldNumberInputText,
+  formatFieldNumber,
   isDropdownField,
   isEmptyFieldValue,
   normalizeStoredValue,
   optionsForProjectScope,
   optionsForSite,
+  roundFieldNumber,
   sameFieldValue,
   valueFromDraft,
   valueOptionIds,
@@ -119,5 +122,70 @@ describe('values', () => {
     expect(sameFieldValue(null, null)).toBe(true);
     expect(sameFieldValue('a', 'a')).toBe(true);
     expect(sameFieldValue(1, 2)).toBe(false);
+  });
+});
+
+// (value, decimals, expected). Mirror of ROUNDING_CASES in
+// tests/test_project_field_rules.py, case for case: change one, change both.
+// Half-up away from zero on the shortest decimal string, never toFixed on the
+// binary double (which gives 1.00 for 1.005).
+const ROUNDING_CASES: [number, number | null, number][] = [
+  [0.125, 2, 0.13],
+  [1.005, 2, 1.01],
+  [2.5, 0, 3],
+  [-2.5, 0, -3],
+  [-0.125, 2, -0.13],
+  [1.45, 1, 1.5],
+  [0.0005, 3, 0.001],
+  [12.3456, 3, 12.346],
+  [123456789.125, 2, 123456789.13],
+  [-0.004, 2, 0],
+  [0.0000001, 3, 0],
+  [7, 2, 7],
+  [7.1, 3, 7.1],
+  [0.5, null, 0.5],
+  [1e300, 2, 1e300],
+];
+
+describe('number decimals', () => {
+  it.each(ROUNDING_CASES)('rounds %s to %s decimals as %s (the server table)', (value, decimals, expected) => {
+    const rounded = roundFieldNumber(value, decimals);
+    expect(rounded).toBe(expected);
+    expect(Object.is(rounded, -0)).toBe(false);
+  });
+
+  it('carries a round-up across the decimal point', () => {
+    expect(roundFieldNumber(9.995, 2)).toBe(10);
+    expect(roundFieldNumber(-9.5, 0)).toBe(-10);
+    expect(roundFieldNumber(0.999, 0)).toBe(1);
+  });
+
+  it('formats for display with exactly the field decimals', () => {
+    expect(formatFieldNumber(1234.5, 2)).toBe(new Intl.NumberFormat(undefined, { minimumFractionDigits: 2 }).format(1234.5));
+    expect(formatFieldNumber(0.125, 2)).toBe(new Intl.NumberFormat(undefined, { minimumFractionDigits: 2 }).format(0.13));
+    expect(formatFieldNumber(2.5, 0)).toBe(new Intl.NumberFormat().format(3));
+    expect(formatFieldNumber(0.12345, null)).toBe(
+      new Intl.NumberFormat(undefined, { maximumFractionDigits: 20 }).format(0.12345)
+    );
+  });
+
+  it('gives the input text rounded and padded, or as typed', () => {
+    expect(fieldNumberInputText(12.5, 2)).toBe('12.50');
+    expect(fieldNumberInputText(0.125, 2)).toBe('0.13');
+    expect(fieldNumberInputText(2.5, 0)).toBe('3');
+    expect(fieldNumberInputText(0.125, null)).toBe('0.125');
+    expect(fieldNumberInputText(1e300, 2)).toBe('1e+300');
+  });
+
+  it('drafts a stored value rounded and sends a typed one rounded, as the server stores it', () => {
+    const cost = makeProjectField({ id: 11, name: 'Cost', field_type: 'number', decimals: 2 });
+    expect(draftFromValue(cost, 0.125)).toBe('0.13');
+    expect(valueFromDraft(cost, '1.005')).toBe(1.01);
+    expect(valueFromDraft(cost, 'abc')).toBeUndefined();
+    // A stored value left untouched compares equal to its rounded draft: not re-sent.
+    expect(sameFieldValue(normalizeStoredValue(cost, 0.125), valueFromDraft(cost, draftFromValue(cost, 0.125))!)).toBe(true);
+    // Without decimals, as typed.
+    expect(draftFromValue(num, 0.125)).toBe('0.125');
+    expect(valueFromDraft(num, '0.125')).toBe(0.125);
   });
 });

@@ -517,6 +517,18 @@ BANK_HOLIDAYS_UPGRADE_SQL = _add_column_if_missing(
 # tenant auto-migration (tenant_manager._run_auto_migrations).
 EQUIPMENT_ASSIGNMENTS_NOTE_SQL = _add_column_if_missing("equipment_assignments", "note", "TEXT")
 
+# project_fields.decimals (2.1.0): a number field's decimals, 0-3, NULL = as
+# typed. A step of its own, never part of PROJECT_FIELDS_TABLE_SQL (which
+# migrations/add_project_fields.sql carries verbatim): every fresh source runs
+# it right after CREATE TABLE project_fields. Shared by
+# migrations/add_project_field_decimals.sql, setup_databases.sql, the template
+# and the tenant auto-migration (tenant_manager._run_auto_migrations).
+PROJECT_FIELD_DECIMALS_SQL = _add_column_if_missing(
+    "project_fields",
+    "decimals",
+    "SMALLINT CONSTRAINT project_fields_decimals_check CHECK (decimals BETWEEN 0 AND 3)",
+)
+
 # company_events.color (event colour picker).
 COMPANY_EVENTS_COLOR_COLUMN_SQL = _add_column_if_missing("company_events", "color", "VARCHAR(20)")
 
@@ -1884,6 +1896,11 @@ def get_tenant_schema_sql() -> str:
     -- their indexes
     """
         + PROJECT_FIELDS_SCHEMA_SQL
+        + """
+
+    -- A number field's decimals (2.1.0), added to the table above.
+    """
+        + PROJECT_FIELD_DECIMALS_SQL
         + """
 
     -- Approval policies (seeded: the project manager approves), approval

@@ -701,11 +701,12 @@ In the add row under the **Custom fields** list, type the new field's name, pick
 | **Dropdown** | One item of a list |
 | **Multi-select dropdown** | Any number of items of a list |
 | **Text** | Free text, up to 2,000 characters |
-| **Number** | A number |
+| **Number** | A number, kept to the field's **Decimals** |
 | **Switch** | On or off |
 
 - **Order** — Drag fields to change the order of the project dialog, the [Filter](gantt-charts.md#filtering-projects) and the **Group by** / **Colour by** lists.
 - **Rename** — Click the pencil. A field's type cannot be changed after it is created.
+- **Decimals** — A number field has a **Decimals** picker in its row (and in the add row while **Number** is picked): **As typed** keeps every decimal entered, **0** to **3** keep that many. A change is saved at once. It applies to new values: they are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at 2 decimals), and the project dialog shows the field with that many decimals. Values saved before are not changed; they are shown — and exported — rounded.
 - **Delete** — Click the bin; the confirmation says how many projects hold a value, and every value of the field is removed.
 
 No field is required, and custom fields cannot be hidden — delete one you no longer need.

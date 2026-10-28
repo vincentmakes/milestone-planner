@@ -39,7 +39,7 @@ from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 from app.services.approvals import pending_change_text
 from app.services.booking_segments import effective_dates
-from app.services.project_field_rules import load_project_field_values
+from app.services.project_field_rules import load_project_field_values, round_field_number
 from app.services.site_access import ensure_project_visible, ensure_site_access
 from app.utils import utcnow_naive
 
@@ -1084,8 +1084,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     # Project fields (global), the items applicable to the site, and the values
     add_sheet(
         "Project fields",
-        ["ID", "Name", "Type", "Sort order"],
-        [[f.id, f.name, f.field_type, f.sort_order] for f in field_rows],
+        ["ID", "Name", "Type", "Decimals", "Sort order"],
+        [[f.id, f.name, f.field_type, f.decimals, f.sort_order] for f in field_rows],
     )
     add_sheet(
         "Project field options",
@@ -1109,11 +1109,15 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     option_names = {o.id: o.name for f in field_rows for o in f.options}
 
     def field_value_cell(field: ProjectField, value: Any) -> Any:
-        """A value as written in the sheet: numbers as numbers, toggles Yes / No."""
+        """
+        A value as written in the sheet: numbers as numbers (rounded to the
+        field's decimals, as the app shows them), toggles Yes / No.
+        """
         if field.field_type == "toggle":
             return _yes_no(value)
         if field.field_type == "number":
-            return int(value) if float(value).is_integer() else value
+            number = round_field_number(float(value), field.decimals)
+            return int(number) if number.is_integer() else number
         if field.field_type == "select":
             return option_names.get(value, "")
         if field.field_type == "multiselect":

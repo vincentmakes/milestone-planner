@@ -34,6 +34,7 @@ from app.services.tenant_provisioner import (
     EQUIPMENT_SITES_BACKFILL_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
     PROJECT_COMMENTS_CHECK_SQL,
+    PROJECT_FIELD_DECIMALS_SQL,
     PROJECT_FIELD_TABLES,
     PROJECT_FIELDS_MIGRATION_SQL,
     PROJECT_FIELDS_PROBE_SQL,
@@ -818,6 +819,18 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Added project fields on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (project fields) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # project_fields.decimals, a number field's decimals
+        # (add_project_field_decimals.sql, 2.1.0). After the project-fields
+        # step, which creates the table; the DO block is its own gate (a no-op
+        # once the column exists, or while the table is missing), so this runs
+        # on every pool creation.
+        try:
+            await conn.execute(text(PROJECT_FIELD_DECIMALS_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (project field decimals) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # RBAC (1.13.0): roles, role_permissions, approval policies / requests,

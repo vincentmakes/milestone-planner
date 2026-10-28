@@ -33,6 +33,7 @@ from app.models.project_field import (
 from app.services import tenant_provisioner as tp
 from app.services.tenant_provisioner import (
     NOTIFICATIONS_TYPE_CHECK_SQL,
+    PROJECT_FIELD_DECIMALS_SQL,
     PROJECT_FIELD_OPTION_SITES_TABLE_SQL,
     PROJECT_FIELD_OPTION_TEAMS_TABLE_SQL,
     PROJECT_FIELD_OPTIONS_TABLE_SQL,
@@ -357,6 +358,7 @@ def test_tenant_auto_migration_executes_the_constants():
 PROBE = "CHECK project field tables"
 TEAMS_CHECK = "CHECK team tables"
 WIDEN = "widen notification types"
+DECIMALS = "project field decimals"
 
 
 def _conn(tables=(), fail_on: str | None = None):
@@ -387,6 +389,9 @@ def _conn(tables=(), fail_on: str | None = None):
             return result
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append(WIDEN)
+            return MagicMock()
+        if sql == PROJECT_FIELD_DECIMALS_SQL:  # the decimals column step, its own gate
+            log.append(DECIMALS)
             return MagicMock()
         if sql in PROJECT_FIELDS_SCHEMA_STATEMENTS or sql == PROJECT_FIELDS_MIGRATION_SQL:
             log.append(sql)
@@ -451,7 +456,9 @@ async def test_auto_migration_skips_a_converted_tenant():
 
     await _run_auto_migrations(conn)
 
-    assert log[log.index(PROBE) :] == [PROBE, WIDEN, "COMMIT"]
+    # Only the decimals column step (its own gate) between the probe and the
+    # notification types.
+    assert log[log.index(PROBE) :] == [PROBE, DECIMALS, "COMMIT", WIDEN, "COMMIT"]
     assert PROJECT_FIELDS_MIGRATION_SQL not in log
 
 
@@ -467,7 +474,7 @@ async def test_auto_migration_failure_rolls_back_and_never_raises():
         PROJECT_FIELDS_MIGRATION_SQL,
         "ROLLBACK",
     ]
-    assert log[-2:] == [WIDEN, "COMMIT"]  # the later steps still ran
+    assert log[-4:] == [DECIMALS, "COMMIT", WIDEN, "COMMIT"]  # the later steps still ran
 
 
 # ---------------------------------------------------------------------------

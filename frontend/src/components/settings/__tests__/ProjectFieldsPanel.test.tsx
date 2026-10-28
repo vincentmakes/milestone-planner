@@ -6,13 +6,15 @@
  * - Custom fields: listed in order with their type, added with a type,
  *   renamed inline, reordered by drag, deleted after a confirm naming how many
  *   projects lose a value.
+ * - Number fields: a Decimals picker (As typed / 0-3) per row, saved on
+ *   change, and at creation.
  * - Items of a dropdown field: added, edited (colour, sites, teams — the tag
  *   edit row's controls), reordered and deleted.
  * - One dirty flag for the hub.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
-import { ProjectFieldsPanel } from '../panels/ProjectFieldsPanel';
+import { DECIMALS_HINT, ProjectFieldsPanel } from '../panels/ProjectFieldsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import { makeProjectField, makeProjectFieldOption, makeSite, makeTeam } from '@/test/factories';
@@ -328,6 +330,64 @@ describe('ProjectFieldsPanel — custom fields', () => {
     projectFieldsApi.reorder.mockClear();
     dragOnto(screen.getByTestId('field-3'), screen.getByTestId('field-2'), -1);
     await waitFor(() => expect(projectFieldsApi.reorder).toHaveBeenCalled());
+  });
+});
+
+describe('ProjectFieldsPanel — number decimals', () => {
+  it('offers a Decimals picker on number fields only, with the hint', async () => {
+    projectFieldsApi.getAll.mockResolvedValue([{ ...FIELDS[0], decimals: 2 }, FIELDS[1], FIELDS[2]]);
+    await renderPanel();
+
+    const picker = screen.getByRole('combobox', { name: 'Decimals of Budget' });
+    expect(picker).toHaveValue('2');
+    expect(within(picker).getAllByRole('option').map((o) => o.textContent)).toEqual(['As typed', '0', '1', '2', '3']);
+    expect(screen.queryByRole('combobox', { name: 'Decimals of Project type' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Decimals of Regulated' })).not.toBeInTheDocument();
+    expect(screen.getByText(DECIMALS_HINT)).toBeInTheDocument();
+  });
+
+  it('saves a change at once; As typed sends null', async () => {
+    projectFieldsApi.update.mockResolvedValue({});
+    await renderPanel();
+    const picker = screen.getByRole('combobox', { name: 'Decimals of Budget' });
+    expect(picker).toHaveValue('');
+
+    fireEvent.change(picker, { target: { value: '0' } });
+    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenCalledWith(2, { decimals: 0 }));
+    fireEvent.change(picker, { target: { value: '' } });
+    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenLastCalledWith(2, { decimals: null }));
+    await waitFor(() => expect(projectFieldsApi.getAll).toHaveBeenCalledTimes(3));
+  });
+
+  it('shows a refused change inline', async () => {
+    projectFieldsApi.update.mockRejectedValue(new Error('Only number fields have decimals'));
+    await renderPanel();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Decimals of Budget' }), { target: { value: '1' } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only number fields have decimals');
+  });
+
+  it('creates a number field with its decimals; other types send none', async () => {
+    projectFieldsApi.getAll.mockResolvedValue(FIELDS.filter((f) => f.field_type !== 'number'));
+    projectFieldsApi.create.mockResolvedValue(makeProjectField({ id: 9, name: 'Cost', field_type: 'number' }));
+    await renderPanel();
+    expect(screen.queryByLabelText('Decimals')).not.toBeInTheDocument();
+    expect(screen.queryByText(DECIMALS_HINT)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('New field name'), { target: { value: 'Cost' } });
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'number' } });
+    expect(screen.getByText(DECIMALS_HINT)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Decimals'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+    await waitFor(() =>
+      expect(projectFieldsApi.create).toHaveBeenCalledWith({ name: 'Cost', field_type: 'number', decimals: 2 })
+    );
+    // The add row starts over on As typed.
+    await waitFor(() => expect(screen.getByLabelText('Decimals')).toHaveValue(''));
+
+    fireEvent.change(screen.getByLabelText('New field name'), { target: { value: 'Note' } });
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'text' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+    await waitFor(() => expect(projectFieldsApi.create).toHaveBeenLastCalledWith({ name: 'Note', field_type: 'text' }));
   });
 });
 
