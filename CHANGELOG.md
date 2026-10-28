@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A new phase or subphase starts with empty dates, so the calendar opens on the current month, and Add asks for the dates (a milestone needs only its date) instead of silently using the parent's range
 - The Cross-Site view shows the real project names and customers of every site you can see, not only of your current site
 - The Cross-Site entry no longer appears in the sidebar when you can see only one site, instead of being shown disabled
-- A new booking on a phase or subphase — from Assign Staff, Assign me…, Join this card or a Kanban assignee — now starts unpinned with the phase's dates as its own, so it is clipped, never stretched, when the phase changes; pin it (or turn on Follow the phase dates) to make it follow the phase. Picking someone already on the phase still places their second booking automatically
+- A new booking on a phase or subphase — from Assign Staff, Assign me…, Join this card or a Kanban assignee — now starts unpinned with the phase's dates as its own, so it is clipped, never stretched, when the phase changes; pin it (or turn on Follow the phase dates) to make it follow the phase. Picking someone already on the phase still places their second booking automatically; a person dropped from the panel onto a phase still follows the phase
 
 ### Removed
 

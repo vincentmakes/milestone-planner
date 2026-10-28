@@ -420,7 +420,7 @@ export function NotificationBell() {
                     className={styles.rowAction}
                     icon={<Icon icon={CloseIcon} size={14} />}
                     data-row-delete=""
-                    aria-label="Delete notification"
+                    aria-label={`Delete "${n.title}"`}
                     title="Delete notification"
                     onClick={(e) => void handleDelete(n, e.currentTarget)}
                   />

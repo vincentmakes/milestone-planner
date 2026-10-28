@@ -164,7 +164,7 @@ describe('NotificationBell', () => {
     expect(panel).toHaveTextContent('just now');
     expect(panel).toHaveTextContent('2h ago');
     expect(panel).toHaveTextContent('2d ago');
-    expect(screen.getByRole('button', { name: /Bob commented/ })).toHaveTextContent('Bob commented on Feasibility');
+    expect(screen.getByRole('button', { name: /^Bob commented/ })).toHaveTextContent('Bob commented on Feasibility');
 
     vi.mocked(getNotifications).mockResolvedValue([]);
     await act(async () => {
@@ -179,7 +179,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Bob commented/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Bob commented/ }));
     });
     expect(useViewStore.getState()).toMatchObject({ currentView: 'kanban', kanbanProjectId: 1 });
     expect(useUIStore.getState().activeModal).toBe('kanbanCard');
@@ -201,7 +201,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Alice moved Feasibility/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Alice moved Feasibility/ }));
     });
     expect(useViewStore.getState().currentView).toBe('gantt');
     expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
@@ -219,7 +219,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Alice changed Bioprocess/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Alice changed Bioprocess/ }));
     });
     expect(useViewStore.getState().currentView).toBe('gantt');
     expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
@@ -243,7 +243,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Alice mentioned you on Bioprocess/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Alice mentioned you on Bioprocess/ }));
     });
     expect(useViewStore.getState().currentView).toBe('gantt');
     expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
@@ -266,7 +266,7 @@ describe('NotificationBell', () => {
       note({ id: 8, type: 'comment', entity_type: 'subphase', entity_id: 30, title: 'Bob commented on Leaf' }),
     ]);
     await renderBell();
-    for (const name of [/Bob commented on Feasibility/, /Bob mentioned you on Review/]) {
+    for (const name of [/^Bob commented on Feasibility/, /^Bob mentioned you on Review/]) {
       useViewStore.getState().setCurrentView('work');
       fireEvent.click(bell());
       await act(async () => {
@@ -279,7 +279,7 @@ describe('NotificationBell', () => {
     // A leaf subphase is still a card.
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Bob commented on Leaf/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Bob commented on Leaf/ }));
     });
     expect(useViewStore.getState().currentView).toBe('kanban');
     expect(useUIStore.getState().activeModal).toBe('kanbanCard');
@@ -298,7 +298,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Alice changed Trial/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Alice changed Trial/ }));
     });
     expect(selectSite).toHaveBeenCalledWith(BERLIN);
     expect(useViewStore.getState().currentView).toBe('gantt');
@@ -318,7 +318,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Alice changed Bioprocess/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Alice changed Bioprocess/ }));
     });
     expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'This project is no longer available' });
     expect(useViewStore.getState().expandedProjects.has(1)).toBe(false);
@@ -333,7 +333,7 @@ describe('NotificationBell', () => {
     ]);
     await renderBell();
     fireEvent.click(bell());
-    const row = screen.getByRole('button', { name: /Alice deleted Trial/ });
+    const row = screen.getByRole('button', { name: /^Alice deleted Trial/ });
     expect(row).toBeEnabled();
     await act(async () => {
       fireEvent.click(row);
@@ -359,7 +359,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
 
-    const elsewhere = screen.getByRole('button', { name: /Alice changed Trial/ });
+    const elsewhere = screen.getByRole('button', { name: /^Alice changed Trial/ });
     expect(elsewhere).toBeDisabled();
     expect(elsewhere).toHaveAttribute(
       'title',
@@ -371,7 +371,7 @@ describe('NotificationBell', () => {
     expect(selectSite).not.toHaveBeenCalled();
     expect(markNotificationRead).not.toHaveBeenCalled();
 
-    const here = screen.getByRole('button', { name: /Alice changed Bioprocess/ });
+    const here = screen.getByRole('button', { name: /^Alice changed Bioprocess/ });
     expect(here).toBeEnabled();
     expect(here).not.toHaveAttribute('title');
     await act(async () => {
@@ -388,14 +388,14 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Old/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Old/ }));
     });
     expect(markNotificationRead).not.toHaveBeenCalled();
     expect(useViewStore.getState().currentView).toBe('gantt');
 
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Bob commented/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Bob commented/ }));
     });
     expect(error).toHaveBeenCalledWith('[Notifications] Failed to mark read:', expect.any(Error));
     expect(getNotifications).toHaveBeenCalledTimes(2);
@@ -410,7 +410,7 @@ describe('NotificationBell', () => {
 
     const hint = whatIfUnavailableMessage('Opening a card from a notification');
     expect(screen.getByRole('note')).toHaveTextContent(hint);
-    const row = screen.getByRole('button', { name: /Bob commented/ });
+    const row = screen.getByRole('button', { name: /^Bob commented/ });
     expect(row).toBeDisabled();
     expect(row).toHaveAttribute('title', hint);
     // Mark all read has nothing to do with the board and stays usable.
@@ -432,7 +432,7 @@ describe('NotificationBell', () => {
     useWhatIfStore.getState().enterWhatIfMode([]);
     await renderBell();
     fireEvent.click(bell());
-    const row = screen.getByRole('button', { name: /Project note/ });
+    const row = screen.getByRole('button', { name: /^Project note/ });
     expect(row).toBeEnabled();
     expect(row).not.toHaveAttribute('title');
     await act(async () => {
@@ -453,7 +453,7 @@ describe('NotificationBell', () => {
     useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
     await renderBell();
     fireEvent.click(bell());
-    const item = screen.getByRole('button', { name: new RegExp(title) });
+    const item = screen.getByRole('button', { name: new RegExp(`^${title}`) });
     await act(async () => {
       fireEvent.click(item);
     });
@@ -476,11 +476,11 @@ describe('NotificationBell', () => {
     fireEvent.click(bell());
     const titles = ['A comment', 'A request', 'A decision', 'A booking change', 'A project change', 'An assignment'];
     const icons = titles.map((t) =>
-      screen.getByRole('button', { name: new RegExp(t) }).querySelector('svg path')?.getAttribute('d')
+      screen.getByRole('button', { name: new RegExp(`^${t}`) }).querySelector('svg path')?.getAttribute('d')
     );
     expect(new Set(icons).size).toBe(titles.length);
     const iconClass = (t: string) =>
-      screen.getByRole('button', { name: new RegExp(t) }).querySelector('span')?.className ?? '';
+      screen.getByRole('button', { name: new RegExp(`^${t}`) }).querySelector('span')?.className ?? '';
     expect(iconClass('A booking change')).toMatch(/assignmentChanged/);
     expect(iconClass('A project change')).toMatch(/projectChanged/);
   });
@@ -492,7 +492,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Your booking was approved/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Your booking was approved/ }));
     });
     expect(useViewStore.getState().currentView).toBe('kanban');
     expect(useUIStore.getState().modalContext).toMatchObject({ cardEntityType: 'subphase', cardEntityId: 20 });
@@ -505,7 +505,7 @@ describe('NotificationBell', () => {
     useWhatIfStore.getState().enterWhatIfMode([]);
     await renderBell();
     fireEvent.click(bell());
-    const item = screen.getByRole('button', { name: /Alice asks to join/ });
+    const item = screen.getByRole('button', { name: /^Alice asks to join/ });
     expect(item).toBeDisabled();
     expect(item).toHaveAttribute('title', whatIfUnavailableMessage('Opening My Work from a notification'));
     await act(async () => {
@@ -528,7 +528,7 @@ describe('NotificationBell', () => {
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Overdue: Lab work/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Overdue: Lab work/ }));
     });
     expect(dismissDerivedNotification).toHaveBeenCalledWith('subphase-20', '2026-10-01');
     expect(markNotificationRead).not.toHaveBeenCalled();
@@ -566,7 +566,7 @@ describe('NotificationBell', () => {
   });
 
   describe('delete and clear all', () => {
-    const deleteButtons = () => screen.getAllByRole('button', { name: 'Delete notification' });
+    const deleteButtons = () => screen.getAllByRole('button', { name: /^Delete "/ });
 
     async function openWith(list: AppNotification[], unread: number) {
       vi.mocked(getNotifications).mockResolvedValue(list);
@@ -577,12 +577,13 @@ describe('NotificationBell', () => {
 
     it('puts the × beside the row button, never inside it', async () => {
       await openWith([note()], 1);
-      const row = screen.getByRole('button', { name: /Bob commented/ });
+      const row = screen.getByRole('button', { name: /^Bob commented/ });
       const [remove] = deleteButtons();
       expect(row).not.toContainElement(remove);
       expect(remove.parentElement).toBe(row.parentElement);
       expect(remove.parentElement?.tagName).toBe('LI');
       expect(remove).toHaveAttribute('title', 'Delete notification');
+      expect(remove).toHaveAccessibleName('Delete "Bob commented on Feasibility"');
     });
 
     it('deletes one row optimistically, fixes the badge and keeps focus in the list', async () => {
@@ -597,7 +598,7 @@ describe('NotificationBell', () => {
       expect(deleteNotification).toHaveBeenCalledWith(1);
       expect(useNotificationStore.getState().items.map((n) => n.id)).toEqual([2]);
       expect(useNotificationStore.getState().unreadCount).toBe(0);
-      expect(screen.queryByRole('button', { name: /Bob commented/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Bob commented/ })).not.toBeInTheDocument();
       expect(second).toHaveFocus();
       expect(useNotificationStore.getState().panelOpen).toBe(true);
       // The row was not opened.
@@ -657,7 +658,7 @@ describe('NotificationBell', () => {
       useAppStore.setState({ sites: [BASEL], currentSite: BASEL });
       useWhatIfStore.getState().enterWhatIfMode([]);
       await openWith([note()], 1);
-      expect(screen.getByRole('button', { name: /Bob commented/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /^Bob commented/ })).toBeDisabled();
       const [remove] = deleteButtons();
       expect(remove).toBeEnabled();
       await act(async () => {
@@ -687,7 +688,7 @@ describe('NotificationBell', () => {
       );
       expect(clearNotifications).toHaveBeenCalledTimes(1);
       expect(useNotificationStore.getState()).toMatchObject({ items: [], unreadCount: 0 });
-      expect(screen.getByRole('button', { name: /Soon task is due soon/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Soon task is due soon/ })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
     });

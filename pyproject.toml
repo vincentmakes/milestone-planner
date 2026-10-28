@@ -34,8 +34,9 @@ relative_files = true
 # never lowered. pytest-cov picks it up when --cov-fail-under is not passed, so
 # `pytest --cov=app` fails below it locally and in CI.
 # Set from the CI total (87.4 % on 2026-10-16, Python 3.11); raised to 90 with
-# 1.13.0 from a local run (91 %, Python 3.13), not a CI total.
-fail_under = 91
+# 1.13.0 from a local run (91 %, Python 3.13), not a CI total; raised to 92
+# with 2.1.0 from a local run.
+fail_under = 92
 show_missing = true
 skip_covered = true
 
