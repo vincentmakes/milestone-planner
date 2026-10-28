@@ -302,13 +302,27 @@
   flex: 0 0 auto;
 }
 
-/* A number field's decimals picker in its row */
-.decimals {
+/* A number field's Format picker: its visible label beside the select, in one line */
+.addRow .format,
+.formatEdit .format {
   flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* The edit form of a number field: the Format picker and its preview, under the name */
+.formatEdit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding-left: 2.25rem;
 }
 
 @media (max-width: 1024px) {
-  .editRow {
+  .editRow,
+  .formatEdit {
     padding-left: 0;
   }
 

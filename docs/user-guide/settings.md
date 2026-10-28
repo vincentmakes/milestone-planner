@@ -702,12 +702,12 @@ In the add row under the **Custom fields** list, type the new field's name, pick
 | **Dropdown** | One item of a list |
 | **Multi-select dropdown** | Any number of items of a list |
 | **Text** | Free text, up to 2,000 characters |
-| **Number** | A number, kept to the field's **Decimals** |
+| **Number** | A number, kept to the field's **Format** |
 | **Switch** | On or off |
 
 - **Order** — Drag fields to change the order of the project dialog, the [Filter](gantt-charts.md#filtering-projects) and the **Group by** / **Colour by** lists.
-- **Rename** — Click the pencil. A field's type cannot be changed after it is created.
-- **Decimals** — A number field has a **Decimals** picker in its row (and in the add row while **Number** is picked): **As typed** keeps every decimal entered, **0** to **3** keep that many. A change is saved at once. It applies to new values: they are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at 2 decimals), and the project dialog shows the field with that many decimals. Values saved before are not changed; they are shown — and exported — rounded.
+- **Edit** — Click the pencil to rename the field (and, on a number field, change its **Format**), then **Save**; **Cancel** or Escape discards the edit. A field's type cannot be changed after it is created.
+- **Format** — A number field's **Format** is picked in the add row while **Number** is chosen, or in its edit form. It is shown as the pattern of the number 1: **As typed** keeps every decimal entered, **1**, **1.0**, **1.00** and **1.000** keep none to three. A line under the picker previews the choice: "Values are saved as typed.", or for **1.0** "12.345 is saved and shown as 12.3." — in the edit form followed by "Existing values are not changed, only shown rounded." New values are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at **1.00**), and the project dialog shows the field in that format. Values saved before are not changed; they are shown — and exported — rounded. The field's type pill in the list names its format, e.g. **Number · 1.0** (plain **Number** for As typed).
 - **Delete** — Click the bin; the confirmation says how many projects hold a value, and every value of the field is removed.
 
 No field is required, and custom fields cannot be hidden — delete one you no longer need.

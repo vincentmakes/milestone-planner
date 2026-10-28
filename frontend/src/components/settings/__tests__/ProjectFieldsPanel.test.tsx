@@ -4,17 +4,18 @@
  *   be hidden; Save writes the two settings in their canonical form and
  *   applies them to the store.
  * - Custom fields: listed in order with their type, added with a type,
- *   renamed inline, reordered by drag, deleted after a confirm naming how many
- *   projects lose a value.
- * - Number fields: a Decimals picker (As typed / 0-3) per row, saved on
- *   change, and at creation.
+ *   renamed in the row's edit form, reordered by drag, deleted after a confirm
+ *   naming how many projects lose a value.
+ * - Number fields: a Format picker (As typed / 1 / 1.0 / 1.00 / 1.000) with a
+ *   live preview, in the add row and the row's edit form (saved with its
+ *   Save); the type pill names the format.
  * - Items of a dropdown field: added, edited (colour, sites, teams — the tag
  *   edit row's controls), reordered and deleted.
  * - One dirty flag for the hub.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
-import { DECIMALS_HINT, ProjectFieldsPanel } from '../panels/ProjectFieldsPanel';
+import { FORMAT_AS_TYPED_PREVIEW, FORMAT_EXISTING_NOTE, ProjectFieldsPanel } from '../panels/ProjectFieldsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import { makeProjectField, makeProjectFieldOption, makeSite, makeTeam } from '@/test/factories';
@@ -244,7 +245,7 @@ describe('ProjectFieldsPanel — custom fields', () => {
     await waitFor(() => expect(projectFieldsApi.getAll).toHaveBeenCalledTimes(2));
   });
 
-  it('renames inline: Enter saves, Escape cancels without reaching the hub', async () => {
+  it('renames in the edit form: Enter saves, Escape cancels without reaching the hub', async () => {
     projectFieldsApi.update.mockResolvedValue({});
     const onKeyDown = vi.fn();
     const onDirtyChange = vi.fn();
@@ -255,23 +256,24 @@ describe('ProjectFieldsPanel — custom fields', () => {
     );
     await screen.findByText('Project type');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Budget' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Budget' }));
     fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Cost' } });
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     fireEvent.keyDown(screen.getByLabelText('Field name'), { key: 'Escape' });
     expect(onKeyDown).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Field name')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Budget' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Budget' }));
     fireEvent.change(screen.getByLabelText('Field name'), { target: { value: ' Cost ' } });
     fireEvent.keyDown(screen.getByLabelText('Field name'), { key: 'Enter' });
-    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenCalledWith(2, { name: 'Cost' }));
+    // A number field sends its format along (as typed here)
+    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenCalledWith(2, { name: 'Cost', decimals: null }));
 
-    // The Cancel and Save buttons of the inline rename
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Regulated' }));
+    // The Cancel and Save buttons of the edit form; a switch has no format
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Regulated' }));
     fireEvent.click(within(screen.getByTestId('field-3')).getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByLabelText('Field name')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Regulated' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Regulated' }));
     fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'GMP' } });
     fireEvent.click(within(screen.getByTestId('field-3')).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(projectFieldsApi.update).toHaveBeenCalledWith(3, { name: 'GMP' }));
@@ -333,61 +335,146 @@ describe('ProjectFieldsPanel — custom fields', () => {
   });
 });
 
-describe('ProjectFieldsPanel — number decimals', () => {
-  it('offers a Decimals picker on number fields only, with the hint', async () => {
-    projectFieldsApi.getAll.mockResolvedValue([{ ...FIELDS[0], decimals: 2 }, FIELDS[1], FIELDS[2]]);
-    await renderPanel();
+describe('ProjectFieldsPanel — number format', () => {
+  const FORMAT_LABELS = ['As typed', '1', '1.0', '1.00', '1.000'];
+  const FORMAT_VALUES = ['', '0', '1', '2', '3'];
+  /** The preview of each format, in option order, for 12.345 */
+  const PREVIEWS = [
+    FORMAT_AS_TYPED_PREVIEW,
+    '12.345 is saved and shown as 12.',
+    '12.345 is saved and shown as 12.3.',
+    '12.345 is saved and shown as 12.35.',
+    '12.345 is saved and shown as 12.345.',
+  ];
 
-    const picker = screen.getByRole('combobox', { name: 'Decimals of Budget' });
-    expect(picker).toHaveValue('2');
-    expect(within(picker).getAllByRole('option').map((o) => o.textContent)).toEqual(['As typed', '0', '1', '2', '3']);
-    expect(screen.queryByRole('combobox', { name: 'Decimals of Project type' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Decimals of Regulated' })).not.toBeInTheDocument();
-    expect(screen.getByText(DECIMALS_HINT)).toBeInTheDocument();
+  it('names the format in the type pill: "Number · 1.0", plain "Number" as typed', async () => {
+    projectFieldsApi.getAll.mockResolvedValue([
+      { ...FIELDS[0], decimals: 1 },
+      FIELDS[1],
+      FIELDS[2],
+      makeProjectField({ id: 4, name: 'Cost', field_type: 'number', sort_order: 3, decimals: null }),
+      makeProjectField({ id: 5, name: 'Units', field_type: 'number', sort_order: 4, decimals: 0 }),
+    ]);
+    await renderPanel();
+    expect(within(screen.getByTestId('field-2')).getByText('Number · 1.0')).toBeInTheDocument();
+    expect(within(screen.getByTestId('field-4')).getByText('Number')).toBeInTheDocument();
+    expect(within(screen.getByTestId('field-5')).getByText('Number · 1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('field-3')).getByText('Switch')).toBeInTheDocument();
+    // No picker in the rows: the format is changed in the edit form
+    expect(screen.queryByRole('combobox', { name: /Format/ })).not.toBeInTheDocument();
   });
 
-  it('saves a change at once; As typed sends null', async () => {
-    projectFieldsApi.update.mockResolvedValue({});
+  it('offers the Format picker in the add row only while Number is picked, previewing each choice', async () => {
     await renderPanel();
-    const picker = screen.getByRole('combobox', { name: 'Decimals of Budget' });
+    expect(screen.queryByLabelText('Format')).not.toBeInTheDocument();
+    expect(screen.queryByText(FORMAT_AS_TYPED_PREVIEW)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'number' } });
+    const picker = screen.getByLabelText('Format');
+    // A visible label, beside the select
+    expect(screen.getByText('Format', { selector: 'label' })).toBeVisible();
+    const options = within(picker).getAllByRole('option') as HTMLOptionElement[];
+    expect(options.map((o) => o.textContent)).toEqual(FORMAT_LABELS);
+    expect(options.map((o) => o.value)).toEqual(FORMAT_VALUES);
     expect(picker).toHaveValue('');
+    expect(screen.getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
 
-    fireEvent.change(picker, { target: { value: '0' } });
-    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenCalledWith(2, { decimals: 0 }));
-    fireEvent.change(picker, { target: { value: '' } });
-    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenLastCalledWith(2, { decimals: null }));
-    await waitFor(() => expect(projectFieldsApi.getAll).toHaveBeenCalledTimes(3));
+    FORMAT_VALUES.forEach((value, i) => {
+      fireEvent.change(picker, { target: { value } });
+      expect(screen.getByText(PREVIEWS[i])).toBeInTheDocument();
+    });
+    // A new field has no values yet: no word about existing ones
+    expect(screen.queryByText(new RegExp(FORMAT_EXISTING_NOTE))).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'text' } });
+    expect(screen.queryByLabelText('Format')).not.toBeInTheDocument();
+    expect(screen.queryByText(/is saved and shown as/)).not.toBeInTheDocument();
   });
 
-  it('shows a refused change inline', async () => {
-    projectFieldsApi.update.mockRejectedValue(new Error('Only number fields have decimals'));
-    await renderPanel();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Decimals of Budget' }), { target: { value: '1' } });
-    expect(await screen.findByRole('alert')).toHaveTextContent('Only number fields have decimals');
-  });
-
-  it('creates a number field with its decimals; other types send none', async () => {
+  it('creates a number field with its format; other types send none', async () => {
     projectFieldsApi.getAll.mockResolvedValue(FIELDS.filter((f) => f.field_type !== 'number'));
     projectFieldsApi.create.mockResolvedValue(makeProjectField({ id: 9, name: 'Cost', field_type: 'number' }));
     await renderPanel();
-    expect(screen.queryByLabelText('Decimals')).not.toBeInTheDocument();
-    expect(screen.queryByText(DECIMALS_HINT)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('New field name'), { target: { value: 'Cost' } });
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'number' } });
-    expect(screen.getByText(DECIMALS_HINT)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Decimals'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Format'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
     await waitFor(() =>
       expect(projectFieldsApi.create).toHaveBeenCalledWith({ name: 'Cost', field_type: 'number', decimals: 2 })
     );
     // The add row starts over on As typed.
-    await waitFor(() => expect(screen.getByLabelText('Decimals')).toHaveValue(''));
+    await waitFor(() => expect(screen.getByLabelText('Format')).toHaveValue(''));
+    expect(screen.getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('New field name'), { target: { value: 'Note' } });
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'text' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
     await waitFor(() => expect(projectFieldsApi.create).toHaveBeenLastCalledWith({ name: 'Note', field_type: 'text' }));
+  });
+
+  it('changes the format in the edit form, saved with its Save; the preview mentions existing values', async () => {
+    projectFieldsApi.getAll.mockResolvedValue([{ ...FIELDS[0], decimals: 2 }, FIELDS[1], FIELDS[2]]);
+    projectFieldsApi.update.mockResolvedValue({});
+    const onDirtyChange = await renderPanel();
+    const row = screen.getByTestId('field-2');
+    // The switch's edit form has no format
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Regulated' }));
+    expect(within(screen.getByTestId('field-3')).queryByRole('combobox')).not.toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit Budget' }));
+    const picker = within(row).getByRole('combobox', { name: 'Format of Budget' });
+    expect(within(row).getByText('Format', { selector: 'label' })).toBeInTheDocument();
+    expect(picker).toHaveValue('2');
+    expect(within(row).getByText(`${PREVIEWS[3]} ${FORMAT_EXISTING_NOTE}`)).toBeInTheDocument();
+
+    fireEvent.change(picker, { target: { value: '1' } });
+    expect(within(row).getByText(`${PREVIEWS[2]} ${FORMAT_EXISTING_NOTE}`)).toBeInTheDocument();
+    // Nothing is saved on change; the edit is unsaved input for the hub
+    expect(projectFieldsApi.update).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenCalledWith(2, { name: 'Budget', decimals: 1 }));
+    await waitFor(() => expect(within(row).queryByRole('combobox')).not.toBeInTheDocument());
+  });
+
+  it('resets a format to As typed (null), and Escape on the picker cancels without reaching the hub', async () => {
+    projectFieldsApi.getAll.mockResolvedValue([{ ...FIELDS[0], decimals: 3 }, FIELDS[1], FIELDS[2]]);
+    projectFieldsApi.update.mockResolvedValue({});
+    const onKeyDown = vi.fn();
+    render(
+      <div onKeyDown={onKeyDown}>
+        <ProjectFieldsPanel />
+      </div>
+    );
+    await screen.findByText('Project type');
+    const row = screen.getByTestId('field-2');
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit Budget' }));
+    fireEvent.change(within(row).getByLabelText('Format of Budget'), { target: { value: '1' } });
+    fireEvent.keyDown(within(row).getByLabelText('Format of Budget'), { key: 'Escape' });
+    expect(onKeyDown).not.toHaveBeenCalled();
+    expect(within(row).queryByLabelText('Format of Budget')).not.toBeInTheDocument();
+    // Enter on the select does not save
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit Budget' }));
+    expect(within(row).getByLabelText('Format of Budget')).toHaveValue('3');
+    fireEvent.keyDown(within(row).getByLabelText('Format of Budget'), { key: 'Enter' });
+    expect(projectFieldsApi.update).not.toHaveBeenCalled();
+
+    fireEvent.change(within(row).getByLabelText('Format of Budget'), { target: { value: '' } });
+    expect(within(row).getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(projectFieldsApi.update).toHaveBeenCalledWith(2, { name: 'Budget', decimals: null }));
+  });
+
+  it('shows a refused format change inline', async () => {
+    projectFieldsApi.update.mockRejectedValue(new Error('Only number fields have decimals'));
+    await renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Budget' }));
+    fireEvent.change(screen.getByLabelText('Format of Budget'), { target: { value: '1' } });
+    fireEvent.click(within(screen.getByTestId('field-2')).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only number fields have decimals');
   });
 });
 
