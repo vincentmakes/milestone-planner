@@ -20,8 +20,11 @@
  * box ArrowUp / ArrowDown / Home / End move over the enabled rows, Enter
  * (always `preventDefault`ed, so a host form never submits) picks the active
  * row (or the single match) and closes with focus back on the trigger.
- * Escape, an outside mousedown and Tab out close it (`useDismissableOverlay`);
- * Shift+Tab lands on the trigger, inside the wrapper, so the panel stays open.
+ * Tab with a typed query picks the active match the same way (not
+ * `preventDefault`ed: focus is back on the trigger, so the browser's Tab goes
+ * on to the next field). Escape, an outside mousedown and Tab out with an empty
+ * query close it (`useDismissableOverlay`); Shift+Tab lands on the trigger,
+ * inside the wrapper, so the panel stays open.
  *
  * `onChange` fires only when the picked id differs from `value`, like a
  * native select (a caller may reset dependent state on change).
@@ -194,6 +197,14 @@ export function SearchableSelect({
 
   const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (nav.onNavKey(e)) return;
+    // Tab with a typed query takes the highlighted match, like Enter. No
+    // preventDefault: choose() closes the panel and refocuses the trigger, so
+    // the browser's Tab then moves on to the next field. Shift+Tab and an
+    // empty query keep today's behaviour (focus leaves, the panel closes).
+    if (e.key === 'Tab' && !e.shiftKey && hasQuery && nav.active >= 0) {
+      choose(nav.active);
+      return;
+    }
     if (e.key !== 'Enter') return;
     // Never submit a host form.
     e.preventDefault();

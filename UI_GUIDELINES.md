@@ -508,8 +508,9 @@ decision, not an oversight.
   `role="listbox"` whose rows show the label, a muted `hint` (searched: job title, equipment
   type) and a muted `note` (not searched: *80% capacity*). Filtering starts at the first
   character; a printable key on the closed trigger opens it with that character typed; Enter
-  picks the active row and never submits a host form; Escape, Tab out and an outside mousedown
-  close it through `useDismissableOverlay`. The list is 14 rem tall and the panel scrolls itself
+  picks the active row and never submits a host form; Tab with a typed query picks the active
+  match too (focus returns to the trigger, so the next Tab moves on); Escape, Tab out with an
+  empty query and an outside mousedown close it through `useDismissableOverlay`. The list is 14 rem tall and the panel scrolls itself
   into view on open. Tests use the helpers in `src/test/searchableSelect.ts` (`pickOption`,
   `pickerOptions`, `pickerSearch`).
 - **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off flag, in Settings and in

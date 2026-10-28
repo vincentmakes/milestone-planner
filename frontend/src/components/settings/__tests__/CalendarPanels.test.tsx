@@ -382,11 +382,22 @@ describe('CompanyEventsPanel filters and form fields', () => {
     pickDate('Start date', '2026-07-01');
     fireEvent.click(screen.getByRole('switch', { name: /Site closure/ }));
 
-    const hint = 'Only members of the ticked teams are unavailable.';
+    const hint = /Only members of the ticked teams lose their capacity; everyone else on these sites is unaffected\./;
     fireEvent.click(screen.getByRole('switch', { name: 'Whole site' }));
     expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    // No team ticked: the label speaks of every member of the sites
+    expect(screen.getByRole('switch', { name: 'Site closure — staff on these sites are unavailable' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
     expect(screen.getByText(hint)).toBeInTheDocument();
+    // Teams ticked: the label itself carries the scope
+    expect(
+      screen.getByRole('switch', {
+        name: 'Site closure — staff of the selected teams on these sites are unavailable',
+      })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
+    expect(screen.getByRole('switch', { name: 'Site closure — staff on these sites are unavailable' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
 
     fireEvent.click(within(screen.getByLabelText('Name').closest('form')!).getByRole('button', { name: 'Add event' }));
     await waitFor(() =>
@@ -422,6 +433,25 @@ describe('CompanyEventsPanel teams column', () => {
 
     const auditRow = screen.getByText('ISO Audit').closest('tr')!;
     expect(within(auditRow).getByText('Whole site')).toBeInTheDocument();
+  });
+
+  it("says in the Closure badge's title whether the closure is limited to teams", async () => {
+    api.getCompanyEvents.mockImplementation(async (siteId: number) =>
+      siteId === 1
+        ? [
+            { ...audit, counts_as_unavailable: true, team_ids: [40] } as CompanyEvent,
+            { ...audit, id: 6, name: 'Whole closure', counts_as_unavailable: true, team_ids: [] } as CompanyEvent,
+          ]
+        : []
+    );
+    render(<CompanyEventsPanel />);
+    const limited = (await screen.findByText('ISO Audit')).closest('tr')!;
+    expect(within(limited).getByText('Closure')).toHaveAttribute(
+      'title',
+      "Staff of the selected teams on the event's sites are unavailable"
+    );
+    const whole = screen.getByText('Whole closure').closest('tr')!;
+    expect(within(whole).getByText('Closure')).toHaveAttribute('title', "Staff on the event's sites are unavailable");
   });
 
   it('counts the teams when none of them is loaded', async () => {

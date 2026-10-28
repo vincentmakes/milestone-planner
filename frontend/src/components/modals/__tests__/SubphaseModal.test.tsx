@@ -5,7 +5,7 @@
  * mode, delete with downward "shrink" cascade, errors and the What-If block.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { SubphaseModal } from '../SubphaseModal';
 import { resetAllStores, useAppStore, useUIStore, useViewStore, useWhatIfStore } from '@/stores';
 import {
@@ -19,7 +19,7 @@ import {
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
-import { dateValue, pickDate, pickEnd, pickRange } from '@/test/datePicker';
+import { dateValue, openDateField, pickDate, pickEnd, pickRange } from '@/test/datePicker';
 import type { Project } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -103,24 +103,67 @@ beforeEach(() => {
 });
 
 describe('SubphaseModal validation', () => {
-  it('defaults a new subphase to the parent phase dates and validates the fields', () => {
+  it('starts a new subphase with empty dates, opens the picker on the current month and validates the fields', () => {
     openNew({ phaseId: 10, projectId: 1 });
     render(<SubphaseModal />);
     expect(screen.getByText('Feasibility')).toBeInTheDocument();
     // The shared Input links each visible label to its control
     expect(screen.getByLabelText('Subphase Name *')).toHaveValue('');
-    expect(rangeValues()).toEqual(['2026-02-02', '2026-02-27']);
+    expect(rangeValues()).toEqual(['', '']);
+    const panel = openDateField('Start Date *');
+    expect(within(panel).getAllByRole('combobox', { name: 'Choose the Month' })[0]).toHaveValue(
+      String(new Date().getMonth())
+    );
+    expect(within(panel).getAllByRole('combobox', { name: 'Choose the Year' })[0]).toHaveValue(
+      String(new Date().getFullYear())
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
     expect(screen.getByText('Please enter a subphase name')).toBeInTheDocument();
     expect(createSubphase).not.toHaveBeenCalled();
   });
 
+  it('asks for the dates in place, like the name, and sends nothing', () => {
+    openNew({ phaseId: 10, projectId: 1 });
+    render(<SubphaseModal />);
+    fill('Report');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
+    expect(screen.getByText('Please enter a start and an end date')).toBeInTheDocument();
+    expect(createSubphase).not.toHaveBeenCalled();
+    // The button is not disabled for it: the message is the feedback
+    expect(screen.getByRole('button', { name: 'Add Subphase' })).toBeEnabled();
+
+    // A start alone is not enough for a subphase
+    pickDate('Start Date *', '2026-02-03');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
+    expect(screen.getByText('Please enter a start and an end date')).toBeInTheDocument();
+    expect(createSubphase).not.toHaveBeenCalled();
+  });
+
+  it('needs only the date for a milestone', async () => {
+    openNew({ phaseId: 10, projectId: 1 });
+    render(<SubphaseModal />);
+    fill('Sign-off');
+    fireEvent.click(screen.getByRole('switch', { name: /Milestone/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
+    expect(screen.getByText('Please enter the milestone date')).toBeInTheDocument();
+    expect(createSubphase).not.toHaveBeenCalled();
+
+    pickDate('Date *', '2026-02-18');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
+    await waitFor(() => expect(createSubphase).toHaveBeenCalled());
+    expect(vi.mocked(createSubphase).mock.calls[0][2]).toMatchObject({
+      start_date: '2026-02-18',
+      end_date: '2026-02-18',
+      is_milestone: true,
+    });
+  });
+
   // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     openNew({ phaseId: 10, projectId: 1 });
     render(<SubphaseModal />);
-    fill('Early');
+    fill('Early', ['2026-02-02', '2026-02-27']);
     // An end picked before the start becomes the new start, keeping the duration
     pickEnd('End Date *', '2026-01-28');
     expect(rangeValues()).toEqual(['2026-01-28', '2026-02-22']);
@@ -133,7 +176,7 @@ describe('SubphaseModal validation', () => {
   it('refuses to save without a parent phase', () => {
     openNew({ projectId: 1 });
     render(<SubphaseModal />);
-    fill('Orphan');
+    fill('Orphan', ['2026-02-03', '2026-02-10']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
     expect(screen.getByText('No parent phase selected')).toBeInTheDocument();
   });
@@ -238,7 +281,7 @@ describe('SubphaseModal create', () => {
     vi.mocked(createSubphase).mockRejectedValue(new Error('Server says no'));
     openNew({ phaseId: 10, projectId: 1 });
     render(<SubphaseModal />);
-    fill('Report');
+    fill('Report', ['2026-02-03', '2026-02-10']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
     expect(await screen.findByText('Server says no')).toBeInTheDocument();
     expect(useUIStore.getState().activeModal).toBe('subphase');

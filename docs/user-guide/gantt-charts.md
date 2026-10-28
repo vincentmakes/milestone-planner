@@ -80,6 +80,8 @@ Creating a project needs the *Create projects* permission (admins and superusers
 - **Edit a project**: Click the **Edit** button or right-click and select "Edit"
 - **Add a phase**: Right-click on a project and select "Add Phase"
 - **Add a subphase**: Right-click on a phase and select "Add Subphase" (supports unlimited nesting)
+
+A new phase or subphase opens with empty dates, so the calendar shows the current month when you click the date field; **Add** asks for the dates (a milestone needs only its date) if you leave them out. A phase created from a dependency's ghost bar keeps the dates of that bar, and editing keeps the current ones.
 - **Delete**: Right-click on any item and select "Delete" (with confirmation). A project manager can delete phases and subphases, but deleting the project itself needs the *Delete projects* permission (superusers and admins by default)
 
 When editing a project, export buttons (CSV and XML) are available in the modal footer.
@@ -94,7 +96,7 @@ Every date in Milestone is picked on the same calendar. Click the **Start Date**
 
 ## Picking a Person
 
-Every list of people — the project's **Project Manager**, the booking dialog's **Staff Member** (and its **Equipment** list), the Kanban card's **Add someone…**, the absence dialog's **Staff Member** and a team's **Members** — opens with a search box that already has the focus: type to find a person, the list narrows from the first letter, on the name and, where the row shows one, the job title (the type for equipment). Use the arrow keys and Enter, or click, to pick; Escape closes the list and leaves the dialog open. Typing a letter while the closed field has the focus opens it with that letter already typed. A muted note on a row, such as *80% capacity* or *— already on this card*, is shown but not searched.
+Every list of people — the project's **Project Manager**, the booking dialog's **Staff Member** (and its **Equipment** list), the Kanban card's **Add someone…**, the absence dialog's **Staff Member** and a team's **Members** — opens with a search box that already has the focus: type to find a person, the list narrows from the first letter, on the name and, where the row shows one, the job title (the type for equipment). Use the arrow keys and Enter, or click, to pick — once you have typed, Tab takes the highlighted match and moves on to the next field; Escape closes the list and leaves the dialog open. Typing a letter while the closed field has the focus opens it with that letter already typed. A muted note on a row, such as *80% capacity* or *— already on this card*, is shown but not searched.
 
 ## Project Fields
 

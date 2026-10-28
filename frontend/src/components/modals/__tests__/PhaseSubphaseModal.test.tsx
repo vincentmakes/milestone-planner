@@ -13,6 +13,7 @@ import { SubphaseModal } from '../SubphaseModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createPhase, createSubphase } from '@/api/endpoints/projects';
+import { pickRange } from '@/test/datePicker';
 import type { Phase, Project, Subphase } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -151,6 +152,7 @@ describe('Phase / subphase dialogs submitted twice (Enter, Enter)', () => {
     act(() => useUIStore.getState().openPhaseModal(undefined, 1));
     render(<PhaseModal />);
     fireEvent.change(nameInput(/Preparation, Analytics/), { target: { value: 'Analytics' } });
+    pickRange('Start Date *', '2026-09-02', '2026-09-10');
 
     const form = document.body.querySelector('form')!;
     fireEvent.submit(form);
@@ -168,6 +170,7 @@ describe('Phase / subphase dialogs submitted twice (Enter, Enter)', () => {
     act(() => useUIStore.getState().openSubphaseModal(undefined, 10, 1));
     render(<SubphaseModal />);
     fireEvent.change(nameInput(/Task 1, Setup/), { target: { value: 'Calibration' } });
+    pickRange('Start Date *', '2026-09-02', '2026-09-04');
 
     const form = document.body.querySelector('form')!;
     fireEvent.submit(form);

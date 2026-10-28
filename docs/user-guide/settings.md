@@ -417,7 +417,7 @@ Open **Settings → Company events** (Admins and Superusers). Filter by **Site**
 4. Under **Sites**, tick every site the event applies to. Superusers can only choose sites they belong to
 5. **Teams (optional)** — for each selected site that has teams, leave **Whole site** on, or switch it off and tick the [teams](#teams) the event is for. A site where no team is ticked keeps the whole site
 6. Pick a **Color**
-7. Tick **Site closure — staff on these sites are unavailable** if the sites are closed on those dates (see [Site Closures](#site-closures))
+7. Tick **Site closure — staff on these sites are unavailable** if the sites are closed on those dates (see [Site Closures](#site-closures)). Once you tick teams in step 5 the switch reads **Site closure — staff of the selected teams on these sites are unavailable**, with the note that only members of the ticked teams lose their capacity and everyone else on those sites is unaffected
 8. Save
 
 Editing an event changes it on every site it is linked to.
@@ -442,7 +442,7 @@ Editing an event changes it on every site it is linked to.
 
 ### Site Closures
 
-Tick **Site closure — staff on these sites are unavailable** on an event for a shutdown, a company holiday or anything else that closes a site. For every day of the event, everyone who belongs to one of the event's sites is treated as away, like an [absence that counts as unavailable](vacations.md#absence-types):
+Tick **Site closure — staff on these sites are unavailable** (it reads *staff of the selected teams on these sites* once teams are ticked) on an event for a shutdown, a company holiday or anything else that closes a site. For every day of the event, everyone who belongs to one of the event's sites is treated as away, like an [absence that counts as unavailable](vacations.md#absence-types):
 
 - In the [Staff workload view](staff-management.md#site-closures-in-the-workload) their cells show **0% available** in the event's color, with the tooltip *Site closed: &lt;event name&gt;*. Work assigned on those days is flagged as a **conflict**
 - Today's availability in the Staff Overview and on the resource cards shows them as unavailable during a closure
@@ -451,7 +451,7 @@ Tick **Site closure — staff on these sites are unavailable** on an event for a
 
 A person on several sites is unavailable when **any** of their sites is closed. Plain events and bank holidays do not reduce anyone's availability — only events marked as closures do.
 
-**A closure limited to teams takes out only their members.** At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
+**A closure limited to teams takes out only their members.** The **Closure** badge in the event list says so in its hover text. At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
 
 The site export's **Company events** sheet has a **Staff unavailable** column showing which events are closures.
 

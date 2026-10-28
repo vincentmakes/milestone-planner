@@ -19,7 +19,6 @@ import {
   toInputDateFormat,
   parseLocalDate,
   formatLocalDate,
-  formatDateISO,
   addDaysToDateString,
   daysBetweenDateStrings,
 } from '@/utils/date';
@@ -341,10 +340,9 @@ export function SubphaseModal() {
     return project.phases?.find(ph => ph.id === phaseId) || null;
   }, [project, phaseId]);
   
-  // Initialize form when modal opens -- once per open. `parentPhase` is
-  // derived from `projects`, which a WebSocket refetch replaces with new
-  // objects; without the guard a colleague's edit would wipe what the user
-  // has typed. The key changes when the dialog is reopened on another
+  // Initialize form when modal opens -- once per open. `editingSubphase` comes
+  // from `projects`, which a WebSocket refetch replaces with new objects;
+  // without the guard a colleague's edit would wipe what the user has typed. The key changes when the dialog is reopened on another
   // subphase / parent.
   const initializedForRef = useRef<string | null>(null);
   const phantomPreset = modalContext.phantomPreset;
@@ -370,18 +368,15 @@ export function SubphaseModal() {
       setStartDate(toInputDateFormat(modalContext.phantomPreset.startDate));
       setEndDate(toInputDateFormat(modalContext.phantomPreset.endDate));
     } else {
-      // New subphase mode - use parent phase dates as default
-      const today = formatDateISO(new Date());
-      const defaultStart = toInputDateFormat(parentPhase?.start_date) || today;
-      const defaultEnd = toInputDateFormat(parentPhase?.end_date) || today;
-
+      // New subphase mode - dates start empty (the picker then opens on the
+      // current month); handleSubmit asks for them
       setName('');
       setIsMilestone(false);
-      setStartDate(defaultStart);
-      setEndDate(defaultEnd);
+      setStartDate('');
+      setEndDate('');
     }
     setError(null);
-  }, [isOpen, initKey, editingSubphase, parentPhase, modalContext.phantomPreset]);
+  }, [isOpen, initKey, editingSubphase, modalContext.phantomPreset]);
   
   // Sync end date with start date for milestones
   useEffect(() => {
@@ -400,6 +395,11 @@ export function SubphaseModal() {
     
     if (!name.trim()) {
       setError('Please enter a subphase name');
+      return;
+    }
+    
+    if (isMilestone ? !startDate : !startDate || !endDate) {
+      setError(isMilestone ? 'Please enter the milestone date' : 'Please enter a start and an end date');
       return;
     }
     
