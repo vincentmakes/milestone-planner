@@ -5,6 +5,14 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-10-28
+
+### Changed
+
+- The company event form says who a closure affects: once teams are ticked, the switch reads "Site closure — staff of the selected teams on these sites are unavailable", with a note that everyone else on the sites is unaffected, and the Closure badge in the list says the same
+- In every list of people or equipment with a search box, Tab now picks the highlighted match once you have typed, then moves on to the next field
+- A new phase or subphase starts with empty dates, so the calendar opens on the current month, and Add asks for the dates (a milestone needs only its date) instead of silently using the parent's range
+
 ## [2.0.0] - 2026-10-23
 
 ### Added
