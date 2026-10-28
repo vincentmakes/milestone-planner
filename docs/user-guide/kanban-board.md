@@ -92,7 +92,7 @@ Adding assignees and joining a card are unavailable in [What-If mode](what-if-pl
 
 ### Joining a card yourself
 
-If you can't manage the project, the card's detail shows a **Join this card** button as long as you are not on it yet (and your role lets you book yourself). Joining books your time exactly like being assigned by a manager — the card's dates, at your maximum capacity — and lets you move the card from then on. Removing yourself releases the booking again.
+If you can't manage the project, the card's detail shows a **Join this card** button as long as you are not on it yet (and your role lets you book yourself). Joining books your time exactly like being assigned by a manager — the card's dates, at your maximum capacity — and lets you move the card from then on. A first booking on a card, joined or added by a manager, has its own dates (the card's) rather than following the card: it is fitted inside the card when the card changes, never stretched; pin it in the [Gantt chart](gantt-charts.md#bookings-on-phases-and-subphases) to make it follow the card. Removing yourself releases the booking again.
 
 ### Joining and leaving with approval
 

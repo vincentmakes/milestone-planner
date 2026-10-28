@@ -1,11 +1,12 @@
 /**
  * Phase / subphase staff bookings in the assignment dialog: "Follow the phase
- * dates" (on = linked, the default for a new booking) or own dates picked
- * inside the card (days outside it disabled). Creates send dates only for an
- * unlinked booking; edits send own dates, or null dates to follow the card
- * again; a refusal shows in place. Someone already on the card gets a second
- * booking the server places: the dialog says so, and sends no dates unless the
- * switch is turned off — also when the Gantt's "Assign me again…" opened it.
+ * dates" (on = linked) or own dates picked inside the card (days outside it
+ * disabled). A new booking opens unpinned on the card's dates, which are sent;
+ * picking someone already on the card flips the untouched switch on, so the
+ * booking goes dateless and the server places it — also when the Gantt's
+ * "Assign me again…" opened it. Once touched, the switch keeps the user's
+ * choice. Edits send own dates, or null dates to follow the card again; a
+ * refusal shows in place.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -85,20 +86,73 @@ function openEdit(row: StaffAssignment) {
 }
 
 describe('AssignmentModal: new phase booking', () => {
-  it('follows the phase by default and sends no dates', async () => {
+  it("opens a first booking unpinned on the phase's dates and sends them", async () => {
     openNew(undefined, 'Carol Chen');
-    expect(follow()).toBeChecked();
-    expect(screen.getByText(/uses the phase's dates automatically/)).toBeInTheDocument();
+    expect(follow()).not.toBeChecked();
+    expect(screen.queryByText(/uses the phase's dates automatically/)).not.toBeInTheDocument();
     expect(screen.queryByText(/already booked on this phase/)).not.toBeInTheDocument();
+    expect(dateValue('Start Date *')).toBe('2026-09-07');
+    expect(dateValue('End Date *')).toBe('2026-09-18');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
+
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({
+      staff_id: 8,
+      phase_id: 3,
+      project_id: 1,
+      start_date: '2026-09-07',
+      end_date: '2026-09-18',
+    });
+  });
+
+  it('flips the untouched switch with the picked person: dateless for someone already on the phase', async () => {
+    openNew(undefined, 'Carol Chen');
+    expect(follow()).not.toBeChecked();
+
+    // Bob (4) already holds a booking on the phase: the server places his.
+    pickOption(/^Staff Member/, 'Bob Brown');
+    expect(follow()).toBeChecked();
+    expect(screen.getByText(`This person is ${SECOND_BOOKING}`)).toBeInTheDocument();
     expect(screen.queryByLabelText('Start Date *')).not.toBeInTheDocument();
+
+    // Back to someone new: unpinned again.
+    pickOption(/^Staff Member/, 'Carol Chen');
+    expect(follow()).not.toBeChecked();
+    pickOption(/^Staff Member/, 'Bob Brown');
 
     fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
 
     await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
     const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    expect(body).toMatchObject({ staff_id: 8, phase_id: 3, project_id: 1 });
+    expect(body).toMatchObject({ staff_id: 4, phase_id: 3 });
     expect(body).not.toHaveProperty('start_date');
     expect(body).not.toHaveProperty('end_date');
+  });
+
+  it('keeps a touched switch whoever is picked', async () => {
+    openNew(undefined, 'Carol Chen');
+    // Pinned on purpose for a first booking: follows the phase, no dates sent.
+    fireEvent.click(follow());
+    expect(follow()).toBeChecked();
+    expect(screen.getByText(/uses the phase's dates automatically/)).toBeInTheDocument();
+
+    pickOption(/^Staff Member/, 'Bob Brown');
+    expect(follow()).toBeChecked();
+    fireEvent.click(follow());
+    expect(follow()).not.toBeChecked();
+    // Own dates chosen for Bob stay when someone new is picked.
+    pickOption(/^Staff Member/, 'Carol Chen');
+    expect(follow()).not.toBeChecked();
+    fireEvent.click(follow());
+    expect(follow()).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
+
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    expect(body).toMatchObject({ staff_id: 8, phase_id: 3 });
+    expect(body).not.toHaveProperty('start_date');
   });
 
   it('with own dates: the fields start on the card, are bounded by it and the dates are sent', async () => {
@@ -127,6 +181,19 @@ describe('AssignmentModal: new phase booking', () => {
       start_date: '2026-09-08',
       end_date: '2026-09-10',
     });
+  });
+
+  it("keeps an untouched first booking's dates on the card when it moved meanwhile", () => {
+    openNew(undefined, 'Carol Chen');
+    act(() => {
+      const project = buildProject();
+      project.phases[0].start_date = '2026-09-21';
+      project.phases[0].end_date = '2026-09-25';
+      useAppStore.setState({ projects: [project] });
+    });
+    expect(follow()).not.toBeChecked();
+    expect(dateValue('Start Date *')).toBe('2026-09-21');
+    expect(dateValue('End Date *')).toBe('2026-09-25');
   });
 
   it('restarts own dates on the card when it moved meanwhile', () => {
@@ -166,7 +233,7 @@ describe('AssignmentModal: new phase booking', () => {
 
   it('names the subphase on a subphase booking', () => {
     openNew({ phaseId: 3, subphaseId: 5 });
-    fireEvent.click(screen.getByRole('switch', { name: 'Follow the subphase dates' }));
+    expect(screen.getByRole('switch', { name: 'Follow the subphase dates' })).not.toBeChecked();
     expect(dateValue('Start Date *')).toBe('2026-09-07');
     expect(dateValue('End Date *')).toBe('2026-09-11');
   });

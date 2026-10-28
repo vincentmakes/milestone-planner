@@ -198,12 +198,14 @@ On a tablet or phone, the same gestures work with a finger: press a bar and move
 
 ## Bookings on Phases and Subphases
 
-A person booked on a phase or subphase is **linked** to it by default: the booking covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged. The badge at the start of the booking's row in the project panel shows this: it holds a **pin** and the phase's name, and a filled pin means the booking follows the phase dates.
+A booking on a phase or subphase is either **linked** to it (pinned): it covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged — or **unlinked**, with its own dates inside the phase. The badge at the start of the booking's row in the project panel shows which: it holds a **pin** and the phase's name, and a filled pin means the booking follows the phase dates.
 
-To book someone for only part of a phase — a few days at the start, then a few days at the end — **unlink** the booking:
+A new booking from **Assign Staff**, **Assign me…** or the Kanban card (**Join this card**, adding an assignee) starts **unlinked, with the phase's dates**: its own dates are the phase's start and end. Because they are its own, the booking does not stretch when the phase grows or moves later — it is fitted inside the phase as described below. To make it follow the phase, pin it:
 
-- **Click the pin** on the booking's row. It turns into an outlined pin (*Own dates*), and the booking keeps the phase's dates for now. Click the outlined pin to make it follow the phase dates again.
-- Or turn off **Follow the phase dates** in the [assignment dialog](staff-management.md#assignment-modal) and pick the booking's own dates. The calendar only offers days inside the phase.
+- **Click the pin** on the booking's row. An outlined pin (*Own dates*) turns into a filled one and the booking follows the phase dates; click it again to give the booking its own dates (it keeps the phase's dates for now).
+- Or, in the [assignment dialog](staff-management.md#assignment-modal), turn on **Follow the phase dates**; turn it off to pick the booking's own dates. The calendar only offers days inside the phase.
+
+A drag from the resource panel onto a phase bar still books the person linked to the phase.
 
 An unlinked booking's bar can be moved and resized on the timeline like any other bar, but it stops at the phase's start and end. The pin can only be clicked by people who may change that booking; for everyone else, and while the booking or your change to it awaits approval, it is greyed out but still shows whether the booking follows the phase. An unlinked booking's pin is also greyed out while another booking of the same person on that phase covers part of the phase's dates (*Can't follow the phase dates while another booking of this person overlaps them*): following the phase would make the two overlap.
 
@@ -211,7 +213,7 @@ Click the **phase name** in the badge to scroll the timeline to the booking: to 
 
 A person can hold **several bookings on the same phase**, as long as their dates do not overlap (adjacent days are fine). Booking someone for days that overlap one of their bookings on that phase is refused with *This person is already booked on this card for overlapping dates*.
 
-Booking someone **again** without choosing dates — **Assign Staff** with *Follow the phase dates* on, **Assign me again…** with the switch left on, a drag from the resource panel or the Kanban card dialog — places the new booking for you:
+Booking someone **again** without choosing dates — **Assign Staff** or **Assign me again…** for someone already on the phase (the dialog then turns *Follow the phase dates* on by itself and says the booking is placed), a drag from the resource panel or the Kanban card dialog — places the new booking for you:
 
 - If their one booking covers the **whole phase**, it is split in half: the existing booking keeps the first half (the longer one when the phase has an odd number of days) and the new booking gets the second half. Both get their own dates.
 - If their bookings leave **free days**, the new booking takes the **largest free stretch** (the earliest one on a tie).
@@ -225,7 +227,7 @@ When the phase itself changes:
 - **Shortening it** fits them inside the new dates: a booking that sticks out is cut at the new edge, and a booking left entirely outside is placed against the nearest edge with its length kept (never longer than the phase).
 - **Lengthening it** leaves them where they are.
 
-Linked bookings simply keep following the phase. One limit: shortening a phase past two bookings of the same person can push both against the same edge so that they overlap. They are kept as they are until you edit one of them; move one of them apart to resolve it.
+Linked bookings simply keep following the phase; an unlinked one is never stretched: lengthening the phase leaves it on its old dates, so pin it if it should cover the new ones. One limit: shortening a phase past two bookings of the same person can push both against the same edge so that they overlap. They are kept as they are until you edit one of them; move one of them apart to resolve it.
 
 ### The overview row
 

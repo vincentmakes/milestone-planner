@@ -369,7 +369,8 @@ async def test_assigning_someone_to_a_card_keeps_their_assigned_notification(
     assert (actor_id, already) == (ADMIN, {ANN})  # Ann has her "assigned" row
     pm = by_recipient(intents)["pm"]
     assert pm.title == "Test User1 booked Ann Lee on Design"
-    assert pm.body == "at 80%"
+    # A first booking has its own dates (the card's): unpinned.
+    assert pm.body == "at 80% from 2026-03-02 to 2026-03-13"
     assert (pm.entity_type, pm.entity_id) == ("phase", 11)
 
 

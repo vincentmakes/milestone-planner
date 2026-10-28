@@ -488,18 +488,19 @@ async def test_assign_books_at_max_capacity(
         "allocation": 60,
         "start_date": "2026-03-02T00:00:00.000Z",
         "end_date": "2026-03-13T00:00:00.000Z",
-        "linked": True,
+        "linked": False,
         "adjusted": [],
     }
+    # A first booking is unpinned: its own dates, the card's (read under the lock).
     (assignment,) = (c.args[0] for c in mock_db_session.add.call_args_list)
     assert isinstance(assignment, model)
     assert assignment.project_id == 3
-    assert (assignment.start_date, assignment.end_date) == (None, None)
+    assert (assignment.start_date, assignment.end_date) == (date(2026, 3, 2), date(2026, 3, 13))
     (row,) = notifications(mock_db_session)
     assert (row.user_id, row.type, row.body) == (
         7,
         "assigned",
-        "Booked at 60% over the card's dates.",
+        "Booked at 60% from 2026-03-02 to 2026-03-13.",
     )
     assert broadcast.await_args.kwargs["summary"] == "Bob B assigned to Design"
     push.assert_awaited_once()

@@ -135,10 +135,14 @@ def approval_admin(user_id: int = ADMIN_ID) -> FakeUser:
     return FakeUser(user_id, "admin")
 
 
-def card_lock_result() -> MagicMock:
+def card_lock_result(start: date | None = None, end: date | None = None) -> MagicMock:
     """Result of ``approvals.plan_placement``'s first statement: the card row
-    locked ``FOR UPDATE`` (never read), queued before the placement rows."""
-    return MagicMock()
+    locked ``FOR UPDATE``, queued before the placement rows. Its dates are read
+    only for a first booking placed with ``link_first=False`` (the Kanban
+    assignee route); they default to ``CARD_START`` / ``CARD_END``."""
+    result = MagicMock()
+    result.first.return_value = (start or CARD_START, end or CARD_END)
+    return result
 
 
 def dispatch_result(values: list) -> MagicMock:
@@ -204,8 +208,8 @@ class ApprovalFakeDB:
             return "member"
         if entity is RolePermission:
             return "perms"
-        if entity in (ProjectPhase, ProjectSubphase) and name == "id":
-            # plan_placement: the card row locked FOR UPDATE on its own first.
+        if entity in (ProjectPhase, ProjectSubphase) and len(stmt.column_descriptions) == 2:
+            # plan_placement: the card row (its dates) locked FOR UPDATE on its own first.
             return "card_lock"
         if entity in (ProjectPhase, ProjectSubphase):
             # plan_placement: the card's dates with the person's rows on it
