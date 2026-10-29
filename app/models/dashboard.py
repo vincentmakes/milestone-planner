@@ -1,5 +1,5 @@
 """
-Dashboards (2.1.0): KPI and chart dashboards over the planning data.
+Dashboards (2.3.0): KPI and chart dashboards over the planning data.
 
 A ``Dashboard`` is instance-wide and owned by the person who created it
 (``owner_id``, ``ON DELETE SET NULL``: NULL = admin-owned, like the seeded

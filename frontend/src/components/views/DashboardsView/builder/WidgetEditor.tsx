@@ -1,5 +1,5 @@
 /**
- * WidgetEditor — add or edit one dashboard widget (2.1.0), with a live
+ * WidgetEditor — add or edit one dashboard widget (2.3.0), with a live
  * preview.
  *
  * The form, in order: the kind (a radio group of nine), the title, the

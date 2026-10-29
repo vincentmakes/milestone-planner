@@ -43,7 +43,7 @@ ANALYTICAL = "Analytical Method Transfer"
 QUALITY = "Quality System Upgrade"
 LEGACY = "Legacy Filtration Study"
 
-# Eight more projects for the dashboards (2.1.0): three finished, three running,
+# Eight more projects for the dashboards (2.3.0): three finished, three running,
 # two planned, so the charts over last year, the last 12 months and all time
 # have a shape. Nothing in the docs' prose names them.
 ENZYME = "Enzyme Stability Study"
@@ -1081,7 +1081,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         ),
     ]
 
-    # The dashboards' capacity and equipment measures (2.1.0), appended after
+    # The dashboards' capacity and equipment measures (2.3.0), appended after
     # the rows above. A week off for the two most booked people, this quarter:
     # Bob was ill last week and Charlie takes a holiday week next month, so
     # Process Development runs over capacity while the other teams do not.

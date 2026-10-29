@@ -1,6 +1,6 @@
 /**
  * DashboardDialog — a new dashboard's name, description and sharing, or the
- * sharing of the open one (2.1.0).
+ * sharing of the open one (2.3.0).
  *
  * Visibility: *Private* (the owner, and admins), *Shared with…* (the targets
  * chosen below — roles, sites, teams and people; anyone matching one of them

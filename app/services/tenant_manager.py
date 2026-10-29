@@ -863,7 +863,7 @@ class TenantConnectionManager:
             logger.warning("Auto-migration (rbac) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
-        # Dashboards (add_dashboards.sql, 2.1.0): the three tables and their
+        # Dashboards (add_dashboards.sql, 2.3.0): the three tables and their
         # indexes, then -- in the same transaction, only in the run that
         # creates the tables -- the two base dashboards "Overview" and
         # "Capacity and flows" with their widgets and the one-shot grant of
@@ -902,7 +902,7 @@ class TenantConnectionManager:
             logger.warning("Auto-migration (dashboards) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
-        # Dashboard sharing (add_dashboard_sharing.sql, 2.1.0): the site, team
+        # Dashboard sharing (add_dashboard_sharing.sql, 2.3.0): the site, team
         # and person link tables with their indexes while one is missing (no
         # seed), then -- on every pool creation, it gates itself -- the
         # visibility CHECK of a pre-release database ('roles' -> 'shared',
@@ -928,7 +928,7 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning("Auto-migration (dashboard visibility) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
-        # The widget-kind CHECK of a pre-release 2.1.0 database (gauge,
+        # The widget-kind CHECK of a pre-release 2.3.0 database (gauge,
         # heatmap, treemap, sankey). Every pool creation, self-gated; its own
         # transaction, like the visibility block.
         try:

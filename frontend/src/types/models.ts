@@ -944,7 +944,7 @@ export interface AppNotification {
 }
 
 // =============================================================================
-// DASHBOARDS (2.1.0)
+// DASHBOARDS (2.3.0)
 // =============================================================================
 // Snake_case on both sides, like the API (api/endpoints/dashboards.ts). The
 // metric-query spec mirrors app/schemas/dashboard.py; the measure → dimension

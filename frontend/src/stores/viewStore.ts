@@ -334,7 +334,7 @@ interface ViewState {
   // ---------------------------------------------
   sidebarCollapsed: boolean;
   resourcePanelCollapsed: boolean;
-  /** The sidebar's Dashboards entry lists the user's dashboards below it (2.1.0). Default open. */
+  /** The sidebar's Dashboards entry lists the user's dashboards below it (2.3.0). Default open. */
   sidebarDashboardsExpanded: boolean;
 
   // ---------------------------------------------

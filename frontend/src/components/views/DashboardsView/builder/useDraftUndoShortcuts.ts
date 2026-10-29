@@ -1,5 +1,5 @@
 /**
- * useDraftUndoShortcuts — the builder's undo / redo keys (2.1.0).
+ * useDraftUndoShortcuts — the builder's undo / redo keys (2.3.0).
  *
  * While the dashboard is edited, Ctrl/Cmd+Z undoes the draft's last change
  * and Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z redoes it. Same ignore rules as the

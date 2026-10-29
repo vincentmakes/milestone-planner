@@ -1,5 +1,5 @@
 """
-The demo data set is rich enough for the dashboards (2.1.0): the Overview's
+The demo data set is rich enough for the dashboards (2.3.0): the Overview's
 widgets, the two demo extras and the "Capacity and flows" widgets, run
 through the real metric engine (app/services/metrics.aggregate) over facts
 built from the `DemoData` rows,

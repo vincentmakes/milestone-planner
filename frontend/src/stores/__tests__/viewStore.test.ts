@@ -559,7 +559,7 @@ describe('viewStore.setCurrentView during What-If', () => {
   });
 });
 
-describe('viewStore last dashboard (2.1.0)', () => {
+describe('viewStore last dashboard (2.3.0)', () => {
   const KEY = 'milestone-view-storage-v1';
 
   beforeEach(() => {
@@ -629,7 +629,7 @@ describe('viewStore last dashboard (2.1.0)', () => {
   });
 });
 
-describe('viewStore sidebar dashboards list (2.1.0)', () => {
+describe('viewStore sidebar dashboards list (2.3.0)', () => {
   const KEY = 'milestone-view-storage-v1';
 
   beforeEach(() => {

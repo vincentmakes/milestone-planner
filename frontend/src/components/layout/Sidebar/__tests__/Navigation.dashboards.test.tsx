@@ -1,5 +1,5 @@
 /**
- * The sidebar's Dashboards entry (2.1.0): below Equipment, a chevron that
+ * The sidebar's Dashboards entry (2.3.0): below Equipment, a chevron that
  * shows / hides the dashboards the user may open (viewStore
  * `sidebarDashboardsExpanded`, persisted, default open), each opening the
  * view on that dashboard through the view leave guard. The list is loaded on

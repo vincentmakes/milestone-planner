@@ -1,5 +1,5 @@
 """
-Dashboards API (2.1.0): KPI and chart dashboards over the planning data.
+Dashboards API (2.3.0): KPI and chart dashboards over the planning data.
 
 - ``GET /dashboards`` (``views.dashboards``) -- the dashboards the caller may
   open (own, ``everyone``, ``shared`` with one of the caller's role, member

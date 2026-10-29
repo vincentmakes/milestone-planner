@@ -1,4 +1,4 @@
-/** Pure sharing helpers of the Dashboards view (2.1.0). */
+/** Pure sharing helpers of the Dashboards view (2.3.0). */
 
 import type { DashboardSummary } from '@/types';
 

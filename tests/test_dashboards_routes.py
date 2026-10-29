@@ -700,7 +700,7 @@ async def test_create_refuses_an_invalid_widget(authed_client, widget, message):
     assert message in resp.json()["detail"][0]["msg"]
 
 
-# The four 2.1.0 chart kinds, one widget each (the gauge with its target).
+# The four 2.3.0 chart kinds, one widget each (the gauge with its target).
 NEW_KIND_WIDGETS = [
     widget_body(
         "Utilisation",

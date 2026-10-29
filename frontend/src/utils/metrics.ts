@@ -1,5 +1,5 @@
 /**
- * The dashboards' metric vocabulary on the client (2.1.0): measures and their
+ * The dashboards' metric vocabulary on the client (2.3.0): measures and their
  * families, dimension kinds, the measure → valid dimensions and filters
  * matrices, the permission a measure, a dimension or a filter needs, the
  * measures that take no percentage, periods and grains, and the display

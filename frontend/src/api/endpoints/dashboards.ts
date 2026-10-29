@@ -1,5 +1,5 @@
 /**
- * Dashboards API (2.1.0): the dashboards shared with the caller, their
+ * Dashboards API (2.3.0): the dashboards shared with the caller, their
  * widgets, and the metric engine (`/query` for one widget, `/data` for a
  * whole dashboard), plus the people a dashboard can be shared with.
  * Snake_case on both sides, so no field mapping; `transformDashboard` only

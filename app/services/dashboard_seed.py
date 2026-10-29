@@ -1,5 +1,5 @@
 """
-The two base dashboards, "Overview" and "Capacity and flows" (2.1.0), as
+The two base dashboards, "Overview" and "Capacity and flows" (2.3.0), as
 plain Python.
 
 Seeded once, in the step that creates the dashboards tables, by four paths:

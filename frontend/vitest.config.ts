@@ -69,7 +69,7 @@ export default defineConfig({
       // statements 91.83, functions 93.48, branches 83.66; with the pilot
       // feedback round 2 of 2.1.0, raised to lines 93.0, statements 92.0,
       // functions 93.4, branches 84.0; with the
-      // Dashboards view of 2.2.0, the same rule on lines 93.12, statements
+      // Dashboards view of 2.3.0, the same rule on lines 93.12, statements
       // 92.07, functions 93.7, branches 84.11; with the dashboard builder,
       // on lines 93.32, statements 92.28, functions 93.89, branches 84.6;
       // with dashboard sharing by site, team and person, on lines 93.38,

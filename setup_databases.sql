@@ -718,7 +718,7 @@ CREATE TABLE IF NOT EXISTS project_field_selections (
     PRIMARY KEY (project_id, option_id)
 );
 
--- Dashboards (2.1.0): KPI and chart dashboards over the planning data. Owner
+-- Dashboards (2.3.0): KPI and chart dashboards over the planning data. Owner
 -- (NULL = admin-owned, e.g. the seeded "Overview"), visibility private /
 -- shared / everyone, at most one default. Same DDL as
 -- tenant_provisioner.DASHBOARDS_SCHEMA_STATEMENTS and

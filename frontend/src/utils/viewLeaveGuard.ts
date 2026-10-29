@@ -1,5 +1,5 @@
 /**
- * The one "may the user leave this view?" check (2.1.0).
+ * The one "may the user leave this view?" check (2.3.0).
  *
  * A view holding unsaved work (the dashboard builder's draft) registers a
  * guard that asks the user — through `confirmAction()` — before the view is

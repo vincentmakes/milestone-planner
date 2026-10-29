@@ -2,9 +2,9 @@
 -- Description: Widens dashboard_widgets_kind_check from kpi / bar / line /
 -- pie / table to kpi / bar / line / pie / table / gauge / heatmap / treemap /
 -- sankey. No row changes: every existing kind stays valid. Requires
--- add_dashboards (2.1.0).
+-- add_dashboards (2.3.0).
 --
--- It exists only for databases created from the pre-release 2.1.0 branch,
+-- It exists only for databases created from the pre-release 2.3.0 branch,
 -- whose dashboard_widgets table carries the five-kind CHECK: the fresh-schema
 -- sources (setup_databases.sql, the provisioner, the template) and
 -- add_dashboards.sql create the nine kinds directly.

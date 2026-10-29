@@ -1,5 +1,5 @@
 /**
- * DashboardsView — the dashboards shared with the user (2.1.0), and their
+ * DashboardsView — the dashboards shared with the user (2.3.0), and their
  * builder.
  *
  * The toolbar picks a dashboard (`SearchableSelect`; the hint says where it

@@ -1,5 +1,5 @@
 /**
- * useDashboardEditor — the dashboard builder's draft (2.1.0).
+ * useDashboardEditor — the dashboard builder's draft (2.3.0).
  *
  * Edit mode is a draft of the open dashboard (`startEdit`) or of a new one
  * (`startNew`, created by the dialog; nothing is sent until Save): its name,

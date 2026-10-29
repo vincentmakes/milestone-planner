@@ -1,5 +1,5 @@
 """
-The dashboards' metric engine (2.1.0): facts, working days, aggregation.
+The dashboards' metric engine (2.3.0): facts, working days, aggregation.
 
 A dashboard widget asks one *metric query* (``app/schemas/dashboard.py``
 ``MetricQuery``): a measure, up to two dimensions, filters, a period, and

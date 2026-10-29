@@ -1,5 +1,5 @@
 """
-Dashboard sharing schema (2.1.0) stays identical in every DDL source.
+Dashboard sharing schema (2.3.0) stays identical in every DDL source.
 
 The canonical statements of the site, team and person link tables live once
 in tenant_provisioner (DASHBOARD_SHARING_SCHEMA_STATEMENTS);

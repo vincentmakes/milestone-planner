@@ -1,5 +1,5 @@
 """
-Dashboards schema (2.1.0) stays identical in every DDL source.
+Dashboards schema (2.3.0) stays identical in every DDL source.
 
 The canonical statements live once in tenant_provisioner
 (DASHBOARDS_SCHEMA_STATEMENTS); get_tenant_schema_sql(), setup_databases.sql,
@@ -842,7 +842,7 @@ def test_the_checks_hold_on_sqlite(sqlite_session):
     with pytest.raises(IntegrityError):
         sqlite_session.commit()
     sqlite_session.rollback()
-    # Every kind of the tuple passes, the four 2.1.0 chart kinds included.
+    # Every kind of the tuple passes, the four 2.3.0 chart kinds included.
     dashboard = Dashboard(name="Every kind", visibility="private")
     dashboard.widgets = [
         DashboardWidget(kind=kind, title=kind, query="{}", layout="{}", sort_order=i)

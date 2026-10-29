@@ -169,7 +169,7 @@ async def test_rows_come_in_foreign_key_order(loaded):
 async def test_counts_match_the_data_set(loaded):
     conn, demo, counts = loaded
     # The four canonical projects, the archived one and the eight the
-    # dashboards need (2.1.0); holidays for last year, this year and next.
+    # dashboards need (2.3.0); holidays for last year, this year and next.
     assert (counts["projects"], counts["phases"], counts["subphases"]) == (13, 60, 13)
     assert (counts["staff_assignments"], counts["bank_holidays"]) == (107, 60)
     # Five bookings and three blocks, then the dashboards' equipment measures'

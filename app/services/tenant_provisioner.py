@@ -1301,7 +1301,7 @@ STALE_APPROVAL_POINTER_CLEANUP_SQL: tuple[str, ...] = tuple(
 )
 
 
-# --- Dashboards (add_dashboards.sql, 2.1.0) ---------------------------------
+# --- Dashboards (add_dashboards.sql, 2.3.0) ---------------------------------
 # KPI and chart dashboards: the dashboards, the roles a dashboard is shared
 # with, and its widgets (the metric query, display options and grid layout as
 # JSON text). dashboards.owner_id references users and dashboard_roles.role_id
@@ -1480,7 +1480,7 @@ DASHBOARD_PERMISSION_BACKFILL_PG_SQL = (
 )
 
 
-# --- Dashboard sharing (add_dashboard_sharing.sql, 2.1.0) -------------------
+# --- Dashboard sharing (add_dashboard_sharing.sql, 2.3.0) -------------------
 # A ``shared`` dashboard opens for anyone matching one of its targets: a role
 # (dashboard_roles, above), a site -- its members --, a team -- its members --
 # or a person. The three link tables reference dashboards, sites, teams and
@@ -1539,7 +1539,7 @@ DASHBOARD_SHARING_PROBE_SQL = (
     "AND table_name IN (" + ", ".join(f"'{t}'" for t in DASHBOARD_SHARING_TABLES) + ")"
 )
 
-# The visibility value 'roles' became 'shared' before 2.1.0 was released: a
+# The visibility value 'roles' became 'shared' before 2.3.0 was released: a
 # database created from a pre-release build carries the old CHECK and 'roles'
 # rows. Self-gated (a no-op once the constraint allows 'shared', or without a
 # dashboards table), so it runs on every pool creation; the UPDATE sits
@@ -1562,7 +1562,7 @@ DASHBOARD_VISIBILITY_CHECK_SQL = """
         END IF;
     END $$"""
 
-# The gauge, heatmap, treemap and sankey kinds came before 2.1.0 was
+# The gauge, heatmap, treemap and sankey kinds came before 2.3.0 was
 # released: a database created from a pre-release build carries the
 # five-kind CHECK. Self-gated (a no-op once the constraint allows the newest
 # kind, DASHBOARD_WIDGET_KINDS[-1], or without a dashboard_widgets table), so

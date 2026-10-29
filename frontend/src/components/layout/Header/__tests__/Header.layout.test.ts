@@ -1,5 +1,5 @@
 /**
- * The header's layout rules (2.1.0 fix: on a phone the date controls drew
+ * The header's layout rules (2.3.0 fix: on a phone the date controls drew
  * over the icons on the right, and from 1024 to 1280px "Today" hid behind
  * the view-mode buttons). jsdom does no layout, so these pin the CSS rules
  * that make the bar fit — checked in a browser at 400 / 480 / 640 / 1024 /

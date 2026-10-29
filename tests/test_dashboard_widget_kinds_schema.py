@@ -1,11 +1,11 @@
 """
-Dashboard widget kinds (2.1.0): nine kinds, one CHECK, one widening block.
+Dashboard widget kinds (2.3.0): nine kinds, one CHECK, one widening block.
 
 The kinds live once in the model (``DASHBOARD_WIDGET_KINDS``); the schema's
 ``WidgetKind`` Literal, the provisioner's ``DASHBOARD_WIDGET_KIND_CHECK`` (spliced
 into ``DASHBOARD_WIDGETS_TABLE_SQL``), setup_databases.sql, the manual-setup
 template and migrations/add_dashboards.sql spell the same CHECK. A database
-created from the pre-release 2.1.0 branch carries the five-kind CHECK: a
+created from the pre-release 2.3.0 branch carries the five-kind CHECK: a
 self-gated DO block (``DASHBOARD_WIDGET_KIND_CHECK_SQL``) widens it, in the
 tenant auto-migration (its own try, right after the visibility block, on every
 pool creation) and in migrations/add_dashboard_widget_kinds.sql only -- never in
@@ -171,7 +171,7 @@ def test_migration_documents_how_to_run_it():
     sql = MIGRATION.read_text()
     assert "python migrations/run_migration.py add_dashboard_widget_kinds" in sql
     assert "psql" in sql
-    assert "pre-release 2.1.0" in sql
+    assert "pre-release 2.3.0" in sql
 
 
 def test_migration_splits_into_the_block_and_a_notice(migration_statements):

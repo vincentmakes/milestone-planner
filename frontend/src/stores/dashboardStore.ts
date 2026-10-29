@@ -1,5 +1,5 @@
 /**
- * Dashboard Store — the Dashboards view (2.1.0).
+ * Dashboard Store — the Dashboards view (2.3.0).
  *
  * Server-owned and deliberately NOT persisted (like workStore): the list of
  * dashboards shared with the user, the one open (`current`, with its

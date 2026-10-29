@@ -1,5 +1,5 @@
 """
-Dashboards (2.1.0): the metric-query spec, widget and dashboard bodies, responses.
+Dashboards (2.3.0): the metric-query spec, widget and dashboard bodies, responses.
 
 ``MetricQuery`` is what a widget asks the metric engine
 (``app/services/metrics.py``): a measure, up to two dimensions, filters with a

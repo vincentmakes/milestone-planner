@@ -1,5 +1,5 @@
 """
-Who may see and edit a dashboard (2.1.0).
+Who may see and edit a dashboard (2.3.0).
 
 - **View**: an administrator (every dashboard); the owner; anyone when the
   visibility is ``everyone``; for ``shared``, anyone matching one of its

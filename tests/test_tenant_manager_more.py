@@ -441,7 +441,7 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     # booking-segments step, the equipment-note step, the project-field
     # decimals step, the project-comments step, the dashboard-sharing step (its
     # probe, then its visibility block), the widget-kinds block (its own
-    # commit, +1 in 2.1.0) and the notification-types step.
+    # commit, +1 in 2.3.0) and the notification-types step.
     assert conn.log.count("COMMIT") == 11
 
 

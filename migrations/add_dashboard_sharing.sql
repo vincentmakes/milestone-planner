@@ -5,7 +5,7 @@
 -- 'roles' becomes 'shared' (private / shared / everyone): a 'shared'
 -- dashboard opens for anyone matching one of its roles, sites, teams or
 -- people. A link goes with its dashboard and with its site, team or person.
--- Requires add_dashboards, sites, teams (add_teams) and users (2.1.0).
+-- Requires add_dashboards, sites, teams (add_teams) and users (2.3.0).
 --
 -- USAGE: Run this on each existing tenant database
 -- Example: python migrations/run_migration.py add_dashboard_sharing

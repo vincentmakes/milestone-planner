@@ -8,7 +8,7 @@
 -- grid layout as JSON texts, sort order).
 -- Widgets and role links go with their dashboard; a role link also goes with
 -- its role; a dashboard whose owner is deleted keeps existing (owner_id SET
--- NULL). Requires users and roles (add_rbac) (2.1.0). The sites, teams and
+-- NULL). Requires users and roles (add_rbac) (2.3.0). The sites, teams and
 -- people a dashboard is shared with come with add_dashboard_sharing.
 --
 -- USAGE: Run this on each existing tenant database
@@ -22,7 +22,7 @@
 -- missing -- seeds the two base dashboards, "Overview" and "Capacity and
 -- flows", once, and grants views.dashboards (superuser, user) and
 -- dashboards.manage (superuser). This file creates the tables only: run by
--- hand BEFORE the 2.1.0 application first starts on a tenant, it leaves that
+-- hand BEFORE the 2.3.0 application first starts on a tenant, it leaves that
 -- tenant without those dashboards and without those grants (an admin can
 -- add them in the application).
 --

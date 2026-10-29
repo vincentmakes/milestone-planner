@@ -1,5 +1,5 @@
 /**
- * The dashboard builder's pure rules (2.1.0): the draft shapes, the widget
+ * The dashboard builder's pure rules (2.3.0): the draft shapes, the widget
  * kind rules, the cleaned query a widget stores, where a new widget lands on
  * the grid, and a key-order-free comparison of drafts.
  *

@@ -1,5 +1,5 @@
 /**
- * SharedWithLine — whom a dashboard is shared with (2.1.0), under its
+ * SharedWithLine — whom a dashboard is shared with (2.3.0), under its
  * description in view and edit mode.
  *
  * - `everyone`: *Shared with everyone*.

@@ -349,7 +349,7 @@ async def apply_tenant_schema(settings):
 
         # The base dashboard and the dashboard key grants are written only in
         # the run that creates the dashboards tables (a fresh install, or the
-        # first start of 2.1.0 on an older database), like the tenant
+        # first start of 2.3.0 on an older database), like the tenant
         # auto-migration does: a later start never brings back a dashboard
         # or a key an admin removed.
         existing = {row[0] for row in await conn.fetch(DASHBOARDS_PROBE_SQL)}

@@ -1,5 +1,5 @@
 """
-Lists of people offered to pick from (2.1.0).
+Lists of people offered to pick from (2.3.0).
 
 ``shareable_users_statement`` is the one definition of "the people someone
 working at these sites may name": the active members of the given sites plus
