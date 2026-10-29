@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { PhaseRow } from '../PhaseRow';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { useUIStore } from '@/stores/uiStore';
@@ -309,5 +309,44 @@ describe('PhaseRow per-person booking groups', () => {
       expect(pins()[0]).toBeEnabled();
       expect(pins()[0]).toHaveAttribute('title', RELINK);
     });
+  });
+});
+
+/**
+ * The admin setting gantt_completion_badges: off hides the % badge; the
+ * context menu's "Set progress…" (uiStore.completionSliderFor) opens the
+ * slider anchored to the phase name instead.
+ */
+describe('PhaseRow completion badge setting', () => {
+  const project = { id: 1, name: 'P', site_id: 1, pm_id: 42, phases: [], staffAssignments: [], equipmentAssignments: [] } as unknown as Project;
+
+  beforeEach(() => {
+    useAppStore.setState({ projects: [project], currentUser: makeUser({ id: 1, role: 'admin' }), instanceSettings: null });
+    useUIStore.setState({ completionSliderFor: null });
+  });
+
+  it('shows the badge by default and hides it when the setting is off', () => {
+    const { unmount } = renderRow(makePhase({ completion: 40 }));
+    expect(screen.getByText('40%')).toBeInTheDocument();
+    unmount();
+
+    useAppStore.setState({ instanceSettings: { gantt_completion_badges: 'false' } });
+    renderRow(makePhase({ completion: 40 }));
+    expect(screen.queryByText('40%')).not.toBeInTheDocument();
+    expect(nameButton(makePhase())).toBeInTheDocument();
+  });
+
+  it('opens the slider on the phase name when the menu asks for it, and clears the request', () => {
+    useAppStore.setState({ instanceSettings: { gantt_completion_badges: 'false' } });
+    renderRow(makePhase({ completion: 40 }));
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+
+    // Another row's request does nothing here.
+    act(() => useUIStore.getState().openCompletionSlider('subphase', 1));
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    act(() => useUIStore.getState().openCompletionSlider('phase', 1));
+
+    expect(screen.getByRole('slider')).toBeInTheDocument();
+    expect(useUIStore.getState().completionSliderFor).toBeNull();
   });
 });

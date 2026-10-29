@@ -12,7 +12,9 @@ import { useAppStore } from '@/stores/appStore';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
 import { can } from '@/utils/permissions';
 import { useUIStore } from '@/stores/uiStore';
-import { createSite, exportSiteToExcel } from '@/api';
+import { createSite, deleteSite, exportSiteToExcel } from '@/api';
+import { useDataLoader } from '@/hooks/useDataLoader';
+import { confirmAction } from '@/utils/confirmDialog';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -20,7 +22,7 @@ import type { Site } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { SiteForm } from './SiteForm';
-import { Icon, CircleIcon, DownloadIcon, EditIcon, PlusIcon } from '@/components/common/Icon';
+import { Icon, CircleIcon, DownloadIcon, EditIcon, PlusIcon, TrashIcon } from '@/components/common/Icon';
 import styles from './SitesPanel.module.css';
 
 // Country lookup for display
@@ -35,6 +37,12 @@ const COUNTRIES: Record<string, string> = {
   NZ: 'New Zealand', SG: 'Singapore', AE: 'UAE', IL: 'Israel', SA: 'Saudi Arabia',
   ZA: 'South Africa',
 };
+
+/** What deleting a site removes, in the typed-name confirmation. */
+export const SITE_DELETE_MESSAGE =
+  'Its projects with their phases and bookings, its bank holidays, closures and events, its teams and ' +
+  'memberships, equipment linked only to this site, and tags or field items limited to it are deleted. ' +
+  'People assigned only to this site keep their account but lose access to its data. This cannot be undone.';
 
 function getCountryName(code: string | null | undefined): string {
   if (!code) return '';
@@ -68,6 +76,8 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   const [exportingSiteId, setExportingSiteId] = useState<number | null>(null);
+  const [deletingSiteId, setDeletingSiteId] = useState<number | null>(null);
+  const { loadAllData } = useDataLoader();
   // Unsaved input of the site form; the panel is the hub's single reporter
   const [formDirty, setFormDirty] = useState(false);
   useReportDirty(onDirtyChange, editingSite ? formDirty : newSiteName.trim() !== '');
@@ -112,6 +122,33 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     }
   };
   
+  // Delete a site behind a typed confirmation (its name). The server refuses
+  // the last active site (409), shown in place. Afterwards everything reloads:
+  // loadAllData() falls back to the first visible site when the current one
+  // is gone.
+  const handleDeleteSite = async (site: Site) => {
+    setError(null);
+    const confirmed = await confirmAction({
+      title: `Delete ${site.name}?`,
+      message: SITE_DELETE_MESSAGE,
+      confirmLabel: 'Delete site',
+      destructive: true,
+      confirmWord: site.name,
+    });
+    // Confirm first, then claim the panel's one write guard.
+    if (!confirmed || !beginSubmit()) return;
+    setDeletingSiteId(site.id);
+    try {
+      await deleteSite(site.id);
+      await loadAllData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete site');
+    } finally {
+      setDeletingSiteId(null);
+      endSubmit();
+    }
+  };
+
   if (editingSite) {
     return (
       <SiteForm
@@ -171,6 +208,19 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                   >
                     <Icon icon={EditIcon} size={15} />
                   </button>
+                )}
+                {canManageSites && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={styles.deleteBtn}
+                    icon={<Icon icon={TrashIcon} size={15} />}
+                    onClick={() => void handleDeleteSite(site)}
+                    loading={deletingSiteId === site.id}
+                    disabled={deletingSiteId !== null}
+                    title="Delete site"
+                    aria-label={`Delete ${site.name}`}
+                  />
                 )}
               </div>
             </div>

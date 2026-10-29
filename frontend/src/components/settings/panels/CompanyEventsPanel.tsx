@@ -473,7 +473,11 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                       {event.counts_as_unavailable && (
                         <span
                           className={`${styles.badge} ${styles.badgeClosure}`}
-                          title="Staff on the event's sites are unavailable"
+                          title={
+                            teamIds.length > 0
+                              ? "Staff of the selected teams on the event's sites are unavailable"
+                              : "Staff on the event's sites are unavailable"
+                          }
                         >
                           Closure
                         </span>
@@ -734,14 +738,21 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           className={styles.siteCheck}
           checked={countsAsUnavailable}
           onChange={setCountsAsUnavailable}
-          label="Site closure — staff on these sites are unavailable"
+          label={
+            effectiveTeamIds.length > 0
+              ? 'Site closure — staff of the selected teams on these sites are unavailable'
+              : 'Site closure — staff on these sites are unavailable'
+          }
         />
         <p className={styles.help}>
           Their capacity is 0% for the event's dates and their assignments are flagged as
           conflicts, like an absence.
         </p>
         {countsAsUnavailable && effectiveTeamIds.length > 0 && (
-          <p className={styles.help}>Only members of the ticked teams are unavailable.</p>
+          <p className={styles.help}>
+            Only members of the ticked teams lose their capacity; everyone else on these sites is
+            unaffected.
+          </p>
         )}
       </div>
       <div className={styles.formActions}>

@@ -185,6 +185,8 @@ describe('notification endpoints', () => {
   runCases([
     ['markNotificationRead', () => notifications.markNotificationRead(3), 'PUT', '/api/notifications/3/read', {}],
     ['markAllNotificationsRead', () => notifications.markAllNotificationsRead(), 'PUT', '/api/notifications/read-all', {}],
+    ['deleteNotification', () => notifications.deleteNotification(3), 'DELETE', '/api/notifications/3'],
+    ['clearNotifications', () => notifications.clearNotifications(), 'DELETE', '/api/notifications'],
   ]);
 
   it('tags fetched notifications as server-sourced', async () => {
@@ -238,8 +240,10 @@ describe('settings endpoints', () => {
       kanban_enabled: 'false',
       nager_enabled: 'false',
       new_project_preselect_phases: 'false',
+      gantt_completion_badges: 'false',
       project_field_labels: '{"customer":"Client"}',
       project_fields_hidden: '["volume"]',
+      volume_decimals: 'any',
     });
     await expect(settings.getInstanceSettings()).resolves.toEqual({
       instance_title: 'T',
@@ -251,8 +255,10 @@ describe('settings endpoints', () => {
       kanban_enabled: 'false',
       nager_enabled: 'false',
       new_project_preselect_phases: 'false',
+      gantt_completion_badges: 'false',
       project_field_labels: '{"customer":"Client"}',
       project_fields_hidden: '["volume"]',
+      volume_decimals: 'any',
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
   });
@@ -268,10 +274,12 @@ describe('settings endpoints', () => {
       kanban_enabled: 'true',
       nager_enabled: 'true',
       new_project_preselect_phases: 'true',
+      gantt_completion_badges: 'true',
       project_field_labels: '{}',
       project_fields_hidden: '[]',
+      volume_decimals: '1',
     });
-    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(11);
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(13);
   });
 });
 

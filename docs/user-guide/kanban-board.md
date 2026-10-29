@@ -92,7 +92,7 @@ Adding assignees and joining a card are unavailable in [What-If mode](what-if-pl
 
 ### Joining a card yourself
 
-If you can't manage the project, the card's detail shows a **Join this card** button as long as you are not on it yet (and your role lets you book yourself). Joining books your time exactly like being assigned by a manager — the card's dates, at your maximum capacity — and lets you move the card from then on. Removing yourself releases the booking again.
+If you can't manage the project, the card's detail shows a **Join this card** button as long as you are not on it yet (and your role lets you book yourself). Joining books your time exactly like being assigned by a manager — the card's dates, at your maximum capacity — and lets you move the card from then on. A first booking on a card, joined or added by a manager, has its own dates (the card's) rather than following the card: it is fitted inside the card when the card changes, never stretched; pin it in the [Gantt chart](gantt-charts.md#bookings-on-phases-and-subphases) to make it follow the card. Removing yourself releases the booking again.
 
 ### Joining and leaving with approval
 
@@ -147,13 +147,15 @@ You are never notified about your own actions. If you are both assigned to a car
 
 Clicking a card notification opens that card's board and detail (if your role has the Kanban board; otherwise the project on the Gantt chart); a project notification opens the project on the Gantt chart; an approval notification opens the matching tab of My Work.
 
+The **×** beside a notification deletes it, and **Clear all** at the top of the panel deletes every notification in your inbox after a confirmation — for you only; nobody else's inbox changes. A notification you have read disappears by itself 30 days later; unread ones stay until you read or delete them. See [Notifications](collaboration.md#notifications).
+
 !!! note "Turning the board off"
     An administrator can turn the Kanban board off for the whole workspace in **Settings → [Features & defaults](settings.md#features-defaults)**. Nobody then sees the board or its sidebar entry, whatever their role — administrators included. Comments stay stored and can still be read and added from the assignment dialog of a booking on the card, My Work keeps working (its card links become plain text), and card notifications open the Gantt chart instead.
 
 !!! info "Due and overdue reminders work differently"
     Reminders for cards that are due within a week, or already past their end date, are worked out **in your browser** from the plan you already have loaded. They need no configuration and appear alongside the other notifications.
 
-    The trade-off: they only appear while you have the application open. There is no email or push notification, and nothing arrives overnight. Dismissing one is remembered in your browser; if the card is rescheduled and becomes due again, it will remind you afresh.
+    The trade-off: they only appear while you have the application open. There is no email or push notification, and nothing arrives overnight. Dismissing one — opening it or clicking its **×** — is remembered in your browser; if the card is rescheduled and becomes due again, it will remind you afresh. **Clear all** leaves these reminders in place.
 
 ## What gets exported
 

@@ -16,6 +16,8 @@ import {
   parseHiddenFields,
   parseIdList,
   parseNameList,
+  volumeDecimals,
+  volumeDecimalsValue,
 } from '../instanceSettings';
 
 describe('parseIdList', () => {
@@ -59,6 +61,8 @@ describe('isSettingOn', () => {
 
   it('is on before the settings are loaded', () => {
     expect(isSettingOn(null, 'new_project_preselect_phases')).toBe(true);
+    expect(isSettingOn(null, 'gantt_completion_badges')).toBe(true);
+    expect(isSettingOn({ gantt_completion_badges: 'false' }, 'gantt_completion_badges')).toBe(false);
     expect(isSettingOn(undefined, 'show_weekends')).toBe(true);
   });
 });
@@ -128,5 +132,34 @@ describe('built-in project fields', () => {
     expect(fieldLabelsValue({})).toBe('{}');
     expect(hiddenFieldsValue(['volume', 'customer', 'confirmed', 'volume'])).toBe('["customer","volume"]');
     expect(hiddenFieldsValue([])).toBe('[]');
+  });
+});
+
+describe('volume decimals', () => {
+  it.each([
+    [undefined, 1],
+    ['', 1],
+    ['any', null],
+    ['0', 0],
+    ['1', 1],
+    ['2', 2],
+    ['3', 3],
+    // Malformed or stale rows read as the default, never throw.
+    ['4', 1],
+    ['ANY', 1],
+    ['1.0', 1],
+  ] as [string | undefined, number | null][])('reads %j as %s', (value, decimals) => {
+    expect(volumeDecimals({ volume_decimals: value })).toBe(decimals);
+  });
+
+  it('reads unloaded settings as the default', () => {
+    expect(volumeDecimals(null)).toBe(1);
+    expect(volumeDecimals(undefined)).toBe(1);
+  });
+
+  it('writes the canonical value the backend stores', () => {
+    expect(volumeDecimalsValue(null)).toBe('any');
+    expect(volumeDecimalsValue(0)).toBe('0');
+    expect(volumeDecimalsValue(3)).toBe('3');
   });
 });

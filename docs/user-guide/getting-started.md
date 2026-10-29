@@ -32,10 +32,10 @@ The application is organized into several areas:
 | Work | **My Work** | Requests waiting for your decision, your bookings and your own requests, with a badge counting the requests to decide — see [My Work](my-work.md) |
 | Staff | **Staff Overview** | Staff members with assignments and availability |
 | Equipment | **Equipment** | Equipment items with booking timelines |
-| Cross-Site | **Cross-Site** | Overview of projects across the sites you can see (needs at least two) |
+| Cross-Site | **Cross-Site** | Overview of projects across the sites you can see (listed only with at least two) |
 | Archive | **Archived** | Completed/archived projects |
 
-Which views you see depends on your role: a view your role does not include is not listed, and **Cross-Site** is shown disabled while you can see only one site. The sidebar can be collapsed to icon-only mode for more screen space. Admins and superusers — anyone whose role manages one of the Settings sections — also see a **Settings** entry in the **Admin** section, which opens the [Settings window](settings.md) — users, sites, calendars, equipment, phases and SSO, limited to what your role can change. Your own time off is under **My absences** in the user menu (see [Vacations & Time Off](vacations.md#my-absences)).
+Which views you see depends on your role: a view your role does not include is not listed, and **Cross-Site** is not listed while you can see only one site. The sidebar can be collapsed to icon-only mode for more screen space. Admins and superusers — anyone whose role manages one of the Settings sections — also see a **Settings** entry in the **Admin** section, which opens the [Settings window](settings.md) — users, sites, calendars, equipment, phases and SSO, limited to what your role can change. Your own time off is under **My absences** in the user menu (see [Vacations & Time Off](vacations.md#my-absences)).
 
 ### Header Controls
 

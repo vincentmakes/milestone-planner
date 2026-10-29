@@ -454,6 +454,9 @@ decision, not an oversight.
   (an id is generated when none is given); an `error` replaces the `hint`, sets `aria-invalid`
   and is announced (`role="alert"`, linked through `aria-describedby`; a `hint` is linked the
   same way).
+- **`NumberFieldInput`** (`components/modals/ProjectFieldInputs.tsx`): a number with a format (a
+  number project field, the built-in Volume). It refuses a keystroke that adds more decimals
+  than the format keeps and pads on blur (12 → 12.0); As typed takes anything.
 - **Two fields side by side** (a start/end date pair): a grid of `minmax(0, 1fr) minmax(0, 1fr)`
   (or a flex row whose items have `min-width: 0`), never `1fr 1fr`. A `1fr` track cannot shrink
   below its content, so a wide field overflows its neighbour on a narrow dialog. The token test
@@ -508,8 +511,9 @@ decision, not an oversight.
   `role="listbox"` whose rows show the label, a muted `hint` (searched: job title, equipment
   type) and a muted `note` (not searched: *80% capacity*). Filtering starts at the first
   character; a printable key on the closed trigger opens it with that character typed; Enter
-  picks the active row and never submits a host form; Escape, Tab out and an outside mousedown
-  close it through `useDismissableOverlay`. The list is 14 rem tall and the panel scrolls itself
+  picks the active row and never submits a host form; Tab with a typed query picks the active
+  match too (focus returns to the trigger, so the next Tab moves on); Escape, Tab out with an
+  empty query and an outside mousedown close it through `useDismissableOverlay`. The list is 14 rem tall and the panel scrolls itself
   into view on open. Tests use the helpers in `src/test/searchableSelect.ts` (`pickOption`,
   `pickerOptions`, `pickerSearch`).
 - **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off flag, in Settings and in

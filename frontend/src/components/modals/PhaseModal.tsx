@@ -18,7 +18,6 @@ import {
   toInputDateFormat,
   parseLocalDate,
   formatLocalDate,
-  formatDateISO,
   addDaysToDateString,
   daysBetweenDateStrings,
 } from '@/utils/date';
@@ -122,7 +121,7 @@ export function PhaseModal() {
     return projects.find(p => p.id === projectId);
   }, [projects, projectId]);
   
-  // Initialize form when modal opens -- once per open. `project` is derived
+  // Initialize form when modal opens -- once per open. `editingPhase` comes
   // from `projects`, which a WebSocket refetch replaces with new objects;
   // without the guard a colleague's edit would wipe what the user has typed.
   // The key changes when the dialog is reopened on another phase / project.
@@ -150,18 +149,15 @@ export function PhaseModal() {
       setStartDate(toInputDateFormat(modalContext.phantomPreset.startDate));
       setEndDate(toInputDateFormat(modalContext.phantomPreset.endDate));
     } else {
-      // New phase mode - use project dates as default
-      const today = formatDateISO(new Date());
-      const defaultStart = toInputDateFormat(project?.start_date) || today;
-      const defaultEnd = toInputDateFormat(project?.end_date) || today;
-      
+      // New phase mode - dates start empty (the picker then opens on the
+      // current month); handleSubmit asks for them
       setName('');
       setIsMilestone(false);
-      setStartDate(defaultStart);
-      setEndDate(defaultEnd);
+      setStartDate('');
+      setEndDate('');
     }
     setError(null);
-  }, [isOpen, initKey, editingPhase, project, modalContext.phantomPreset]);
+  }, [isOpen, initKey, editingPhase, modalContext.phantomPreset]);
   
   // Sync end date with start date for milestones
   useEffect(() => {
@@ -180,6 +176,11 @@ export function PhaseModal() {
     
     if (!name.trim()) {
       setError('Please enter a phase name');
+      return;
+    }
+    
+    if (isMilestone ? !startDate : !startDate || !endDate) {
+      setError(isMilestone ? 'Please enter the milestone date' : 'Please enter a start and an end date');
       return;
     }
     

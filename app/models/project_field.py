@@ -26,6 +26,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -53,12 +54,17 @@ class ProjectField(Base):
             "field_type IN ('text', 'number', 'toggle', 'select', 'multiselect')",
             name="project_fields_type_check",
         ),
+        CheckConstraint("decimals BETWEEN 0 AND 3", name="project_fields_decimals_check"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     field_type: Mapped[str] = mapped_column(String(20), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # A number field's decimals (0-3; NULL = as typed, 2.1.0): new values are
+    # rounded half-up to it on write, stored values are never rewritten when
+    # it changes (readers round for display). NULL on every other type.
+    decimals: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False

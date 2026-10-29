@@ -29,7 +29,8 @@ import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import type { Project, Phase, Subphase } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
-import { Icon, EditIcon, PlusIcon, TrashIcon, CheckIcon, CloseIcon, PersonIcon, BriefcaseIcon } from '@/components/common/Icon';
+import { Icon, EditIcon, PlusIcon, TrashIcon, CheckIcon, CloseIcon, PersonIcon, BriefcaseIcon, ProgressIcon } from '@/components/common/Icon';
+import { effectiveCompletion } from '@/components/gantt/utils/completionStatus';
 
 /**
  * Run a delete from the context menu. A failed delete must not be an
@@ -62,6 +63,7 @@ export function ContextMenuContainer() {
   const openModal = useUIStore((s) => s.openModal);
   const setEditingStaffAssignment = useUIStore((s) => s.setEditingStaffAssignment);
   const setEditingEquipmentAssignment = useUIStore((s) => s.setEditingEquipmentAssignment);
+  const openCompletionSlider = useUIStore((s) => s.openCompletionSlider);
 
   const projects = useAppStore((s) => s.projects);
   const currentUser = useAppStore((s) => s.currentUser);
@@ -176,6 +178,20 @@ export function ContextMenuContainer() {
       ];
     };
 
+    // "Set progress…": the row's completion slider, anchored to its name --
+    // the way in when the admin setting hides the % badges. Same guards as a
+    // badge click: editors only, never on a completion calculated from children.
+    const setProgressItem = (level: 'phase' | 'subphase', item: Phase | Subphase | undefined): ContextMenuItem => {
+      const calculated = !!item && effectiveCompletion(item).isCalculated;
+      return {
+        label: 'Set progress…',
+        icon: <Icon icon={ProgressIcon} size={14} />,
+        onClick: () => openCompletionSlider(level, targetId),
+        disabled: !canEdit || !item || calculated,
+        title: canEdit && calculated ? 'Calculated from children' : undefined,
+      };
+    };
+
     // Project context menu
     if (type === 'project') {
       const project = target as Project;
@@ -254,6 +270,7 @@ export function ContextMenuContainer() {
           },
           disabled: !canEdit,
         },
+        setProgressItem('phase', phase),
         {
           label: 'Add Subphase',
           icon: <Icon icon={PlusIcon} size={14} />,
@@ -319,6 +336,7 @@ export function ContextMenuContainer() {
           },
           disabled: !canEdit,
         },
+        setProgressItem('subphase', subphase),
         {
           label: 'Add Child Subphase',
           icon: <Icon icon={PlusIcon} size={14} />,
@@ -558,7 +576,7 @@ export function ContextMenuContainer() {
     }
 
     return [];
-  }, [contextMenu, findTarget, canEdit, canBook, whatIfMode, createBlockedReason, decideBlockedReason, canDeleteProject, currentUser, menuProject, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
+  }, [contextMenu, findTarget, canEdit, canBook, whatIfMode, createBlockedReason, decideBlockedReason, canDeleteProject, currentUser, menuProject, openProjectModal, openPhaseModal, openSubphaseModal, openModal, openCompletionSlider, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
 
   return (
     <>

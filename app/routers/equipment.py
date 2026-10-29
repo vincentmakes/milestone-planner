@@ -483,8 +483,8 @@ async def get_equipment_assignments(
     """
     Get assignments for a specific equipment (``views.equipment``; 404 unless
     linked to a visible site). Bookings of shared equipment by projects at
-    other sites stay listed (their dates block the equipment) but their
-    project name is masked like the cross-site project list.
+    sites outside the visible ones stay listed (their dates block the
+    equipment) but their project name is masked.
 
     Matches: GET /api/equipment/:id/assignments
     """

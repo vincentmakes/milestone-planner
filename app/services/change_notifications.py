@@ -762,6 +762,11 @@ async def _coalesce(
             )
             .order_by(Notification.created_at.desc(), Notification.id.desc())
             .limit(1)
+            # Row lock: the recipient may delete this row (or the inbox
+            # purge it) between this read and the UPDATE the flush sends;
+            # the UPDATE would then match nothing and fail the whole batch.
+            # Locked, their DELETE waits for this short transaction.
+            .with_for_update()
         )
     ).scalar_one_or_none()
     if existing is None:

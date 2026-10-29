@@ -28,10 +28,18 @@ def test_kanban_paths_are_skipped(path):
 
 @pytest.mark.parametrize(
     "path",
-    ["/api/notifications", "/api/notifications/12/read", "/api/notifications/read-all"],
+    [
+        "/api/notifications",
+        "/api/notifications/12",
+        "/api/notifications/12/read",
+        "/api/notifications/read-all",
+    ],
 )
 def test_notification_paths_are_skipped(path):
-    """Reading your own inbox is private; it must not wake the whole tenant."""
+    """
+    Reading, deleting or clearing your own inbox is private; it must not wake
+    the whole tenant (the skip is by path, whatever the method).
+    """
     assert _resolve_entity_type(path) is None
 
 

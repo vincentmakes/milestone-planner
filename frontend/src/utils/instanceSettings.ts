@@ -16,7 +16,8 @@ export type SwitchSettingKey =
   | 'show_weekends'
   | 'kanban_enabled'
   | 'nager_enabled'
-  | 'new_project_preselect_phases';
+  | 'new_project_preselect_phases'
+  | 'gantt_completion_badges';
 
 export type GanttDefaultPanel = 'none' | 'staff' | 'equipment';
 
@@ -164,4 +165,19 @@ export function fieldLabelsValue(labels: Partial<Record<BuiltInFieldKey, string>
 export function hiddenFieldsValue(keys: Iterable<string>): string {
   const listed = new Set(keys);
   return JSON.stringify(BUILT_IN_KEYS.filter((key) => key !== 'confirmed' && listed.has(key)));
+}
+
+/**
+ * The decimals the built-in Volume keeps (null = as typed). Missing or
+ * malformed reads as the default, 1 -- the backend's `volume_decimals_from`.
+ */
+export function volumeDecimals(settings: InstanceSettings | null | undefined): number | null {
+  const value = settings?.volume_decimals;
+  if (value === 'any') return null;
+  return value === '0' || value === '2' || value === '3' ? Number(value) : 1;
+}
+
+/** The canonical `volume_decimals` value of a decimals count: `any` or `0`–`3`. */
+export function volumeDecimalsValue(decimals: number | null): string {
+  return decimals === null ? 'any' : String(decimals);
 }

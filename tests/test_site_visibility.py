@@ -203,6 +203,35 @@ async def test_cross_site_list_is_limited_to_visible_sites(authed_client, mock_d
     assert "projects.site_id IN (1, 3)" in executed_sql(mock_db_session)
 
 
+async def test_cross_site_list_shows_other_visible_sites_in_full(authed_client, mock_db_session):
+    """No confidential masking: a visible site's projects keep their real details."""
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser", site_ids=[1, 3]))
+    other = SimpleNamespace(**{**vars(_project(3)), "name": "Lab line", "customer": "Rival"})
+    rows = MagicMock()
+    rows.all.return_value = [(other, "Bern", None)]
+    mock_db_session.execute.side_effect = [scalar_result(1), rows, empty_result(), empty_result()]
+
+    response = await client.get("/api/projects?siteId=1&includeOtherSites=true")
+
+    assert response.status_code == 200
+    (item,) = response.json()["items"]
+    assert (item["name"], item["customer"], item["site_name"]) == ("Lab line", "Rival", "Bern")
+    # Site 2 (not visible) stays out of the query.
+    assert "projects.site_id IN (1, 3)" in executed_sql(mock_db_session)
+
+
+async def test_cross_site_list_from_a_site_outside_is_403(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(superuser())
+
+    response = await client.get("/api/projects?siteId=2&includeOtherSites=true")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == SITE_NOT_VISIBLE_DETAIL
+    mock_db_session.execute.assert_not_awaited()
+
+
 async def test_cross_site_list_needs_views_crosssite(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(without("user", "views.crosssite"))

@@ -1492,7 +1492,49 @@ async def test_plan_placement_without_a_row_is_linked(level):
 
     plan = await approvals.plan_placement(db, level, 11, REQ)
 
-    assert plan == approvals.PlannedBooking(None, None)
+    assert plan == approvals.PlannedBooking(None, None, first=True)
+    assert db.queried("card_lock") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+async def test_plan_placement_unlinked_first_takes_the_locked_cards_dates(level):
+    # The Kanban join / assign: a first booking spans the card with its own
+    # dates (unpinned), read from the card row locked FOR UPDATE.
+    db = ApprovalFakeDB(card_lock=[CARD])
+
+    plan = await approvals.plan_placement(db, level, 11, REQ, link_first=False)
+
+    assert plan == approvals.PlannedBooking(CARD[0], CARD[1], first=True)
+    assert approvals.placement_body(80, plan) == "Booked at 80% from 2026-03-02 to 2026-03-13."
+
+
+@pytest.mark.asyncio
+async def test_plan_placement_unlinked_first_on_an_unknown_card_stays_dateless():
+    # The routes 404 first; an unknown card has no dates to copy.
+    db = ApprovalFakeDB()
+
+    plan = await approvals.plan_placement(db, "phase", 11, REQ, link_first=False)
+
+    assert plan == approvals.PlannedBooking(None, None, first=True)
+
+
+@pytest.mark.asyncio
+async def test_plan_placement_unlinked_first_places_a_second_booking_as_before():
+    # link_first only decides the first booking: someone on the card already
+    # still gets the half of their full-span booking.
+    linked = _booking("phase")
+    db = ApprovalFakeDB(card_lock=[CARD], placement=_placement(linked))
+
+    plan = await approvals.plan_placement(db, "phase", 11, REQ, link_first=False)
+
+    assert isinstance(plan, approvals.PlannedBooking)
+    assert (plan.start_date, plan.end_date, plan.first) == (
+        date(2026, 3, 8),
+        date(2026, 3, 13),
+        False,
+    )
+    assert plan.shrink is linked
 
 
 @pytest.mark.asyncio
@@ -1529,7 +1571,10 @@ async def test_plan_placement_locks_the_card_first(level):
     assert (db.key(lock), db.key(rows)) == ("card_lock", "placement")
     table = "project_phases" if level == "phase" else "project_subphases"
     sql = str(lock.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-    assert " ".join(sql.split()) == f"SELECT {table}.id FROM {table} WHERE {table}.id = 11 FOR UPDATE"
+    assert " ".join(sql.split()) == (
+        f"SELECT {table}.start_date, {table}.end_date FROM {table} "
+        f"WHERE {table}.id = 11 FOR UPDATE"
+    )
 
 
 @pytest.mark.asyncio

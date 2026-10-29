@@ -54,6 +54,7 @@ FIELD_NOT_FOUND_DETAIL = "Project field not found"
 EMPTY_FIELD_NAME_DETAIL = "Field name cannot be empty"
 DUPLICATE_FIELD_NAME_DETAIL = "A project field with this name already exists"
 FIELD_TYPE_IMMUTABLE_DETAIL = "The type of a project field cannot be changed"
+DECIMALS_NUMBER_ONLY_DETAIL = "Only number fields have decimals"
 NOT_A_DROPDOWN_DETAIL = "Only dropdown fields (select, multiselect) have items"
 OPTION_NOT_FOUND_DETAIL = "Item not found"
 EMPTY_OPTION_NAME_DETAIL = "Item name cannot be empty"
@@ -177,6 +178,8 @@ async def create_project_field(
 ):
     """Create a project field (``project_fields.manage``), appended at the end."""
     name = _trimmed(data.name, EMPTY_FIELD_NAME_DETAIL)
+    if data.decimals is not None and data.field_type != "number":
+        raise HTTPException(status_code=422, detail=DECIMALS_NUMBER_ONLY_DETAIL)
     if await _field_name_taken(db, name):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=DUPLICATE_FIELD_NAME_DETAIL
@@ -187,6 +190,7 @@ async def create_project_field(
         name=name,
         field_type=data.field_type,
         sort_order=(max_order + 1) if max_order is not None else 0,
+        decimals=data.decimals,
         options=[],
     )
     db.add(field)
@@ -234,11 +238,24 @@ async def update_project_field(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission(MANAGE)),
 ):
-    """Rename a project field (``project_fields.manage``); its type never changes (422)."""
+    """
+    Rename a project field or set a number field's decimals
+    (``project_fields.manage``); its type never changes (422).
+
+    ``decimals`` applies whenever it is sent -- ``null`` resets a number field
+    to "as typed" -- so it is read from ``model_fields_set``, not by value. A
+    non-null value on another type is a 422 (null is accepted there: clients
+    send the whole field back). Stored values are never rewritten: new writes
+    round to it, readers round for display.
+    """
     field = await _load_field(db, field_id)
 
     if data.field_type is not None and data.field_type != field.field_type:
         raise HTTPException(status_code=422, detail=FIELD_TYPE_IMMUTABLE_DETAIL)
+    if "decimals" in data.model_fields_set:
+        if data.decimals is not None and field.field_type != "number":
+            raise HTTPException(status_code=422, detail=DECIMALS_NUMBER_ONLY_DETAIL)
+        field.decimals = data.decimals
 
     if data.name is not None:
         name = _trimmed(data.name, EMPTY_FIELD_NAME_DETAIL)

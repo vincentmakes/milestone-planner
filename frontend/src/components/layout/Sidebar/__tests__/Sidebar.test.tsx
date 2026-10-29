@@ -31,7 +31,10 @@ function stat(label: string) {
 
 describe('Sidebar', () => {
   it('lists every view and switches to the clicked one', async () => {
-    useAppStore.setState({ currentUser: makeUser({ role: 'user' }) });
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'user', site_ids: [1, 2] }),
+      sites: [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })],
+    });
     render(<Sidebar />);
     for (const label of ['Gantt Chart', 'Kanban Board', 'Staff Overview', 'Equipment', 'Cross-Site', 'Archived']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
@@ -71,7 +74,10 @@ describe('Sidebar', () => {
   });
 
   it('blocks switching views and opening Settings while What-If is active', async () => {
-    useAppStore.setState({ currentUser: makeUser({ role: 'admin' }) });
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'admin' }),
+      sites: [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })],
+    });
     useViewStore.setState({ currentView: 'gantt' });
     useWhatIfStore.getState().enterWhatIfMode([]);
     const { rerender } = render(<Sidebar />);

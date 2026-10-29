@@ -5,11 +5,13 @@
  *   means "unchanged" to the backend, so a set value could never be cleared.
  * - The site form and the "new site" input report unsaved input to the hub.
  * - Enter pressed twice in "New site name" creates one site, not two.
+ * - Delete asks for the typed site name, reloads everything after, and shows
+ *   the server's refusal (the last active site) in place.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { SitesPanel } from '../panels/SitesPanel';
+import { SITE_DELETE_MESSAGE, SitesPanel } from '../panels/SitesPanel';
 import { SiteForm } from '../panels/SiteForm';
 import { useAppStore } from '@/stores/appStore';
 import { stubConfirm } from '@/test/confirmDialog';
@@ -18,6 +20,7 @@ import { makeSite, makeUser } from '@/test/factories';
 
 const api = vi.hoisted(() => ({
   createSite: vi.fn(),
+  deleteSite: vi.fn(),
   exportSiteToExcel: vi.fn(),
   updateSite: vi.fn(),
   getBankHolidays: vi.fn(),
@@ -25,6 +28,8 @@ const api = vi.hoisted(() => ({
   buildHolidayDateSet: vi.fn(() => new Set()),
 }));
 vi.mock('@/api', () => api);
+const loadAllData = vi.hoisted(() => vi.fn());
+vi.mock('@/hooks/useDataLoader', () => ({ useDataLoader: () => ({ loadAllData }) }));
 
 const basel: Site = {
   id: 1,
@@ -39,6 +44,7 @@ const admin = makeUser({ id: 1, email: 'admin@demo.local', role: 'admin', site_i
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
+  loadAllData.mockReset().mockResolvedValue(undefined);
   api.getBankHolidays.mockResolvedValue([]);
   api.updateSite.mockImplementation(async (id: number, data: Partial<Site>) => ({ ...basel, ...data, id }));
   useAppStore.setState({ currentUser: admin, sites: [basel], currentSite: basel, instanceSettings: null });
@@ -222,5 +228,68 @@ describe('SitesPanel permissions', () => {
     expect(screen.getByRole('button', { name: 'Edit Zurich' })).toBeInTheDocument();
     expect(screen.getByLabelText('New site name')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Export .* as Excel/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('SitesPanel delete', () => {
+  const frankfurt = makeSite({ id: 2, name: 'Frankfurt' });
+  const deleteButton = () => screen.getByRole('button', { name: 'Delete Frankfurt' });
+
+  beforeEach(() => {
+    useAppStore.setState({ sites: [basel, frankfurt] });
+  });
+
+  it('asks for the typed site name, then deletes and reloads everything', async () => {
+    const confirm = stubConfirm(true);
+    api.deleteSite.mockResolvedValue(undefined);
+    render(<SitesPanel />);
+    expect(deleteButton()).toHaveAttribute('title', 'Delete site');
+
+    await act(async () => {
+      fireEvent.click(deleteButton());
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete Frankfurt?',
+        message: SITE_DELETE_MESSAGE,
+        confirmLabel: 'Delete site',
+        confirmWord: 'Frankfurt',
+        destructive: true,
+      })
+    );
+    expect(api.deleteSite).toHaveBeenCalledWith(2);
+    await waitFor(() => expect(loadAllData).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('deletes nothing when the confirmation is cancelled', async () => {
+    stubConfirm(false);
+    render(<SitesPanel />);
+    await act(async () => {
+      fireEvent.click(deleteButton());
+    });
+    expect(api.deleteSite).not.toHaveBeenCalled();
+    expect(loadAllData).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's refusal of the last active site in place", async () => {
+    stubConfirm(true);
+    api.deleteSite.mockRejectedValue(
+      new Error('The last active site cannot be deleted: add or reactivate another site first')
+    );
+    render(<SitesPanel />);
+    await act(async () => {
+      fireEvent.click(deleteButton());
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('The last active site cannot be deleted');
+    expect(loadAllData).not.toHaveBeenCalled();
+    expect(deleteButton()).toBeEnabled();
+  });
+
+  it('is offered with sites.manage only', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'superuser', site_ids: [2] }) });
+    render(<SitesPanel />);
+    expect(screen.queryByRole('button', { name: 'Delete Frankfurt' })).not.toBeInTheDocument();
   });
 });

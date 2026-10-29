@@ -167,7 +167,7 @@ interface ProjectRowProps {
 }
 
 function ProjectRow({ row, cells, cellWidth, viewMode }: ProjectRowProps) {
-  const { project, isCurrentSite, displayName } = row;
+  const { project } = row;
   
   // Calculate bar position
   const barPosition = useMemo(() => {
@@ -179,13 +179,11 @@ function ProjectRow({ row, cells, cellWidth, viewMode }: ProjectRowProps) {
     <div className={styles.projectRow}>
       {barPosition && (
         <div
-          className={`${styles.bar} ${project.confirmed ? styles.confirmed : styles.unconfirmed} ${!isCurrentSite ? styles.masked : ''}`}
+          className={`${styles.bar} ${project.confirmed ? styles.confirmed : styles.unconfirmed}`}
           style={{ left: barPosition.left, width: barPosition.width }}
-          title={isCurrentSite ? project.name : 'Confidential'}
+          title={project.name}
         >
-          <span className={styles.barLabel}>
-            {isCurrentSite ? displayName : 'Project'}
-          </span>
+          <span className={styles.barLabel}>{project.name}</span>
         </div>
       )}
     </div>

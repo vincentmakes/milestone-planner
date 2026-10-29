@@ -1,11 +1,11 @@
 /**
  * useAllowedViews: the Gantt is always there; every other view needs its
- * `views.*` key (hidden without it), and Cross-site is listed but disabled,
- * with the reason, while the user sees a single site.
+ * `views.*` key (hidden without it), and Cross-site is hidden while the user
+ * sees a single site.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useAllowedViews, CROSS_SITE_DISABLED_REASON } from '../useAllowedViews';
+import { useAllowedViews } from '../useAllowedViews';
 import { useAppStore } from '@/stores/appStore';
 import { resetAllStores } from '@/stores';
 import { makeSite, makeUser } from '@/test/factories';
@@ -21,7 +21,6 @@ describe('useAllowedViews', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
     const { result } = renderHook(() => useAllowedViews());
     expect(result.current.visible).toEqual(['gantt', 'kanban', 'work', 'staff', 'equipment', 'crosssite', 'archived']);
-    expect(result.current.disabledReason).toEqual({});
     expect(result.current.isAllowed('crosssite')).toBe(true);
   });
 
@@ -44,13 +43,17 @@ describe('useAllowedViews', () => {
     expect(result.current.isAllowed('kanban')).toBe(false);
   });
 
-  it('disables Cross-site with the reason while only one site is visible', () => {
+  it('hides Cross-site while only one site is visible', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [2] }) });
     const { result } = renderHook(() => useAllowedViews());
-    expect(result.current.visible).toContain('crosssite');
-    expect(result.current.disabledReason).toEqual({ crosssite: CROSS_SITE_DISABLED_REASON });
-    expect(CROSS_SITE_DISABLED_REASON).toBe('Cross-site needs access to more than one site');
+    expect(result.current.visible).toEqual(['gantt', 'kanban', 'work', 'staff', 'equipment', 'archived']);
     expect(result.current.isAllowed('crosssite')).toBe(false);
+  });
+
+  it('hides Cross-site from an administrator of a single-site instance', () => {
+    useAppStore.setState({ sites: [makeSite({ id: 1 })], currentUser: makeUser({ role: 'admin' }) });
+    const { result } = renderHook(() => useAllowedViews());
+    expect(result.current.visible).not.toContain('crosssite');
   });
 
   it('allows only the Gantt without a user', () => {

@@ -1,6 +1,7 @@
 /**
  * ProjectFieldInputs - the project fields in the project dialog, in field
- * order: text → Input, number → Input type=number, toggle → ToggleSwitch,
+ * order: text → Input, number → NumberFieldInput (step, typing gate and blur
+ * formatting from the field's decimals), toggle → ToggleSwitch,
  * select → Select with an empty choice, multiselect → MultiSelectDropdown
  * (the same box, ticking several items).
  *
@@ -17,6 +18,7 @@ import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { MultiSelectDropdown } from '@/components/common/MultiSelectDropdown';
 import { useAppStore } from '@/stores/appStore';
 import { can } from '@/utils/permissions';
+import { acceptsNumberText, fieldNumberInputText } from '@/utils/projectFields';
 import type { FieldDraft } from '@/utils/projectFields';
 import type { ProjectField, ProjectFieldOption } from '@/types';
 import { ManageSettingsLink } from './ManageSettingsLink';
@@ -101,13 +103,12 @@ function FieldInput({ field, options, draft, onChange, disabled }: FieldInputPro
       );
     case 'number':
       return (
-        <Input
+        <NumberFieldInput
           label={field.name}
-          type="number"
-          step="any"
+          decimals={field.decimals ?? null}
           className={styles.field}
           value={text}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
           disabled={disabled}
         />
       );
@@ -147,4 +148,57 @@ function FieldInput({ field, options, draft, onChange, disabled }: FieldInputPro
         />
       );
   }
+}
+
+interface NumberFieldInputProps {
+  label: string;
+  /** Decimals the value keeps (null = as typed) */
+  decimals: number | null;
+  /** The input's text ('' = none) */
+  value: string;
+  onChange: (text: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  className?: string;
+}
+
+/**
+ * A number with a format (a number project field, the built-in Volume): a
+ * keystroke that would add more decimals than it keeps is refused, and blur
+ * pads to the format (12 → 12.0). As typed (null) takes anything.
+ */
+export function NumberFieldInput({
+  label,
+  decimals,
+  value,
+  onChange,
+  disabled = false,
+  placeholder,
+  className,
+}: NumberFieldInputProps) {
+  return (
+    <Input
+      label={label}
+      type="number"
+      // 10^-d: the spinner steps by the last kept decimal
+      step={decimals === null ? 'any' : String(10 ** -decimals)}
+      inputMode="decimal"
+      className={`${className ?? ''} ${styles.numberField}`.trim()}
+      value={value}
+      // Controlled: a refused keystroke never lands
+      onChange={(e) => {
+        if (acceptsNumberText(e.target.value, decimals)) onChange(e.target.value);
+      }}
+      onBlur={() => {
+        // Shows what will be stored: rounded half-up to the decimals
+        const n = value.trim() === '' ? NaN : Number(value);
+        if (decimals !== null && Number.isFinite(n)) {
+          const formatted = fieldNumberInputText(n, decimals);
+          if (formatted !== value) onChange(formatted);
+        }
+      }}
+      placeholder={placeholder}
+      disabled={disabled}
+    />
+  );
 }

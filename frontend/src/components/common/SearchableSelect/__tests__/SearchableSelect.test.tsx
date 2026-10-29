@@ -178,6 +178,47 @@ describe('SearchableSelect', () => {
     expect(trigger()).toHaveAccessibleName('Staff Member Alice Martin');
   });
 
+  it('picks the active match on Tab with a typed query and leaves the default so focus moves on', () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    fireEvent.keyDown(trigger(), { key: 'b' });
+    fireEvent.change(search(), { target: { value: 'bro' } });
+    // Not prevented: the browser's own Tab then moves on from the trigger.
+    expect(fireEvent.keyDown(search(), { key: 'Tab' })).toBe(true);
+    expect(onChange).toHaveBeenCalledWith(2);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(trigger()).toHaveFocus();
+    expect(trigger()).toHaveAccessibleName('Staff Member Bob Brown');
+  });
+
+  it('takes the first match of a wider query on Tab', () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    fireEvent.click(trigger());
+    fireEvent.change(search(), { target: { value: 'a' } });
+    fireEvent.keyDown(search(), { key: 'Tab' });
+    expect(onChange).toHaveBeenCalledWith(1);
+  });
+
+  it('leaves Tab alone with an empty query, with no match and with Shift', () => {
+    const onChange = vi.fn();
+    render(<Harness initial={2} onChange={onChange} />);
+    fireEvent.click(trigger());
+    // empty query: nothing is picked, the panel stays for the blur to close
+    expect(fireEvent.keyDown(search(), { key: 'Tab' })).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(listbox()).toBeInTheDocument();
+
+    fireEvent.change(search(), { target: { value: 'zzz' } });
+    fireEvent.keyDown(search(), { key: 'Tab' });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.change(search(), { target: { value: 'alice' } });
+    fireEvent.keyDown(search(), { key: 'Tab', shiftKey: true });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(listbox()).toBeInTheDocument();
+  });
+
   it('picks the single match on Enter', () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);

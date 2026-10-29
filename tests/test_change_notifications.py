@@ -21,6 +21,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Null, TextClause
 from sqlalchemy.sql.visitors import iterate
@@ -514,6 +516,55 @@ async def test_locks_are_taken_in_sorted_key_order_before_each_lookup(now, pushe
     for key in db.locks:
         user_id = key.split("|", 1)[0]
         assert db.order.index(f"lookup {user_id}") == db.order.index(f"lock {key}") + 1
+
+
+class RacingDeleteDB(ChangeFakeDB):
+    """
+    The recipient deletes the coalescing candidate (or the inbox purge does)
+    right after ``_coalesce`` read it -- a second transaction, simulated with
+    PostgreSQL's row-lock semantics: a row read ``FOR UPDATE`` keeps the
+    DELETE waiting until this transaction ends; otherwise the DELETE lands at
+    once, and the UPDATE the commit flushes for the merged row matches no row
+    (SQLAlchemy raises ``StaleDataError``, the whole batch rolls back).
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.lookups: list = []
+        self.waiting: list[Notification] = []
+        self.gone: list[Notification] = []
+        self.commit = AsyncMock(side_effect=self._commit)
+
+    async def execute(self, stmt, params=None):  # type: ignore[override]
+        result = await super().execute(stmt, params)
+        if not isinstance(stmt, TextClause) and stmt.column_descriptions[0].get("entity") is (
+            Notification
+        ):
+            self.lookups.append(stmt)
+            for row in [n for n in self.existing if _matches(n, _criteria(stmt))]:
+                self.existing.remove(row)
+                (self.waiting if stmt._for_update_arg is not None else self.gone).append(row)
+        return result
+
+    async def _commit(self):
+        if self.gone:
+            raise StaleDataError("UPDATE statement on table 'notifications' matched 0 rows")
+        self.gone, self.waiting = self.waiting, []  # the blocked DELETE now runs
+
+
+async def test_a_delete_between_read_and_update_waits_for_the_merge(now, pushes):
+    existing = unread()
+    db = RacingDeleteDB(contexts={1: context()}, users=users(), existing=[existing])
+
+    await run(db, [intent()])
+
+    (lookup,) = db.lookups
+    assert "FOR UPDATE" in str(lookup.compile(dialect=postgresql.dialect()))
+    db.commit.assert_awaited_once()
+    db.rollback.assert_not_awaited()
+    assert existing.title == "2 changes by Ada Admin on Alpha"
+    assert pushes == [(DIANA, cn.notification_payload(existing))]
+    assert db.gone == [existing]  # the delete then goes through
 
 
 async def test_a_project_delete_is_never_coalesced(now, pushes):

@@ -4,7 +4,7 @@
  * Supports drag-and-drop reordering
  */
 
-import { memo, useMemo, useCallback, Fragment, useState } from 'react';
+import { memo, useMemo, useCallback, useEffect, useRef, Fragment, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
@@ -17,10 +17,11 @@ import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CustomColumnCell } from '@/components/gantt/CustomColumns';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
-import { statusAfterCompletionWrite } from '@/components/gantt/utils/completionStatus';
+import { effectiveCompletion, statusAfterCompletionWrite } from '@/components/gantt/utils/completionStatus';
 import { updatePhase } from '@/api';
-import { formatShortDateRange, formatSingleDate, daysBetweenDateStrings } from '@/utils/date';
+import { formatShortDateRange, formatSingleDate } from '@/utils/date';
 import { canEditProject } from '@/utils/permissions';
+import { isSettingOn } from '@/utils/instanceSettings';
 import type { Phase, Subphase, CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './PhaseRow.module.css';
 import { Icon, ChevronRightIcon, DragDotsIcon } from '@/components/common/Icon';
@@ -58,50 +59,6 @@ interface PhaseRowProps {
   criticalPathItems?: Set<string>;  // Critical path items for this project
 }
 
-// Recursively calculate effective completion for an item
-// If at least one child has a completion value, unset siblings count as 0%
-function getEffectiveCompletion(item: Phase | Subphase): { completion: number | null; isCalculated: boolean } {
-  if (!item) return { completion: null, isCalculated: false };
-  
-  const children = item.children || [];
-  
-  // Check if any children have completion (direct or calculated)
-  let hasChildrenWithCompletion = false;
-  for (const child of children) {
-    if (!child) continue;
-    const childResult = getEffectiveCompletion(child);
-    if (childResult && childResult.completion !== null) {
-      hasChildrenWithCompletion = true;
-      break;
-    }
-  }
-  
-  if (hasChildrenWithCompletion) {
-    // Calculate weighted average from children's effective completion
-    // Children without completion count as 0%
-    let totalWeight = 0;
-    let weightedSum = 0;
-    
-    for (const child of children) {
-      if (!child) continue;
-      const childResult = getEffectiveCompletion(child);
-      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
-      
-      // Unset completion counts as 0% when at least one sibling has a value
-      const completion = childResult.completion ?? 0;
-      weightedSum += completion * days;
-      totalWeight += days;
-    }
-    
-    if (totalWeight > 0) {
-      return { completion: Math.round(weightedSum / totalWeight), isCalculated: true };
-    }
-  }
-  
-  // No children with completion, return item's own completion
-  return { completion: item.completion ?? null, isCalculated: false };
-}
-
 export const PhaseRow = memo(function PhaseRow({
   phase,
   projectId,
@@ -127,6 +84,19 @@ export const PhaseRow = memo(function PhaseRow({
   // Completion slider state
   const [sliderAnchor, setSliderAnchor] = useState<HTMLElement | null>(null);
   const showSlider = Boolean(sliderAnchor);
+  // Admin setting: the % badge can be hidden; the slider stays reachable
+  // through the context menu's "Set progress…", anchored to the name.
+  const showBadge = useAppStore((s) => isSettingOn(s.instanceSettings, 'gantt_completion_badges'));
+  const nameRef = useRef<HTMLButtonElement>(null);
+  const sliderRequested = useUIStore(
+    (s) => s.completionSliderFor?.level === 'phase' && s.completionSliderFor.id === phase.id
+  );
+  const clearCompletionSlider = useUIStore((s) => s.clearCompletionSlider);
+  useEffect(() => {
+    if (!sliderRequested) return;
+    clearCompletionSlider();
+    if (nameRef.current) setSliderAnchor(nameRef.current);
+  }, [sliderRequested, clearCompletionSlider]);
   
   // Reorder hooks
   const {
@@ -161,7 +131,7 @@ export const PhaseRow = memo(function PhaseRow({
     e.stopPropagation();
     if (!canEdit) return;
     // Don't show slider if calculated from children
-    const result = getEffectiveCompletion(phase);
+    const result = effectiveCompletion(phase);
     if (result.isCalculated) return;
     setSliderAnchor(e.currentTarget as HTMLElement);
   }, [phase, canEdit]);
@@ -211,7 +181,7 @@ export const PhaseRow = memo(function PhaseRow({
   }, [phase.start_date, phase.end_date, phase.is_milestone]);
 
   // Get effective completion (calculated from children or manual)
-  const completionResult = useMemo(() => getEffectiveCompletion(phase), [phase]);
+  const completionResult = useMemo(() => effectiveCompletion(phase), [phase]);
 
   // Collect all descendant subphases for cascading custom column values
   const childEntities = useMemo(() => collectAllDescendants(phase.children ?? []), [phase.children]);
@@ -280,7 +250,8 @@ export const PhaseRow = memo(function PhaseRow({
             )}
           </button>
 
-          {/* Completion badge - always shown, clickable when not calculated */}
+          {/* Completion badge - clickable when not calculated; the admin setting can hide it */}
+          {showBadge && (
           <span 
             className={`${styles.completionBadge} ${
               completionResult.completion !== null 
@@ -301,9 +272,11 @@ export const PhaseRow = memo(function PhaseRow({
           >
             {completionResult.completion !== null ? `${completionResult.completion}%` : '—'}
           </span>
+          )}
 
           {/* Phase name — clickable to scroll to start date */}
           <button
+            ref={nameRef}
             className={styles.typeBadge}
             style={{
               backgroundColor: `${phase.color}33`,

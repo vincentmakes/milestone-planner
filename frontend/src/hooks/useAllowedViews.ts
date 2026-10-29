@@ -4,9 +4,8 @@
  * The Gantt is always available, and My Work to anyone signed in (everyone
  * has bookings and requests of their own). Every other view needs its `views.*` key:
  * without it the view is hidden (a permission gate hides). Cross-site is
- * also disabled, with the reason, while only one site is visible (a
- * situational gate disables and says why). The server enforces the same keys
- * on the views' reads.
+ * hidden too while only one site is visible: with a single site it has
+ * nothing to compare. The server enforces the same keys on the views' reads.
  */
 
 import { useMemo } from 'react';
@@ -27,14 +26,10 @@ export const VIEW_PERMISSIONS: Readonly<Record<CurrentView, PermissionKey | null
   archived: 'views.archived',
 };
 
-export const CROSS_SITE_DISABLED_REASON = 'Cross-site needs access to more than one site';
-
 export interface AllowedViews {
   /** Views the navigation lists, in order */
   visible: readonly CurrentView[];
-  /** Why a listed view cannot be opened right now */
-  disabledReason: Partial<Record<CurrentView, string>>;
-  /** Listed and not disabled */
+  /** Listed, so it may be opened */
   isAllowed: (view: CurrentView) => boolean;
 }
 
@@ -46,16 +41,12 @@ export function useAllowedViews(): AllowedViews {
     const visible = (Object.keys(VIEW_PERMISSIONS) as CurrentView[]).filter((view) => {
       const key = VIEW_PERMISSIONS[view];
       if (key === null) return view === 'gantt' || currentUser !== null;
+      if (view === 'crosssite' && visibleSiteCount <= 1) return false;
       return can(currentUser, key);
     });
-    const disabledReason: Partial<Record<CurrentView, string>> = {};
-    if (visible.includes('crosssite') && visibleSiteCount <= 1) {
-      disabledReason.crosssite = CROSS_SITE_DISABLED_REASON;
-    }
     return {
       visible,
-      disabledReason,
-      isAllowed: (view: CurrentView) => visible.includes(view) && !disabledReason[view],
+      isAllowed: (view: CurrentView) => visible.includes(view),
     };
   }, [currentUser, visibleSiteCount]);
 }

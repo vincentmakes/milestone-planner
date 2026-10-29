@@ -7,13 +7,14 @@ authenticated user read or clear someone else's inbox.
 
 Due-soon/overdue reminders never reach this table: they are derived in the
 browser from project data the client already holds, because the application has
-no scheduler to produce them server-side.
+no scheduler to produce them server-side. For the same reason, read rows older
+than ``READ_RETENTION_DAYS`` are purged when the inbox is listed.
 """
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, update
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, get_db_readonly
@@ -24,6 +25,7 @@ from app.schemas.notification import (
     NotificationResponse,
     UnreadCountResponse,
 )
+from app.services.notifications import purge_read_notifications
 from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -35,10 +37,18 @@ router = APIRouter(prefix="/notifications")
 async def list_notifications(
     unread_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db_readonly),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """The current user's notifications, newest first."""
+    """
+    The current user's notifications, newest first.
+
+    Purges the user's read rows past the retention first (hence ``get_db``
+    and the commit: the read-only session never commits).
+    """
+    await purge_read_notifications(db, user.id)
+    await db.commit()
+
     query = select(Notification, User.first_name, User.last_name).outerjoin(
         User, Notification.actor_id == User.id
     )
@@ -128,3 +138,38 @@ async def mark_read(
         await db.commit()
 
     return {"success": True}
+
+
+@router.delete("", response_model=None)
+async def clear_notifications(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Delete every notification of the current user, read or not."""
+    result = await db.execute(delete(Notification).where(Notification.user_id == user.id))
+    await db.commit()
+    return {"deleted": result.rowcount}
+
+
+@router.delete("/{notification_id}", status_code=204, response_class=Response)
+async def delete_notification(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Delete one notification of the current user.
+
+    Scoped to (id, user_id) like ``mark_read``: someone else's id is a 404,
+    indistinguishable from a non-existent one.
+    """
+    result = await db.execute(
+        delete(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == user.id,
+        )
+    )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    await db.commit()
+    return Response(status_code=204)

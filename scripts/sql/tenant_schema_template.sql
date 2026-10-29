@@ -598,6 +598,21 @@ CREATE TABLE project_fields (
         CHECK (field_type IN ('text', 'number', 'toggle', 'select', 'multiselect'))
 );
 
+-- A number field's decimals (0-3, NULL = as typed; 2.1.0). Same statement as
+-- tenant_provisioner.PROJECT_FIELD_DECIMALS_SQL and
+-- migrations/add_project_field_decimals.sql.
+    DO $$
+    BEGIN
+        IF to_regclass('public.project_fields') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'project_fields'
+              AND column_name = 'decimals'
+        ) THEN
+            ALTER TABLE project_fields ADD COLUMN decimals SMALLINT CONSTRAINT project_fields_decimals_check CHECK (decimals BETWEEN 0 AND 3);
+            
+        END IF;
+    END $$;
+
 -- Items of the dropdown fields (all_sites = false: only at the sites in
 -- project_field_option_sites; per site, team rows limit the item to those teams)
 CREATE TABLE project_field_options (

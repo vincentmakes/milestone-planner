@@ -145,6 +145,22 @@ describe('DefaultsPanel', () => {
     expect(api.checkAuth).not.toHaveBeenCalled();
   });
 
+  it('turns the Gantt completion badges off (on by default, with what stays)', async () => {
+    await renderPanel();
+    const badges = screen.getByRole('switch', { name: 'Show completion badges in the Gantt' });
+    expect(badges).toBeChecked();
+    expect(
+      screen.getByText('Off hides the % badges on project, phase and subphase rows; the bar fill and the progress slider stay.')
+    ).toBeInTheDocument();
+
+    fireEvent.click(badges);
+    save();
+
+    await screen.findByText('Settings saved');
+    expect(api.updateSetting.mock.calls).toEqual([['gantt_completion_badges', 'false']]);
+    expect(useAppStore.getState().instanceSettings?.gantt_completion_badges).toBe('false');
+  });
+
   it('treats the same set ticked in another order as unchanged', async () => {
     api.getInstanceSettings.mockResolvedValue({ ...STORED, staff_panel_default_skills: '[2,1]' });
     const onDirtyChange = await renderPanel();

@@ -66,12 +66,14 @@ export default defineConfig({
       // with My Work and the booking comments, the same rule on lines 92.85,
       // statements 91.78, functions 93.42, branches 83.41 (only branches moves);
       // with the searchable people pickers, the same rule on lines 92.9,
-      // statements 91.83, functions 93.48, branches 83.66.
+      // statements 91.83, functions 93.48, branches 83.66; with the pilot
+      // feedback round 2 of 2.1.0, raised to lines 93.0, statements 92.0,
+      // functions 93.4, branches 84.0.
       thresholds: {
-        lines: 92.6,
-        statements: 91.5,
-        functions: 93.1,
-        branches: 83.3,
+        lines: 93.0,
+        statements: 92.0,
+        functions: 93.4,
+        branches: 84.0,
       },
     },
   },

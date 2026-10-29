@@ -110,6 +110,12 @@ export interface ProjectField {
   /** Fixed at creation */
   field_type: ProjectFieldType;
   sort_order: number;
+  /**
+   * A number field's decimals (0-3): new values are rounded half-up to it on
+   * write, stored ones are shown rounded. null / absent = as typed (and on
+   * every other type).
+   */
+  decimals?: number | null;
   /** Items in display order; empty for text, number and toggle fields */
   options: ProjectFieldOption[];
 }
@@ -602,10 +608,14 @@ export interface InstanceSettings {
   nager_enabled?: string;
   /** `false`: a new project starts with no predefined phase selected */
   new_project_preselect_phases?: string;
+  /** `false` hides the completion (%) badges on the Gantt rows */
+  gantt_completion_badges?: string;
   /** Compact JSON object: custom labels of the built-in project fields (customer, sales_pm, volume, confirmed) */
   project_field_labels?: string;
   /** Compact JSON array of the hidden built-in project fields (customer, sales_pm, volume) */
   project_fields_hidden?: string;
+  /** Decimals the built-in Volume keeps: `any` (as typed) or `0`–`3` */
+  volume_decimals?: string;
   [key: string]: string | undefined;
 }
 

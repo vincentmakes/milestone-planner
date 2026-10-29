@@ -148,8 +148,8 @@ def test_migration_documents_how_to_run_it():
     readme = _root_file("migrations/README.md")
     assert "| `add_booking_segments` | tenant |" in readme
     assert (
-        "`add_user_is_resource`, `add_booking_segments`, `add_equipment_assignment_note` and "
-        "`add_project_comments` via"
+        "`add_user_is_resource`, `add_booking_segments`, `add_equipment_assignment_note`, "
+        "`add_project_comments` and `add_project_field_decimals` via"
     ) in readme
 
 

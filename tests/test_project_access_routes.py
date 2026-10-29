@@ -872,9 +872,9 @@ async def test_user_can_join_a_card(authed_client, mock_db_session):
     body = response.json()
     assert body["staff_id"] == 5
     assert body["allocation"] == 80  # defaults to the member's max_capacity
-    # Not on the card yet: a linked booking over the card's dates.
+    # Not on the card yet: an unpinned booking with the card's own dates.
     assert (body["linked"], body["start_date"], body["end_date"], body["adjusted"]) == (
-        True,
+        False,
         "2026-03-02T00:00:00.000Z",
         "2026-03-13T00:00:00.000Z",
         [],

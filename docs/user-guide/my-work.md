@@ -83,7 +83,7 @@ Two notification types lead to My Work. Clicking one opens the right tab:
 | Someone asks for your approval | **My Approvals** |
 | Your request was approved, rejected, cancelled by an administrator or expired | **My Requests**, showing decided requests |
 
-A comment or mention on a card opens the card (or the project on the Gantt chart without the Kanban board); one on a project thread opens the project on the Gantt chart. See [Real-Time Collaboration](collaboration.md#notifications) for the notification bell itself.
+A comment or mention on a card opens the card (or the project on the Gantt chart without the Kanban board); one on a project thread opens the project on the Gantt chart. See [Real-Time Collaboration](collaboration.md#notifications) for the notification bell itself, including deleting notifications and the 30-day retention of read ones.
 
 !!! note "What-If mode"
     My Work, like the other views, is not reachable while a [What-If](what-if-planning.md) plan is open, and decisions wait until you apply or discard the plan. Comments in the Gantt chart's assignment dialog still post at once — they are not part of the plan.

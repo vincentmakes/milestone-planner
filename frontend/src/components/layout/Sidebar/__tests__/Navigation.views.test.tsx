@@ -1,7 +1,7 @@
 /**
  * Navigation lists the views the user's keys allow (useAllowedViews): a view
- * without its `views.*` key is hidden, Cross-site is disabled with its reason
- * while only one site is visible, and the What-If hint wins over that reason.
+ * without its `views.*` key is hidden, Cross-site is hidden while only one
+ * site is visible, and What-If blocks every view but the Gantt with its hint.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -12,7 +12,6 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import { CROSS_SITE_DISABLED_REASON } from '@/hooks/useAllowedViews';
 import { makeApprovalRequest, makeSite, makeUser } from '@/test/factories';
 
 const twoSites = [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })];
@@ -50,14 +49,14 @@ describe('Navigation views', () => {
     expect(equipment.querySelector('[data-testid="SettingsOutlinedIcon"]')).toBeNull();
   });
 
-  it('disables Cross-site with the reason when one site is visible', () => {
+  it('hides Cross-site, not disables it, when one site is visible', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [2] }) });
     render(<Navigation />);
-    const crossSite = button('Cross-Site')!;
-    expect(crossSite).toBeDisabled();
-    expect(crossSite).toHaveAttribute('title', CROSS_SITE_DISABLED_REASON);
-    fireEvent.click(crossSite);
-    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(button('Cross-Site')).not.toBeInTheDocument();
+    // The other views stay enabled, without a tooltip while expanded
+    const staff = button('Staff Overview')!;
+    expect(staff).toBeEnabled();
+    expect(staff).not.toHaveAttribute('title');
   });
 
   it('enables Cross-site with two visible sites', () => {
@@ -67,11 +66,18 @@ describe('Navigation views', () => {
     expect(useViewStore.getState().currentView).toBe('crosssite');
   });
 
-  it('shows the What-If hint over the Cross-site reason', () => {
-    useAppStore.setState({ currentUser: makeUser({ role: 'admin', site_ids: [1] }), sites: [twoSites[0]] });
+  it('shows the What-If hint on Cross-site while What-If is active', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin', site_ids: [1, 2] }) });
     useWhatIfStore.getState().enterWhatIfMode([]);
     render(<Navigation />);
+    expect(button('Cross-Site')).toBeDisabled();
     expect(button('Cross-Site')).toHaveAttribute('title', whatIfUnavailableMessage('Switching views'));
+  });
+
+  it('titles every entry with its label while collapsed', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
+    render(<Navigation collapsed />);
+    expect(button('Cross-Site')).toHaveAttribute('title', 'Cross-Site');
   });
 
   it('lists My Work right after the Kanban board, even without any view key', () => {

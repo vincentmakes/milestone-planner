@@ -1,7 +1,7 @@
 /**
- * Cross-site overview: every site with its active projects, the current
- * site's projects shown in full and other sites' masked as confidential,
- * bars on the shared timeline with calendar highlighting, and today on open.
+ * Cross-site overview: every visible site with its active projects, real
+ * names and customers for every site (no confidential masking), bars on the
+ * shared timeline with calendar highlighting, and today on open.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 
 describe('CrossSiteView', () => {
-  it('lists each site with its active projects, masking other sites', () => {
+  it('lists each site with its active projects, real names and customers for every site', () => {
     const { container } = render(<CrossSiteView />);
     expect(screen.getByText('Cross-Site Overview')).toBeInTheDocument();
     expect(screen.getByText('Basel')).toBeInTheDocument();
@@ -53,21 +53,19 @@ describe('CrossSiteView', () => {
     const panel = container.querySelector('[class*="panelBody"]')!;
     expect(panel.textContent).toMatch(/Alpha Study.*Zeta Upgrade.*Acme/);
     expect(screen.queryByText('Archived One')).not.toBeInTheDocument();
-    // other site: masked
-    expect(screen.queryByText('Secret Pilot')).not.toBeInTheDocument();
-    expect(screen.queryByText('Rival')).not.toBeInTheDocument();
-    expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
-    expect(screen.getAllByText('***')).toHaveLength(2);
+    // other site: real names and customer too, nothing masked
+    expect(panel.textContent).toMatch(/Zurich.*Secret Pilot.*Rival.*Undated/);
+    expect(screen.queryByText('Confidential Project')).not.toBeInTheDocument();
+    expect(screen.queryByText('***')).not.toBeInTheDocument();
+    expect(container.querySelector('[class*="masked"]')).toBeNull();
   });
 
-  it('leaves the customer out, masked or not, while the Customer field is hidden', () => {
+  it('leaves the customer out for every site while the Customer field is hidden', () => {
     useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
     const { container } = render(<CrossSiteView />);
     const panel = container.querySelector('[class*="panelBody"]')!;
-    expect(panel.textContent).toMatch(/Alpha Study.*Zeta Upgrade/);
-    expect(panel.textContent).not.toMatch(/Acme/);
-    expect(screen.queryAllByText('***')).toHaveLength(0);
-    expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
+    expect(panel.textContent).toMatch(/Alpha Study.*Zeta Upgrade.*Secret Pilot/);
+    expect(panel.textContent).not.toMatch(/Acme|Rival/);
   });
 
   it('lists only the sites the user can see', () => {
@@ -79,15 +77,17 @@ describe('CrossSiteView', () => {
     expect(screen.queryByText('Zurich')).not.toBeInTheDocument();
   });
 
-  it('draws bars, labelled only for the current site', () => {
+  it('draws bars labelled with the real name for every site', () => {
     render(<CrossSiteView />);
     expect(screen.getByTitle('Zeta Upgrade')).toHaveTextContent('Zeta Upgrade');
     expect(screen.getByTitle('Alpha Study').className).toMatch(/unconfirmed/);
-    const masked = screen.getByTitle('Confidential');
-    expect(masked).toHaveTextContent('Project');
-    expect(masked.className).toMatch(/masked/);
+    const otherSite = screen.getByTitle('Secret Pilot');
+    expect(otherSite).toHaveTextContent('Secret Pilot');
+    expect(otherSite.className).toMatch(/confirmed/);
+    expect(otherSite.className).not.toMatch(/masked/);
+    expect(screen.queryByTitle('Confidential')).not.toBeInTheDocument();
     // the undated project has no bar
-    expect(screen.getAllByTitle(/Confidential|Zeta|Alpha/)).toHaveLength(3);
+    expect(screen.queryByTitle('Undated')).not.toBeInTheDocument();
   });
 
   it('opens on today and scrolls back to it on request', async () => {
@@ -113,7 +113,7 @@ describe('CrossSiteView', () => {
     expect(screen.getByText('1 projects')).toBeInTheDocument();
     // The other site's lane is unchanged
     expect(screen.getByText('2 projects')).toBeInTheDocument();
-    expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
+    expect(screen.getByTitle('Secret Pilot')).toBeInTheDocument();
   });
 
   it('with an active team filter, drops company events of other teams from the timeline', () => {

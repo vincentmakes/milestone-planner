@@ -379,10 +379,11 @@ async def assign_card(
     ``assignments.manage_others`` (or the PM) assigns anyone; a user joins a
     card themself under ``assignments.self_create``.
 
-    The booking is dateless, so the server places it (``approvals.plan_placement``,
-    as on POST ``/phases/{id}/staff``): a person not on the card yet is booked
-    linked (no own dates -- it follows the card when it moves in the Gantt
-    chart, with no second write); someone already on it gets the largest free
+    The booking is dateless, so the server places it (``approvals.plan_placement``
+    with ``link_first=False``): a person not on the card yet gets an
+    **unpinned** booking over the card's own dates (as the Assign Staff dialog
+    sends; clipped, not stretched, when the card moves -- pinning it to the
+    card is a Gantt action); someone already on it gets the largest free
     stretch of the card, or the second half when one booking of theirs covers
     the whole card (that booking keeps the first half, listed in
     ``adjusted``); a covered card is 409 ``CARD_FULL_DETAIL``, a booking to
@@ -407,16 +408,23 @@ async def assign_card(
     if assignee.is_resource is False:
         raise HTTPException(status_code=400, detail=NOT_BOOKABLE_DETAIL)
 
-    # Placed by the server: linked, a free stretch, or half of a full-span
-    # booking; a covered card (or a pending booking to split) is a 409.
+    # Placed by the server under the card's lock: a first booking spans the
+    # card with its own dates (unpinned), a second one takes a free stretch
+    # or half of a full-span booking; a covered card (or a pending booking to
+    # split) is a 409.
     plan = approvals.require_placement(
-        await approvals.plan_placement(db, entity_type, entity_id, data.staff_id)
+        await approvals.plan_placement(db, entity_type, entity_id, data.staff_id, link_first=False)
     )
 
     # Resolve the booking size server-side; the client must not guess it.
     allocation = data.allocation if data.allocation is not None else assignee.max_capacity or 100
+    # A first booking carries plain dates (as from the dialog): an approval
+    # re-checks their overlap; only a real placement is re-planned on approve.
     values = booking_dict(
-        allocation, plan.start_date, plan.end_date, placement=approvals.AUTO_PLACEMENT
+        allocation,
+        plan.start_date,
+        plan.end_date,
+        placement=None if plan.first else approvals.AUTO_PLACEMENT,
     )
     if outcome == "approval":
         return await approvals.submit_request(

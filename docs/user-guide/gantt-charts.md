@@ -80,6 +80,8 @@ Creating a project needs the *Create projects* permission (admins and superusers
 - **Edit a project**: Click the **Edit** button or right-click and select "Edit"
 - **Add a phase**: Right-click on a project and select "Add Phase"
 - **Add a subphase**: Right-click on a phase and select "Add Subphase" (supports unlimited nesting)
+
+A new phase or subphase opens with empty dates, so the calendar shows the current month when you click the date field; **Add** asks for the dates (a milestone needs only its date) if you leave them out. A phase created from a dependency's ghost bar keeps the dates of that bar, and editing keeps the current ones.
 - **Delete**: Right-click on any item and select "Delete" (with confirmation). A project manager can delete phases and subphases, but deleting the project itself needs the *Delete projects* permission (superusers and admins by default)
 
 When editing a project, export buttons (CSV and XML) are available in the modal footer.
@@ -94,7 +96,7 @@ Every date in Milestone is picked on the same calendar. Click the **Start Date**
 
 ## Picking a Person
 
-Every list of people — the project's **Project Manager**, the booking dialog's **Staff Member** (and its **Equipment** list), the Kanban card's **Add someone…**, the absence dialog's **Staff Member** and a team's **Members** — opens with a search box that already has the focus: type to find a person, the list narrows from the first letter, on the name and, where the row shows one, the job title (the type for equipment). Use the arrow keys and Enter, or click, to pick; Escape closes the list and leaves the dialog open. Typing a letter while the closed field has the focus opens it with that letter already typed. A muted note on a row, such as *80% capacity* or *— already on this card*, is shown but not searched.
+Every list of people — the project's **Project Manager**, the booking dialog's **Staff Member** (and its **Equipment** list), the Kanban card's **Add someone…**, the absence dialog's **Staff Member** and a team's **Members** — opens with a search box that already has the focus: type to find a person, the list narrows from the first letter, on the name and, where the row shows one, the job title (the type for equipment). Use the arrow keys and Enter, or click, to pick — once you have typed, Tab takes the highlighted match and moves on to the next field; Escape closes the list and leaves the dialog open. Typing a letter while the closed field has the focus opens it with that letter already typed. A muted note on a row, such as *80% capacity* or *— already on this card*, is shown but not searched.
 
 ## Project Fields
 
@@ -102,7 +104,7 @@ Besides its name, dates and manager, a project carries **fields**. Four are buil
 
 - **Dropdown** — pick one item (for example *Project type* → Internal / Customer), or several items in a multi-select dropdown such as *Area*: open the dropdown and tick the items (click a row, or move with the arrow keys and press Space); it stays open until you click elsewhere or press Escape, the box lists the chosen items, and **Clear** unticks them all
 - **Text** — up to 2,000 characters
-- **Number** — any number, shown as typed
+- **Number** — a number in the field's **Format** (for example one decimal): the box refuses a decimal beyond it and completes the missing ones when you leave it (12 → 12.0); with **As typed**, any number. **Volume** works the same way, with one decimal unless an administrator changed its format
 - **Switch** — on or off
 
 No field is required. A dropdown item can be limited to some sites and to some [teams](settings.md#teams) of a site, so the dialog only offers the items that apply to the project's site and teams; unticking a project's last matching team removes such an item from the project when you save. People who can manage project fields (admins by default) see a **Manage fields…** link that opens Settings → Project fields.
@@ -196,12 +198,14 @@ On a tablet or phone, the same gestures work with a finger: press a bar and move
 
 ## Bookings on Phases and Subphases
 
-A person booked on a phase or subphase is **linked** to it by default: the booking covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged. The badge at the start of the booking's row in the project panel shows this: it holds a **pin** and the phase's name, and a filled pin means the booking follows the phase dates.
+A booking on a phase or subphase is either **linked** to it (pinned): it covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged — or **unlinked**, with its own dates inside the phase. The badge at the start of the booking's row in the project panel shows which: it holds a **pin** and the phase's name, and a filled pin means the booking follows the phase dates.
 
-To book someone for only part of a phase — a few days at the start, then a few days at the end — **unlink** the booking:
+A new booking from **Assign Staff**, **Assign me…** or the Kanban card (**Join this card**, adding an assignee) starts **unlinked, with the phase's dates**: its own dates are the phase's start and end. Because they are its own, the booking does not stretch when the phase grows or moves later — it is fitted inside the phase as described below. To make it follow the phase, pin it:
 
-- **Click the pin** on the booking's row. It turns into an outlined pin (*Own dates*), and the booking keeps the phase's dates for now. Click the outlined pin to make it follow the phase dates again.
-- Or turn off **Follow the phase dates** in the [assignment dialog](staff-management.md#assignment-modal) and pick the booking's own dates. The calendar only offers days inside the phase.
+- **Click the pin** on the booking's row. An outlined pin (*Own dates*) turns into a filled one and the booking follows the phase dates; click it again to give the booking its own dates (it keeps the phase's dates for now).
+- Or, in the [assignment dialog](staff-management.md#assignment-modal), turn on **Follow the phase dates**; turn it off to pick the booking's own dates. The calendar only offers days inside the phase.
+
+A drag from the resource panel onto a phase bar still books the person linked to the phase.
 
 An unlinked booking's bar can be moved and resized on the timeline like any other bar, but it stops at the phase's start and end. The pin can only be clicked by people who may change that booking; for everyone else, and while the booking or your change to it awaits approval, it is greyed out but still shows whether the booking follows the phase. An unlinked booking's pin is also greyed out while another booking of the same person on that phase covers part of the phase's dates (*Can't follow the phase dates while another booking of this person overlaps them*): following the phase would make the two overlap.
 
@@ -209,7 +213,7 @@ Click the **phase name** in the badge to scroll the timeline to the booking: to 
 
 A person can hold **several bookings on the same phase**, as long as their dates do not overlap (adjacent days are fine). Booking someone for days that overlap one of their bookings on that phase is refused with *This person is already booked on this card for overlapping dates*.
 
-Booking someone **again** without choosing dates — **Assign Staff** with *Follow the phase dates* on, **Assign me again…** with the switch left on, a drag from the resource panel or the Kanban card dialog — places the new booking for you:
+Booking someone **again** without choosing dates — **Assign Staff** or **Assign me again…** for someone already on the phase (the dialog then turns *Follow the phase dates* on by itself and says the booking is placed), a drag from the resource panel or the Kanban card dialog — places the new booking for you:
 
 - If their one booking covers the **whole phase**, it is split in half: the existing booking keeps the first half (the longer one when the phase has an odd number of days) and the new booking gets the second half. Both get their own dates.
 - If their bookings leave **free days**, the new booking takes the **largest free stretch** (the earliest one on a tie).
@@ -223,7 +227,7 @@ When the phase itself changes:
 - **Shortening it** fits them inside the new dates: a booking that sticks out is cut at the new edge, and a booking left entirely outside is placed against the nearest edge with its length kept (never longer than the phase).
 - **Lengthening it** leaves them where they are.
 
-Linked bookings simply keep following the phase. One limit: shortening a phase past two bookings of the same person can push both against the same edge so that they overlap. They are kept as they are until you edit one of them; move one of them apart to resolve it.
+Linked bookings simply keep following the phase; an unlinked one is never stretched: lengthening the phase leaves it on its old dates, so pin it if it should cover the new ones. One limit: shortening a phase past two bookings of the same person can push both against the same edge so that they overlap. They are kept as they are until you edit one of them; move one of them apart to resolve it.
 
 ### The overview row
 
@@ -238,8 +242,10 @@ Click the phase name in its badge to scroll the timeline to the person's first b
 Each project and phase has a completion slider (0–100%):
 
 - The filled portion of the bar represents progress
-- Click on the completion area to adjust
+- Click the completion badge (*40%*) of a phase or subphase to adjust it, or right-click the row and choose **Set progress…** (the slider opens under its name). A completion calculated from the subphases cannot be set by hand
 - Purely informational — does not affect scheduling
+
+An administrator can hide the completion badges for everyone (**Show completion badges in the Gantt** in [Settings → Features & defaults](settings.md#features-defaults)); the bars stay filled and **Set progress…** stays available.
 
 The slider also drives the item's column on the [Kanban board](kanban-board.md): 0% is To Do, 100% is Done, and anything in between is In Progress. Moving a card on the board changes the percentage here in the same way. A card you have marked **Blocked** keeps that status when you edit its percentage, since a number cannot express why work has stalled.
 

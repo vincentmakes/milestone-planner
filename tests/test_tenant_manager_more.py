@@ -370,14 +370,19 @@ async def test_legacy_tenant_gets_every_step():
         assert conn.ran(statement)
     assert conn.ran(tp.PROJECT_COMMENTS_CHECK_SQL)
     assert conn.ran(tp.EQUIPMENT_ASSIGNMENTS_NOTE_SQL)
+    assert conn.ran(tp.PROJECT_FIELD_DECIMALS_SQL)
+    # The decimals column follows the project-fields step (which creates the table).
+    assert conn.log.index(tp.PROJECT_FIELD_DECIMALS_SQL) > conn.log.index(
+        tp.PROJECT_FIELDS_MIGRATION_SQL
+    )
     # Tag groups are never created any more (2.0.0: they are project fields);
     # the project-fields step runs its schema before the conversion.
     assert not conn.ran("CREATE TABLE IF NOT EXISTS tag_groups")
     assert conn.log.index(tp.PROJECT_FIELDS_MIGRATION_SQL) > max(
         conn.log.index(s) for s in tp.PROJECT_FIELDS_SCHEMA_STATEMENTS
     )
-    # One commit per step (card status: one per table), 24 in all.
-    assert conn.log.count("COMMIT") == 24
+    # One commit per step (card status: one per table), 25 in all.
+    assert conn.log.count("COMMIT") == 25
 
 
 @pytest.mark.asyncio
@@ -412,11 +417,12 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     # own gates too.
     assert conn.ran(tp.PROJECT_COMMENTS_CHECK_SQL)
     assert conn.ran(tp.EQUIPMENT_ASSIGNMENTS_NOTE_SQL)
+    assert conn.ran(tp.PROJECT_FIELD_DECIMALS_SQL)
     assert "ROLLBACK" not in conn.log
     # Only the two always-run back-fill steps, the users.is_resource step, the
-    # booking-segments step, the equipment-note step, the project-comments
-    # step and the notification-types step.
-    assert conn.log.count("COMMIT") == 7
+    # booking-segments step, the equipment-note step, the project-field
+    # decimals step, the project-comments step and the notification-types step.
+    assert conn.log.count("COMMIT") == 8
 
 
 @pytest.mark.asyncio

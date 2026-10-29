@@ -16,9 +16,15 @@ Rules live here rather than in the routers so every trigger behaves the same:
 Due-soon/overdue reminders are deliberately absent: they are derived in the
 browser from already-loaded project data (there is no scheduler in this app),
 which is why `notifications_type_check` has no `due_soon` value.
+
+Retention: a read notification is deleted ``READ_RETENTION_DAYS`` after it
+was read (``purge_read_notifications``, run by ``GET /notifications``); an
+unread one is kept until its recipient reads or deletes it.
 """
 
-from sqlalchemy import select
+from datetime import timedelta
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assignment import (
@@ -27,6 +33,10 @@ from app.models.assignment import (
     SubphaseStaffAssignment,
 )
 from app.models.notification import Notification
+from app.utils import utcnow_naive
+
+# Days a read notification stays in its recipient's inbox.
+READ_RETENTION_DAYS = 30
 
 # Ordered by specificity: the earlier type wins when one event would otherwise
 # produce two notifications for the same recipient.
@@ -40,6 +50,27 @@ _TYPE_PRIORITY = (
     "status_change",
     "comment",
 )
+
+
+async def purge_read_notifications(db: AsyncSession, user_id: int) -> int:
+    """
+    Delete ``user_id``'s notifications read more than ``READ_RETENTION_DAYS``
+    ago; unread rows are never touched (``read_at < bound`` is never true
+    for NULL). Staged on ``db``: the caller commits. Returns the row count.
+
+    Run lazily when the inbox is listed, because the application has no
+    scheduler; an inbox nobody opens keeps its old rows, which only its
+    owner could ever see.
+    """
+    bound = utcnow_naive() - timedelta(days=READ_RETENTION_DAYS)
+    result = await db.execute(
+        delete(Notification).where(
+            Notification.user_id == user_id,
+            Notification.read_at.is_not(None),
+            Notification.read_at < bound,
+        )
+    )
+    return result.rowcount
 
 
 async def card_assignee_ids(

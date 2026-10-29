@@ -28,7 +28,8 @@ describe('slicesForEntity', () => {
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
-    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams']],
+    // A delete can take away a user's only site: their record and the staff rows reload.
+    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams', 'currentUser', 'staff']],
     ['skill', ['skills', 'staff']],
     ['tag', ['tags', 'projects']],
     // Fields and items: a delete removes project values, so the tree reloads

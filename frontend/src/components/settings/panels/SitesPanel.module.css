@@ -88,6 +88,15 @@
   color: var(--text-primary);
 }
 
+/* The row's Delete: a ghost icon button, red on hover */
+.deleteBtn {
+  color: var(--text-muted);
+}
+
+.deleteBtn:hover:not(:disabled) {
+  color: var(--accent-red);
+}
+
 .addSection {
   padding-top: 16px;
   border-top: 1px solid var(--border-color);

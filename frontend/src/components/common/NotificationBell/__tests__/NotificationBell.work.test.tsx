@@ -88,7 +88,7 @@ beforeEach(() => {
 describe('bell → My Work', () => {
   it('shows the decided request after a click on its decision, even from the Open filter', async () => {
     vi.mocked(getNotifications).mockResolvedValue([note({})]);
-    await openFromBell(/approved by Carol/);
+    await openFromBell(/^Your booking on Feasibility was approved by Carol/);
     expect(useWorkStore.getState()).toMatchObject({ activeTab: 'requests', requestsFilter: 'done' });
     expect(screen.getByRole('tab', { name: /^My Requests/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Approved by Carol');
@@ -98,7 +98,7 @@ describe('bell → My Work', () => {
     vi.mocked(getNotifications).mockResolvedValue([
       note({ type: 'approval_requested', entity_id: 31, title: 'Alice Smith asks to join Feasibility' }),
     ]);
-    await openFromBell(/Alice Smith asks to join/);
+    await openFromBell(/^Alice Smith asks to join/);
     expect(useWorkStore.getState().activeTab).toBe('approvals');
     expect(screen.getByRole('tab', { name: /^My Approvals/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Alice Smith wants to join');

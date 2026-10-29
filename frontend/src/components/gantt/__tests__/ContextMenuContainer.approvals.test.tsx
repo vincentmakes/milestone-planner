@@ -147,9 +147,12 @@ describe('"Assign me" and approval', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Request to assign me' }));
 
     await waitFor(() => expect(createFromDialog).toHaveBeenCalledTimes(1));
+    // A first booking on the phase: unpinned, with the phase's own dates.
     expect(vi.mocked(createFromDialog).mock.calls[0][0]).toEqual({
       staff_id: 4,
       allocation: 50,
+      start_date: '2026-01-05',
+      end_date: '2026-02-27',
       comment: 'Need the bioreactor week',
       project_id: 1,
       phase_id: 10,

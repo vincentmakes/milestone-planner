@@ -61,8 +61,10 @@ Clicking a notification about a project on another site switches to that site fi
 
 Notifications are stored per user, so they survive a reload or a restart — you will not miss one because a browser tab was closed. See the [Kanban Board guide](kanban-board.md#notifications) for the full list of triggers.
 
+**Deleting and clearing.** The **×** beside a notification deletes it. **Clear all**, next to **Mark all read** at the top of the panel, deletes every notification in your inbox — including older ones the panel does not show — after you confirm; it affects only your own inbox, and the due-soon reminders below stay. **Read notifications are kept for 30 days**: one you read more than 30 days ago is deleted the next time your inbox loads. An unread notification is never deleted automatically.
+
 !!! info "Due and overdue reminders are worked out in your browser"
-    Reminders for cards due soon or already overdue are derived from the plan you have loaded, rather than being generated on the server. They need no setup, but they only appear while the application is open — there is no email or push notification, and nothing arrives overnight.
+    Reminders for cards due soon or already overdue are derived from the plan you have loaded, rather than being generated on the server. They need no setup, but they only appear while the application is open — there is no email or push notification, and nothing arrives overnight. Opening one or clicking its **×** dismisses it in your browser until its card is due again.
 
 ## WebSocket Connection
 

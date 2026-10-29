@@ -132,6 +132,7 @@ same reason; use `run_migration.py` instead.
 | `add_booking_segments` | Tenant | Adds optional own dates to phase and subphase bookings (1.17.0, also applied automatically on startup) — see below |
 | `add_project_fields` | Tenant | Project fields and their values; converts the tag groups into dropdown fields and drops `tag_groups` and `tags.group_id` (2.0.0, also applied automatically on startup; requires `add_teams`) — see below |
 | `add_project_comments` | Tenant | Lets a project carry its own comment thread: the `card_comments` entity-type CHECK gains `project` (2.0.0, also applied automatically on startup) — see below |
+| `add_project_field_decimals` | Tenant | Adds `project_fields.decimals`, the decimals of a number project field (2.1.0, also applied automatically on startup) — see below |
 | `add_equipment_assignment_note` | Tenant | Adds `equipment_assignments.note`, the optional note of an equipment booking (2.0.0, also applied automatically on startup) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
@@ -202,6 +203,8 @@ python migrations/run_migration.py add_rbac
 python migrations/run_migration.py add_change_notifications
 ```
 
+Read notifications are not kept forever: since 2.1.0 a notification read more than 30 days ago is deleted when its owner's inbox is loaded, and users can delete one or all of theirs from the bell. This needs no migration and no scheduled job; an inbox nobody opens keeps its old rows.
+
 ### Bookable Users (1.16.0)
 
 `add_user_is_resource` adds `users.is_resource` (`BOOLEAN NOT NULL DEFAULT TRUE`), the **Bookable as a resource** flag: only bookable people are listed in the Staff view and panel and can receive new bookings (see [Settings → Users](../user-guide/settings.md#bookable-as-a-resource)). When it adds the column it back-fills existing administrators as **not bookable** and leaves everyone else bookable, so the upgrade changes nobody's bookability. It does nothing when the column already exists, so a second run never resets a choice made since. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
@@ -241,6 +244,14 @@ python migrations/run_migration.py add_project_fields
 
 ```bash
 python migrations/run_migration.py add_project_comments
+```
+
+### Number Field Decimals (2.1.0)
+
+`add_project_field_decimals` adds `project_fields.decimals` (`SMALLINT`, nullable, 0–3): how many decimals a number project field keeps. Existing fields get no value, so their numbers stay as typed until an administrator picks a number of decimals in Settings → Project fields; values already stored are never rewritten (the app and the site export show them rounded). The column is added only when it is missing, so a second run changes nothing. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
+
+```bash
+python migrations/run_migration.py add_project_field_decimals
 ```
 
 ### Equipment Booking Notes (2.0.0)

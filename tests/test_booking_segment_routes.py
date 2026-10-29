@@ -1129,3 +1129,70 @@ async def test_kanban_join_again_in_approval_mode_files_the_planned_half(
     mock_db_session.add.assert_not_called()
     mock_db_session.commit.assert_not_awaited()
     assert change_intents == []
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_kanban_first_join_in_approval_mode_files_the_cards_own_dates(
+    authed_client, mock_db_session, submit, change_intents, level
+):
+    # Not on the card yet: the request carries the card's dates read under its
+    # lock (an unpinned booking, as the Assign Staff dialog sends) and no
+    # placement marker, so approve re-checks their overlap instead of
+    # re-planning (which would link it).
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_card()),
+        _pm_result(PM),
+        _scalar_result(ME),
+        card_lock_result(date(2026, 3, 2), date(2026, 3, 13)),
+        _placement(),
+    ]
+
+    response = await client.post(
+        f"/api/kanban/cards/{level}/1/assignees", json={"staff_id": STAFF, "allocation": 40}
+    )
+
+    assert response.status_code == 202, response.text
+    assert submit.await_args.kwargs["values"] == {
+        "allocation": 40,
+        "start_date": "2026-03-02",
+        "end_date": "2026-03-13",
+    }
+    mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
+    assert change_intents == []
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_kanban_first_assign_is_unpinned_and_locks_the_card(
+    authed_client, mock_db_session, level
+):
+    # Direct write (editor): the new row has the card's own dates, read from
+    # the card row locked FOR UPDATE -- not the card loaded before the lock.
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    moved = (date(2026, 3, 9), date(2026, 3, 20))
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_card()),
+        _scalar_result(ME),
+        card_lock_result(*moved),
+        _placement(),
+    ]
+    mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 300)
+
+    response = await client.post(
+        f"/api/kanban/cards/{level}/1/assignees", json={"staff_id": STAFF, "allocation": 40}
+    )
+
+    assert response.status_code == 201, response.text
+    created = [
+        c.args[0]
+        for c in mock_db_session.add.call_args_list
+        if isinstance(c.args[0], PhaseStaffAssignment | SubphaseStaffAssignment)
+    ]
+    (row,) = created
+    assert (row.start_date, row.end_date) == moved
+    assert response.json()["linked"] is False
+    lock = mock_db_session.execute.await_args_list[2].args[0]
+    assert lock._for_update_arg is not None

@@ -38,10 +38,13 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import styles from './DefaultsPanel.module.css';
 
-/** The settings of this panel (the project field labels live in Settings → Project fields) */
-type DefaultsKey = Exclude<DefaultedSettingKey, 'project_field_labels' | 'project_fields_hidden'>;
+/** The settings of this panel (the built-in project field settings live in Settings → Project fields) */
+type DefaultsKey = Exclude<
+  DefaultedSettingKey,
+  'project_field_labels' | 'project_fields_hidden' | 'volume_decimals'
+>;
 
-/** The six settings as the backend stores them */
+/** The seven settings as the backend stores them */
 type Values = Record<DefaultsKey, string>;
 
 const SAVE_ORDER: DefaultsKey[] = [
@@ -51,6 +54,7 @@ const SAVE_ORDER: DefaultsKey[] = [
   'kanban_enabled',
   'nager_enabled',
   'new_project_preselect_phases',
+  'gantt_completion_badges',
 ];
 
 const PANEL_OPTIONS = [
@@ -80,6 +84,7 @@ function valuesFrom(settings: InstanceSettings): Values {
     kanban_enabled: switchValue(isSettingOn(settings, 'kanban_enabled')),
     nager_enabled: switchValue(isSettingOn(settings, 'nager_enabled')),
     new_project_preselect_phases: switchValue(isSettingOn(settings, 'new_project_preselect_phases')),
+    gantt_completion_badges: switchValue(isSettingOn(settings, 'gantt_completion_badges')),
   };
 }
 
@@ -259,6 +264,13 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
           hint="When off, a new project starts with no phase selected and its creator picks them."
           checked={values.new_project_preselect_phases === 'true'}
           onChange={(on) => change('new_project_preselect_phases', switchValue(on))}
+          disabled={isSubmitting}
+        />
+        <SwitchField
+          label="Show completion badges in the Gantt"
+          hint="Off hides the % badges on project, phase and subphase rows; the bar fill and the progress slider stay."
+          checked={values.gantt_completion_badges === 'true'}
+          onChange={(on) => change('gantt_completion_badges', switchValue(on))}
           disabled={isSubmitting}
         />
       </section>

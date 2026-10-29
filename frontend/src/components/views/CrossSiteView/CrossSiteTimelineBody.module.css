@@ -204,11 +204,6 @@
     linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
 }
 
-/* Masked (other site) */
-.bar.masked {
-  opacity: 0.6;
-}
-
 .barLabel {
   overflow: hidden;
   text-overflow: ellipsis;

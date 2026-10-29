@@ -4,7 +4,7 @@
  * Supports drag-and-drop reordering
  */
 
-import { memo, useMemo, useCallback, useState, Fragment } from 'react';
+import { memo, useMemo, useCallback, useEffect, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -16,11 +16,12 @@ import { CardStaffRows } from './CardStaffRows';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
-import { statusAfterCompletionWrite } from '@/components/gantt/utils/completionStatus';
+import { effectiveCompletion, statusAfterCompletionWrite } from '@/components/gantt/utils/completionStatus';
 import { CustomColumnCell } from '@/components/gantt/CustomColumns';
 import { updateSubphase } from '@/api/endpoints/projects';
-import { formatShortDateRange, formatSingleDate, daysBetweenDateStrings } from '@/utils/date';
+import { formatShortDateRange, formatSingleDate } from '@/utils/date';
 import { canEditProject } from '@/utils/permissions';
+import { isSettingOn } from '@/utils/instanceSettings';
 import type { Subphase, CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './SubphaseRow.module.css';
 import { Icon, ChevronRightIcon, DragDotsIcon } from '@/components/common/Icon';
@@ -62,50 +63,6 @@ interface SubphaseRowProps {
   criticalPathItems?: Set<string>;  // Critical path items for this project
 }
 
-// Recursively calculate effective completion for an item
-// If at least one child has a completion value, unset siblings count as 0%
-function getEffectiveCompletion(item: Subphase): { completion: number | null; isCalculated: boolean } {
-  if (!item) return { completion: null, isCalculated: false };
-  
-  const children = item.children || [];
-  
-  // Check if any children have completion (direct or calculated)
-  let hasChildrenWithCompletion = false;
-  for (const child of children) {
-    if (!child) continue;
-    const childResult = getEffectiveCompletion(child);
-    if (childResult && childResult.completion !== null) {
-      hasChildrenWithCompletion = true;
-      break;
-    }
-  }
-  
-  if (hasChildrenWithCompletion) {
-    // Calculate weighted average from children's effective completion
-    // Children without completion count as 0%
-    let totalWeight = 0;
-    let weightedSum = 0;
-    
-    for (const child of children) {
-      if (!child) continue;
-      const childResult = getEffectiveCompletion(child);
-      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
-      
-      // Unset completion counts as 0% when at least one sibling has a value
-      const completion = childResult.completion ?? 0;
-      weightedSum += completion * days;
-      totalWeight += days;
-    }
-    
-    if (totalWeight > 0) {
-      return { completion: Math.round(weightedSum / totalWeight), isCalculated: true };
-    }
-  }
-  
-  // No children with completion, return item's own completion
-  return { completion: item.completion ?? null, isCalculated: false };
-}
-
 export const SubphaseRow = memo(function SubphaseRow({
   subphase,
   phaseId,
@@ -135,6 +92,19 @@ export const SubphaseRow = memo(function SubphaseRow({
   // Completion slider state
   const [sliderAnchor, setSliderAnchor] = useState<HTMLElement | null>(null);
   const showSlider = Boolean(sliderAnchor);
+  // Admin setting: the % badge can be hidden; the slider stays reachable
+  // through the context menu's "Set progress…", anchored to the name.
+  const showBadge = useAppStore((s) => isSettingOn(s.instanceSettings, 'gantt_completion_badges'));
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const sliderRequested = useUIStore(
+    (s) => s.completionSliderFor?.level === 'subphase' && s.completionSliderFor.id === subphase.id
+  );
+  const clearCompletionSlider = useUIStore((s) => s.clearCompletionSlider);
+  useEffect(() => {
+    if (!sliderRequested) return;
+    clearCompletionSlider();
+    if (nameRef.current) setSliderAnchor(nameRef.current);
+  }, [sliderRequested, clearCompletionSlider]);
   
   // Reorder hooks
   const {
@@ -169,7 +139,7 @@ export const SubphaseRow = memo(function SubphaseRow({
     e.stopPropagation();
     if (!canEdit) return;
     // Don't show slider if calculated from children
-    const result = getEffectiveCompletion(subphase);
+    const result = effectiveCompletion(subphase);
     if (result.isCalculated) return;
     setSliderAnchor(e.currentTarget as HTMLElement);
   }, [subphase, canEdit]);
@@ -240,7 +210,7 @@ export const SubphaseRow = memo(function SubphaseRow({
   }, [subphase.start_date, subphase.end_date, subphase.is_milestone]);
 
   // Get effective completion (calculated from children or manual)
-  const completionResult = useMemo(() => getEffectiveCompletion(subphase), [subphase]);
+  const completionResult = useMemo(() => effectiveCompletion(subphase), [subphase]);
 
   // Collect all descendant subphases for cascading custom column values
   const childEntities = useMemo(() => collectAllDescendants(subphase.children ?? []), [subphase.children]);
@@ -309,7 +279,8 @@ export const SubphaseRow = memo(function SubphaseRow({
             )}
           </button>
 
-          {/* Completion badge - always shown */}
+          {/* Completion badge - unless the admin setting hides it */}
+          {showBadge && (
           <button 
             className={`${styles.completionBadge} ${
               completionResult.completion !== null 
@@ -330,6 +301,7 @@ export const SubphaseRow = memo(function SubphaseRow({
           >
             {completionResult.completion !== null ? `${completionResult.completion}%` : '—'}
           </button>
+          )}
 
           {/* WBS Level indicator - clickable to scroll to start date */}
           <button
@@ -342,7 +314,7 @@ export const SubphaseRow = memo(function SubphaseRow({
           </button>
 
           {/* Subphase name */}
-          <span className={styles.name} title={subphase.name}>
+          <span ref={nameRef} className={styles.name} title={subphase.name}>
             {subphase.name}
           </span>
 

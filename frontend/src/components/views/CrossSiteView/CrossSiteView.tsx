@@ -1,7 +1,7 @@
 /**
  * Cross-Site View
- * Shows all sites and their projects in a Gantt timeline
- * Other sites' project details are masked for confidentiality
+ * Shows every visible site and its projects in a Gantt timeline,
+ * with real names and customers for every site the user can see
  * Uses the same structure as GanttContainer
  */
 
@@ -31,7 +31,7 @@ export function CrossSiteView() {
   // Company events narrowed by the header team filter
   const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
-  // A hidden Customer field (Settings → Project fields) is left out, masked or not
+  // A hidden Customer field (Settings → Project fields) is left out
   const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
@@ -128,10 +128,7 @@ export function CrossSiteView() {
           type: 'project',
           project,
           site,
-          isCurrentSite,
-          // Mask details for other sites
-          displayName: isCurrentSite ? project.name : 'Confidential Project',
-          displayCustomer: customerHidden ? '' : isCurrentSite ? (project.customer || '') : '***',
+          displayCustomer: customerHidden ? '' : project.customer || '',
         });
       });
     });
@@ -165,11 +162,11 @@ export function CrossSiteView() {
               return (
                 <div 
                   key={`project-${row.project!.id}`}
-                  className={`${styles.projectRow} ${!row.isCurrentSite ? styles.masked : ''}`}
+                  className={styles.projectRow}
                 >
                   <div className={`${styles.status} ${row.project!.confirmed ? styles.confirmed : styles.unconfirmed}`} />
                   <div className={styles.projectInfo}>
-                    <div className={styles.projectName}>{row.displayName}</div>
+                    <div className={styles.projectName}>{row.project!.name}</div>
                     {row.displayCustomer && (
                       <div className={styles.projectMeta}>{row.displayCustomer}</div>
                     )}
@@ -222,8 +219,6 @@ interface CrossSiteProjectRow {
   type: 'project';
   project: Project;
   site: Site;
-  isCurrentSite: boolean;
-  displayName: string;
   displayCustomer: string;
 }
 

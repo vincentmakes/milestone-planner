@@ -428,9 +428,11 @@ async def ensure_no_duplicate(
 class PlannedBooking:
     """
     Where a new phase / subphase booking goes: its own dates (None / None =
-    linked, the person has no row on the card) and, for a split, the
-    full-span row to shorten (``shrink``) with its new dates (``shrink_to``)
-    and its effective dates before (``shrink_from``, for the texts).
+    linked) and, for a split, the full-span row to shorten (``shrink``) with
+    its new dates (``shrink_to``) and its effective dates before
+    (``shrink_from``, for the texts). ``first`` marks the person's first
+    booking on the card (they had no row there): linked, or the card's own
+    dates with ``link_first=False``.
     """
 
     start_date: date | None
@@ -438,6 +440,7 @@ class PlannedBooking:
     shrink: AssignmentRow | None = None
     shrink_to: Segment | None = None
     shrink_from: Segment | None = None
+    first: bool = False
 
 
 # Why there is no room: the person's bookings cover the card, or the one
@@ -453,6 +456,7 @@ async def plan_placement(
     *,
     exclude_id: int | None = None,
     approved_only: bool = False,
+    link_first: bool = True,
 ) -> PlannedBooking | PlacementRefusal:
     """
     Plan a **dateless** booking of `staff_id` on a phase / subphase. Never
@@ -480,8 +484,11 @@ async def plan_placement(
     that row's update request is approved); PostgreSQL aborts one of them
     with an error the client reloads from. Rare enough to be left as is.
 
-    No row -> linked (None / None). Otherwise ``place_booking`` on the rows'
-    effective dates: the largest free stretch, else the halving of the one
+    No row -> the person's first booking on the card (``first``): linked
+    (None / None), or with ``link_first=False`` the card's own dates read
+    from the locked card row -- an unpinned booking spanning the card, which
+    is clipped, not stretched, when the card moves (the Kanban join / assign
+    route). Otherwise ``place_booking`` on the rows' effective dates: the largest free stretch, else the halving of the one
     row covering the card (``shrink``) -- refused ``"pending_row"`` when that
     row awaits approval (nobody rewrites a requested booking) -- else
     ``"card_full"``.
@@ -489,7 +496,9 @@ async def plan_placement(
     model: Any = assignment_model(level)
     card: Any = ProjectPhase if level == "phase" else ProjectSubphase
     on_card = model.phase_id if level == "phase" else model.subphase_id
-    await db.execute(select(card.id).where(card.id == target_id).with_for_update())
+    locked = await db.execute(
+        select(card.start_date, card.end_date).where(card.id == target_id).with_for_update()
+    )
     query = (
         select(card.start_date, card.end_date, model)
         .select_from(card)
@@ -502,7 +511,10 @@ async def plan_placement(
         query = query.where(model.approval_status == "approved")
     found = (await db.execute(query.order_by(model.id).with_for_update(of=model))).all()
     if not found:
-        return PlannedBooking(None, None)
+        card_dates = None if link_first else locked.first()
+        if card_dates is None:
+            return PlannedBooking(None, None, first=True)
+        return PlannedBooking(card_dates[0], card_dates[1], first=True)
 
     card_start, card_end = found[0][0], found[0][1]
     spans: list[tuple[AssignmentRow, date, date]] = []

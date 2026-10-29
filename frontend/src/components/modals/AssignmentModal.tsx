@@ -129,8 +129,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   // Phase / subphase staff: the booking follows the card's dates (linked) or
-  // has its own dates inside the card (an unlinked segment).
-  const [followCard, setFollowCard] = useState(true);
+  // has its own dates inside the card (an unlinked segment). `null` until the
+  // user touches the switch on a new booking: the default is then derived
+  // (`followCard` below) -- unpinned for a first booking, dateless (placed by
+  // the server) for someone already on the card.
+  const [followCardChoice, setFollowCardChoice] = useState<boolean | null>(null);
   // A new staff booking's comment (text + picked mentions), an equipment booking's note.
   const [commentDraft, setCommentDraft] = useState('');
   const [commentAnchors, setCommentAnchors] = useState<MentionAnchor[]>([]);
@@ -243,7 +246,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       if (isStaff && editingStaffAssignment) {
         setResourceId(editingStaffAssignment.staff_id.toString());
         setAllocation(editingStaffAssignment.allocation);
-        setFollowCard(editingStaffAssignment.linked !== false);
+        setFollowCardChoice(editingStaffAssignment.linked !== false);
       } else if (!isStaff && editingEquipmentAssignment) {
         setResourceId(editingEquipmentAssignment.equipment_id.toString());
         setNote(editingEquipmentAssignment.note ?? '');
@@ -273,8 +276,9 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       }
       setStartDate(toInputDateFormat(targetItem?.start_date) || today);
       setEndDate(toInputDateFormat(targetItem?.end_date) || today);
-      // A new booking is linked by default; the switch gives it own dates.
-      setFollowCard(true);
+      // A new card booking starts unpinned on the card's dates (prefilled
+      // above) until the switch is touched; see `followCard`.
+      setFollowCardChoice(null);
       setNote('');
     }
     setCommentDraft('');
@@ -312,8 +316,6 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   // (a role may hold assignments.self_remove without self_update).
   const removeLocked = lock === 'request-open' || lock === 'pending-other';
   const isPhaseOrSubphase = assignmentLevel !== 'project';
-  // A card booking with its own dates: the date fields show, bounded by the card.
-  const ownCardDates = isStaff && isPhaseOrSubphase && !followCard;
   const cardStart = isPhaseOrSubphase && targetItem?.start_date ? toDateOnly(targetItem.start_date) : undefined;
   const cardEnd = isPhaseOrSubphase && targetItem?.end_date ? toDateOnly(targetItem.end_date) : undefined;
   // A new card booking for someone already booked on the card (pending ones
@@ -321,6 +323,23 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const secondBooking =
     isStaff && !isEditing && isPhaseOrSubphase && resourceId !== '' &&
     (targetItem?.staffAssignments ?? []).some((a) => String(a.staff_id) === resourceId);
+  // Until the switch is touched, a new card booking follows the picked
+  // person: a first booking is unpinned (the card's dates, sent), a second
+  // one dateless so the server places it instead of answering 409. Once
+  // touched, the user's choice holds; an edit starts on the row's own state.
+  const followCard = followCardChoice ?? secondBooking;
+  // A card booking with its own dates: the date fields show, bounded by the card.
+  const ownCardDates = isStaff && isPhaseOrSubphase && !followCard;
+
+  // A new card booking's dates are prefilled with the card's; when a colleague
+  // moves the card while the dialog is open, dates now outside it restart on it
+  // (the server refuses own dates outside the card).
+  useEffect(() => {
+    if (!isOpen || isEditing || !isStaff || !cardStart || !cardEnd) return;
+    const inside = (d: string) => !!d && toDateOnly(d) >= cardStart && toDateOnly(d) <= cardEnd;
+    setStartDate((d) => (inside(d) ? d : cardStart));
+    setEndDate((d) => (inside(d) ? d : cardEnd));
+  }, [isOpen, isEditing, isStaff, cardStart, cardEnd]);
 
   // The comment of a new staff booking: a request's message for the approver
   // (always offered), or a direct booking's first word in its thread (only
@@ -349,7 +368,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       : "Added to the booking's comment thread.";
 
   const handleFollowCardChange = (follow: boolean) => {
-    setFollowCard(follow);
+    setFollowCardChoice(follow);
     if (!follow && cardStart && cardEnd) {
       // Own dates start inside the card (the card's own dates when unset or outside)
       const s = startDate ? toDateOnly(startDate) : '';

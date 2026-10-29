@@ -29,6 +29,10 @@ interface NotificationState {
   receive: (notification: AppNotification) => void;
   markReadLocal: (id: number) => void;
   markAllReadLocal: () => void;
+  /** Drop one server row (a derived reminder is never in the store: ignored). */
+  removeLocal: (id: number) => void;
+  /** Empty the inbox (Clear all). */
+  clearLocal: () => void;
   reset: () => void;
 }
 
@@ -79,6 +83,18 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       items: state.items.map((n) => (n.read_at ? n : { ...n, read_at: new Date().toISOString() })),
       unreadCount: 0,
     })),
+
+  removeLocal: (id) =>
+    set((state) => {
+      const target = state.items.find((n) => n.id === id);
+      if (!target || target.source === 'derived') return state;
+      return {
+        items: state.items.filter((n) => n !== target),
+        unreadCount: Math.max(0, state.unreadCount - (target.read_at ? 0 : 1)),
+      };
+    }),
+
+  clearLocal: () => set({ items: [], unreadCount: 0 }),
 
   reset: () => set({ items: [], unreadCount: 0, panelOpen: false, loading: false }),
 }));

@@ -47,8 +47,10 @@ export const INSTANCE_SETTING_DEFAULTS = {
   kanban_enabled: 'true',
   nager_enabled: 'true',
   new_project_preselect_phases: 'true',
+  gantt_completion_badges: 'true',
   project_field_labels: '{}',
   project_fields_hidden: '[]',
+  volume_decimals: '1',
 } as const;
 
 export type DefaultedSettingKey = keyof typeof INSTANCE_SETTING_DEFAULTS;

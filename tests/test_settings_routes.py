@@ -38,8 +38,10 @@ DEFAULTS = {
     "kanban_enabled": "true",
     "nager_enabled": "true",
     "new_project_preselect_phases": "true",
+    "gantt_completion_badges": "true",
     "project_field_labels": "{}",
     "project_fields_hidden": "[]",
+    "volume_decimals": "1",
 }
 
 
@@ -190,12 +192,15 @@ async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_sess
         ("kanban_enabled", "OFF", "false"),
         ("nager_enabled", "0", "false"),
         ("new_project_preselect_phases", "Yes", "true"),
+        ("gantt_completion_badges", "off", "false"),
         (
             "project_field_labels",
             '{"confirmed": " Won ", "customer": "Client"}',
             '{"customer":"Client","confirmed":"Won"}',
         ),
         ("project_fields_hidden", '["volume", "customer", "volume"]', '["customer","volume"]'),
+        ("volume_decimals", " Any ", "any"),
+        ("volume_decimals", "2", "2"),
     ],
 )
 async def test_a_known_key_stores_its_canonical_form(
@@ -239,6 +244,7 @@ async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_se
         ("kanban_enabled", "maybe"),
         ("nager_enabled", ""),
         ("new_project_preselect_phases", "2"),
+        ("gantt_completion_badges", "hidden"),
         ("project_field_labels", '{"name": "Title"}'),
         ("project_field_labels", '{"customer": "   "}'),
         ("project_field_labels", '{"customer": "' + "x" * 61 + '"}'),
@@ -246,6 +252,8 @@ async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_se
         ("project_fields_hidden", '["confirmed"]'),
         ("project_fields_hidden", '["customer", "notes"]'),
         ("project_fields_hidden", '{"customer": true}'),
+        ("volume_decimals", "4"),
+        ("volume_decimals", "1.0"),
     ],
 )
 async def test_an_invalid_value_for_a_known_key_is_422(authed_client, mock_db_session, key, raw):
@@ -295,6 +303,7 @@ async def test_null_on_a_known_key_deletes_the_row(authed_client, mock_db_sessio
     [
         ("project_field_labels", '{"customer":"Client"}', "{}"),
         ("project_fields_hidden", '["sales_pm"]', "[]"),
+        ("volume_decimals", "3", "1"),
     ],
 )
 async def test_null_resets_a_built_in_field_setting(
@@ -372,12 +381,13 @@ async def test_known_keys_follow_the_settings_general_permission(authed_client, 
     [
         ("project_field_labels", '{"customer":"Client"}'),
         ("project_fields_hidden", '["sales_pm"]'),
+        ("volume_decimals", "2"),
     ],
 )
 async def test_project_field_keys_accept_project_fields_manage(
     authed_client, mock_db_session, key, value
 ):
-    """Settings -> Project fields is gated on project_fields.manage and saves these two keys."""
+    """Settings -> Project fields is gated on project_fields.manage and saves these keys."""
     client, set_user = authed_client
     set_user(FakeUser(5, "fields", {"project_fields.manage"}))
     mock_db_session.execute.return_value = scalar_result(None)
@@ -401,7 +411,9 @@ async def test_project_fields_manage_does_not_open_other_keys(authed_client, moc
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("key", ["project_field_labels", "project_fields_hidden"])
+@pytest.mark.parametrize(
+    "key", ["project_field_labels", "project_fields_hidden", "volume_decimals"]
+)
 async def test_project_field_keys_need_one_of_the_two_keys(authed_client, mock_db_session, key):
     client, set_user = authed_client
     set_user(FakeUser(6, "plain", set()))

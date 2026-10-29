@@ -25,6 +25,11 @@
   min-width: 0;
 }
 
+/* A number project field: digits line up */
+.numberField input {
+  font-variant-numeric: tabular-nums;
+}
+
 .label {
   font-size: 0.875rem;
   font-weight: var(--font-weight-medium);

@@ -24,6 +24,7 @@ from app.models.note import Note
 from app.models.project import Project
 from app.models.project_field import ProjectField, ProjectFieldSelection, ProjectFieldValue
 from app.models.rbac import ApprovalRequest
+from app.models.settings import Settings
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
 from app.models.tag import Tag
@@ -518,6 +519,7 @@ def _site_rows() -> dict:
         name="Stage",
         field_type="select",
         sort_order=0,
+        decimals=None,
         options=[
             ns(
                 id=401,
@@ -546,6 +548,7 @@ def _site_rows() -> dict:
         name="Areas",
         field_type="multiselect",
         sort_order=1,
+        decimals=None,
         options=[
             ns(
                 id=411,
@@ -569,10 +572,13 @@ def _site_rows() -> dict:
             ),
         ],
     )
-    budget = ns(id=42, name="Budget", field_type="number", sort_order=2, options=[])
-    regulated = ns(id=43, name="Regulated", field_type="toggle", sort_order=3, options=[])
-    remark = ns(id=44, name="Remark", field_type="text", sort_order=4, options=[])
-    rate = ns(id=45, name="Rate", field_type="number", sort_order=5, options=[])
+    budget = ns(id=42, name="Budget", field_type="number", sort_order=2, decimals=0, options=[])
+    regulated = ns(
+        id=43, name="Regulated", field_type="toggle", sort_order=3, decimals=None, options=[]
+    )
+    remark = ns(id=44, name="Remark", field_type="text", sort_order=4, decimals=None, options=[])
+    # Rate keeps values as typed; Budget rounds to whole numbers.
+    rate = ns(id=45, name="Rate", field_type="number", sort_order=5, decimals=None, options=[])
     proj = ns(
         id=1,
         name="Alpha",
@@ -675,7 +681,8 @@ def _site_rows() -> dict:
         ProjectField: [stage, areas, budget, regulated, remark, rate],
         # (project_id, field_id, field_type, text, number, bool)
         ProjectFieldValue: [
-            (1, 42, "number", None, 1250.0, None),
+            # Stored before Budget got 0 decimals: exported rounded, half-up.
+            (1, 42, "number", None, 1249.5, None),
             (1, 43, "toggle", None, None, False),
             (1, 44, "text", "=1+1", None, None),
             (1, 45, "number", None, 2.5, None),
@@ -953,14 +960,20 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
         [1, "Alpha", 5, "Analytical Lab", "#0ea5e9"],
         [1, "Alpha", 6, "Pilot Plant", None],
     ]
-    assert [c.value for c in wb["Project fields"][1]] == ["ID", "Name", "Type", "Sort order"]
+    assert [c.value for c in wb["Project fields"][1]] == [
+        "ID",
+        "Name",
+        "Type",
+        "Decimals",
+        "Sort order",
+    ]
     assert _sheet(wb, "Project fields") == [
-        [40, "Stage", "select", 0],
-        [41, "Areas", "multiselect", 1],
-        [42, "Budget", "number", 2],
-        [43, "Regulated", "toggle", 3],
-        [44, "Remark", "text", 4],
-        [45, "Rate", "number", 5],
+        [40, "Stage", "select", None, 0],
+        [41, "Areas", "multiselect", None, 1],
+        [42, "Budget", "number", 0, 2],
+        [43, "Regulated", "toggle", None, 3],
+        [44, "Remark", "text", None, 4],
+        [45, "Rate", "number", None, 5],
     ]
     assert [c.value for c in wb["Project field options"][1]] == [
         "ID",
@@ -1108,6 +1121,28 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     comment = _sheet(wb, "Card comments")[0]
     assert comment[2] == "Alpha"
     assert comment[6:9] == ["Alice Martin", "Looks good @Bob", "12, 13"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("setting", "stored", "cell"),
+    [([], 12.75, 12.8), (["any"], 12.75, 12.75), (["0"], 12.75, 13), ([], None, None)],
+)
+async def test_site_workbook_rounds_the_volume_to_its_format(setting, stored, cell):
+    """The Projects sheet shows Volume as the dialog does (volume_decimals, default 1)."""
+    openpyxl = pytest.importorskip("openpyxl")
+    rows = _site_rows()
+    rows[Project][0].volume = stored
+    rows[Settings] = setting
+    db = _fake_site_db(rows)
+
+    content, _ = await build_site_export_workbook(db, 1)
+
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    (project_row,) = (r for r in _sheet(wb, "Projects") if r[0] == "Project")
+    assert project_row[12] == cell
+    # One read of the setting per export.
+    assert [s.column_descriptions[0].get("entity") for s in db.statements].count(Settings) == 1
 
 
 @pytest.mark.asyncio

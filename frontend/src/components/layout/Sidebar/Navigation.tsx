@@ -61,9 +61,9 @@ export function Navigation({ collapsed = false }: NavigationProps) {
   // out of reach (nothing is discarded behind the user's back). The Gantt
   // itself stays enabled so the sandbox can always be returned to.
   const { blocked, reason } = useWhatIfBlocked();
-  // Views without their key are hidden; Cross-site is disabled with a reason
-  // while only one site is visible (VIEW_PERMISSIONS in useAllowedViews).
-  const { visible, disabledReason } = useAllowedViews();
+  // Views without their key are hidden, and Cross-site while only one site
+  // is visible (VIEW_PERMISSIONS in useAllowedViews).
+  const { visible } = useAllowedViews();
   // Approval requests to decide (a primitive: workStore keeps it current).
   const approvalCount = useWorkStore((s) => s.openCount);
 
@@ -71,7 +71,6 @@ export function Navigation({ collapsed = false }: NavigationProps) {
     <nav className={`${styles.nav} ${collapsed ? styles.collapsed : ''}`}>
       {NAV_ITEMS.filter((item) => visible.includes(item.view)).map((item) => {
         const isBlocked = blocked && item.view !== currentView && item.view !== 'gantt';
-        const unavailable = disabledReason[item.view];
         const badge = item.view === 'work' && approvalCount > 0 ? approvalCount : 0;
         const name =
           badge > 0 ? `${item.label}, ${badge} approval${badge === 1 ? '' : 's'} to decide` : item.label;
@@ -81,10 +80,8 @@ export function Navigation({ collapsed = false }: NavigationProps) {
             type="button"
             className={`${styles.navItem} ${currentView === item.view ? styles.active : ''}`}
             onClick={() => setCurrentView(item.view)}
-            disabled={isBlocked || Boolean(unavailable)}
-            title={
-              isBlocked ? reason('Switching views') : unavailable ?? (collapsed ? item.label : undefined)
-            }
+            disabled={isBlocked}
+            title={isBlocked ? reason('Switching views') : collapsed ? item.label : undefined}
             aria-label={name}
           >
             <span className={styles.icon}>{item.icon}</span>

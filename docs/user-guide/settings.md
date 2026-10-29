@@ -81,6 +81,7 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 | **Kanban board** | Turns the [Kanban board](kanban-board.md) on or off for the whole workspace | On |
 | **Bank-holiday import (Nager)** | Turns the automatic [public-holiday fetching](#automatic-fetching) on or off | On |
 | **Pre-select predefined phases in new projects** | Whether a new project starts with every active [predefined phase](#predefined-phases) selected, or with none | On |
+| **Show completion badges in the Gantt** | Whether the project, phase and subphase rows of the Gantt chart show their completion badge (*40%*). Off hides the badges only: the bars stay filled to their completion, and the progress slider stays available through **Set progress…** in a phase's or subphase's right-click menu | On |
 
 The default filters are a starting point, not a restriction: people change them as usual, and the default applies again the next time the panel below the Gantt chart opens. The standalone Staff and Equipment views always open unfiltered. A skill that was deleted or an equipment type that was renamed is shown as *(no longer exists)* so you can untick it; until then it is simply ignored.
 
@@ -147,7 +148,7 @@ Some permissions worth knowing:
 
 ### Who Sees Which Sites
 
-A role without **See all sites** limits its holders to the sites in their account: the site selector lists only those, and every project, person, piece of equipment, holiday and event elsewhere stays out of reach — also for editing. The **Cross-Site** view needs at least two visible sites; with one it is shown disabled with the reason.
+A role without **See all sites** limits its holders to the sites in their account: the site selector lists only those, and every project, person, piece of equipment, holiday and event elsewhere stays out of reach — also for editing. The **Cross-Site** view needs at least two visible sites; with one it is not listed. It shows the real names and customers of every visible site's projects — the sites a user cannot see stay out of it.
 
 ### Giving People a Role
 
@@ -237,7 +238,7 @@ People whose role has **See all sites** (administrators by default) see every ac
 
 ### Deactivating and Deleting a Site
 
-The Sites section has no delete button: untick **Active** to hide a site from the site selector while keeping its data. Deleting a site is only possible through the API (`DELETE /api/sites/{id}`) and **deletes all of its projects** — with their phases, subphases, assignments, equipment bookings, comments and custom-column values — and its holidays. This now happens consistently, both in the application and at the database level. Equipment and company events shared with other sites stay on those sites; equipment or an event left without any site is deleted.
+To hide a site from the site selector while keeping its data, untick **Active** in its form. To **delete** a site, click the bin on its row (people who may manage sites) and type the site's name to confirm. Deleting a site **cannot be undone**: it deletes all of its projects — with their phases, subphases, bookings, equipment bookings, comments and custom-column values —, its bank holidays, closures and events, its teams and their memberships, equipment linked only to this site, and tags or dropdown-field items limited to it. Equipment and company events shared with other sites stay on those sites. People assigned only to this site keep their account but no longer see its data. The last active site cannot be deleted: add or reactivate another site first. Everyone signed in sees the site disappear straight away; someone who was looking at it moves to their first remaining site.
 
 !!! danger
     Deleting a site is irreversible and removes all data associated with it. To keep its projects, move them to another site first, or deactivate the site instead.
@@ -417,7 +418,7 @@ Open **Settings → Company events** (Admins and Superusers). Filter by **Site**
 4. Under **Sites**, tick every site the event applies to. Superusers can only choose sites they belong to
 5. **Teams (optional)** — for each selected site that has teams, leave **Whole site** on, or switch it off and tick the [teams](#teams) the event is for. A site where no team is ticked keeps the whole site
 6. Pick a **Color**
-7. Tick **Site closure — staff on these sites are unavailable** if the sites are closed on those dates (see [Site Closures](#site-closures))
+7. Tick **Site closure — staff on these sites are unavailable** if the sites are closed on those dates (see [Site Closures](#site-closures)). Once you tick teams in step 5 the switch reads **Site closure — staff of the selected teams on these sites are unavailable**, with the note that only members of the ticked teams lose their capacity and everyone else on those sites is unaffected
 8. Save
 
 Editing an event changes it on every site it is linked to.
@@ -442,7 +443,7 @@ Editing an event changes it on every site it is linked to.
 
 ### Site Closures
 
-Tick **Site closure — staff on these sites are unavailable** on an event for a shutdown, a company holiday or anything else that closes a site. For every day of the event, everyone who belongs to one of the event's sites is treated as away, like an [absence that counts as unavailable](vacations.md#absence-types):
+Tick **Site closure — staff on these sites are unavailable** (it reads *staff of the selected teams on these sites* once teams are ticked) on an event for a shutdown, a company holiday or anything else that closes a site. For every day of the event, everyone who belongs to one of the event's sites is treated as away, like an [absence that counts as unavailable](vacations.md#absence-types):
 
 - In the [Staff workload view](staff-management.md#site-closures-in-the-workload) their cells show **0% available** in the event's color, with the tooltip *Site closed: &lt;event name&gt;*. Work assigned on those days is flagged as a **conflict**
 - Today's availability in the Staff Overview and on the resource cards shows them as unavailable during a closure
@@ -451,7 +452,7 @@ Tick **Site closure — staff on these sites are unavailable** on an event for a
 
 A person on several sites is unavailable when **any** of their sites is closed. Plain events and bank holidays do not reduce anyone's availability — only events marked as closures do.
 
-**A closure limited to teams takes out only their members.** At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
+**A closure limited to teams takes out only their members.** The **Closure** badge in the event list says so in its hover text. At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
 
 The site export's **Company events** sheet has a **Staff unavailable** column showing which events are closures.
 
@@ -687,10 +688,11 @@ Project fields are what a project holds besides its name, dates, manager and tea
 
 - **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name replaces the default everywhere the field is named, for the whole workspace: in the project dialog, the Gantt chart's Shift-hover tooltip and the Archived view (*No Client*). The defaults shown here are the names used everywhere else too.
 - **Shown** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again.
+- **Format** (Volume only) — Volume is a number and has a **Format** like a [number field](#custom-fields), **1.0** (one decimal) by default, with the same choices and preview line. The project dialog shows Volume in that format and refuses a decimal beyond it; new values are rounded half up when saved, and the site export shows Volume rounded. Volumes saved before are not changed.
 
 **Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts.
 
-Click **Save Changes** to apply the labels and switches; **Reset** discards the edits.
+Click **Save Changes** to apply the labels, switches and Volume's format; **Reset** discards the edits.
 
 ### Custom Fields
 
@@ -701,11 +703,12 @@ In the add row under the **Custom fields** list, type the new field's name, pick
 | **Dropdown** | One item of a list |
 | **Multi-select dropdown** | Any number of items of a list |
 | **Text** | Free text, up to 2,000 characters |
-| **Number** | A number |
+| **Number** | A number, kept to the field's **Format** |
 | **Switch** | On or off |
 
 - **Order** — Drag fields to change the order of the project dialog, the [Filter](gantt-charts.md#filtering-projects) and the **Group by** / **Colour by** lists.
-- **Rename** — Click the pencil. A field's type cannot be changed after it is created.
+- **Edit** — Click the pencil to rename the field (and, on a number field, change its **Format**), then **Save**; **Cancel** or Escape discards the edit. A field's type cannot be changed after it is created.
+- **Format** — A number field's **Format** is picked in the add row while **Number** is chosen, or in its edit form. It is shown as the pattern of the number 1: **As typed** keeps every decimal entered, **1**, **1.0**, **1.00** and **1.000** keep none to three. A line under the picker previews the choice: "Values are saved as typed.", or for **1.0** "12.345 is saved and shown as 12.3." — in the edit form followed by "Existing values are not changed, only shown rounded." New values are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at **1.00**), and the project dialog shows the field in that format: it does not let you type more decimals than the format keeps (12.34 cannot be entered at **1.0**) and completes the missing ones when you leave the box (12 → 12.0). Values saved before are not changed; they are shown — and exported — rounded. The field's type pill in the list names its format, e.g. **Number · 1.0** (plain **Number** for As typed).
 - **Delete** — Click the bin; the confirmation says how many projects hold a value, and every value of the field is removed.
 
 No field is required, and custom fields cannot be hidden — delete one you no longer need.

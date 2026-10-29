@@ -2,7 +2,7 @@
 Pydantic schemas for project fields and their dropdown items (2.0.0).
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,6 +11,9 @@ from app.schemas.tag import SiteIds
 from app.schemas.team import TeamIds
 
 ProjectFieldType = Literal["text", "number", "toggle", "select", "multiselect"]
+
+# A number field's decimals: 0-3, or null = as typed.
+FieldDecimals = Annotated[int, Field(ge=0, le=3)]
 
 
 # ---------------------------------------------------------
@@ -23,6 +26,10 @@ class ProjectFieldCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=100)
     field_type: ProjectFieldType
+    decimals: FieldDecimals | None = Field(
+        default=None,
+        description="Number fields only: new values are rounded to 0-3 decimals; null = as typed.",
+    )
 
 
 class ProjectFieldUpdate(BaseModel):
@@ -31,10 +38,16 @@ class ProjectFieldUpdate(BaseModel):
 
     ``field_type`` cannot change: a value other than the field's type is a 422
     (the same type is accepted, so a client may send the whole field back).
+    ``decimals`` is applied when present, ``null`` included (back to "as
+    typed"); a non-null value on a field that is not a number is a 422.
     """
 
     name: str | None = Field(None, min_length=1, max_length=100)
     field_type: ProjectFieldType | None = None
+    decimals: FieldDecimals | None = Field(
+        default=None,
+        description="Number fields only: 0-3, or null to keep values as typed.",
+    )
 
 
 class ProjectFieldReorder(BaseModel):
@@ -143,6 +156,7 @@ class ProjectFieldResponse(BaseModel):
     name: str
     field_type: ProjectFieldType
     sort_order: int = 0
+    decimals: int | None = None
     options: list[ProjectFieldOptionResponse] = []
 
 

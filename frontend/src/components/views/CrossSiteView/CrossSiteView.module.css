@@ -106,10 +106,6 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.projectRow.masked {
-  opacity: 0.6;
-}
-
 .status {
   width: 8px;
   height: 8px;

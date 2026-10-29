@@ -60,6 +60,77 @@ export function isEmptyFieldValue(value: ProjectFieldValue | undefined): boolean
   return false;
 }
 
+// =============================================================================
+// NUMBER DECIMALS
+// =============================================================================
+
+/** The decimals a number field can keep (null = as typed). */
+export const FIELD_DECIMALS = [0, 1, 2, 3] as const;
+
+// Doubles from 2^53 up hold no fraction: rounding them is the identity.
+const ROUNDING_LIMIT = 2 ** 53;
+
+/**
+ * A number rounded to `decimals` (null / undefined = unchanged), half-up away
+ * from zero on its shortest decimal string -- never `toFixed` on the binary
+ * double, so 1.005 -> 1.01 and 0.125 -> 0.13 at 2, 2.5 -> 3 and -2.5 -> -3 at
+ * 0. Mirror of `round_field_number` (app/services/project_field_rules.py);
+ * the ROUNDING_CASES tables of both test files are the contract.
+ */
+export function roundFieldNumber(value: number, decimals: number | null | undefined): number {
+  if (decimals == null || !Number.isFinite(value) || Math.abs(value) >= ROUNDING_LIMIT) return value;
+  const negative = value < 0;
+  // |value| < 1e-6 prints in exponent form; it rounds to 0 at 3 decimals or fewer.
+  if (Math.abs(value) < 1e-6) return 0;
+  const [intPart, fracPart = ''] = String(Math.abs(value)).split('.');
+  if (fracPart.length <= decimals) return value;
+  let digits = BigInt(intPart + fracPart.slice(0, decimals));
+  if (fracPart.charCodeAt(decimals) >= '5'.charCodeAt(0)) digits += 1n;
+  const text = digits.toString().padStart(decimals + 1, '0');
+  const rounded = Number(
+    decimals === 0 ? text : `${text.slice(0, text.length - decimals)}.${text.slice(text.length - decimals)}`
+  );
+  // No negative zero.
+  return negative && rounded !== 0 ? -rounded : rounded;
+}
+
+/**
+ * A number field's value as text: rounded to the field's decimals and shown
+ * with exactly that many (locale grouping and separators); as typed when the
+ * field keeps every decimal. The one helper for read-only displays.
+ */
+export function formatFieldNumber(value: number, decimals: number | null | undefined): string {
+  if (decimals == null) return new Intl.NumberFormat(undefined, { maximumFractionDigits: 20 }).format(value);
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(roundFieldNumber(value, decimals));
+}
+
+/**
+ * The number input's text for a value: rounded and padded to the field's
+ * decimals (`12.5` -> `"12.50"` at 2; no grouping, a dot), or as typed.
+ */
+export function fieldNumberInputText(value: number, decimals: number | null | undefined): string {
+  if (decimals == null) return String(value);
+  const rounded = roundFieldNumber(value, decimals);
+  // Exact: the rounded value has at most `decimals` decimals.
+  return Math.abs(rounded) >= 1e21 ? String(rounded) : rounded.toFixed(decimals);
+}
+
+/**
+ * Whether the number input may take `text` as typed: always as typed (null
+ * decimals); else digits with at most `decimals` of them after the dot -- so
+ * at 1, `12.`, `12.3`, `-` and `''` pass while `12.34` and `1e5` do not. At 0
+ * no dot at all. The gate of `NumberFieldInput`: a refused keystroke never
+ * lands, and blur pads to the format ({@link fieldNumberInputText}).
+ */
+export function acceptsNumberText(text: string, decimals: number | null | undefined): boolean {
+  if (decimals == null) return true;
+  const pattern = decimals === 0 ? /^-?\d*$/ : new RegExp(`^-?\\d*(\\.\\d{0,${decimals}})?$`);
+  return pattern.test(text);
+}
+
 /** Human name of a field type, for badges and the type picker. */
 export const FIELD_TYPE_LABELS: Record<ProjectFieldType, string> = {
   text: 'Text',
@@ -82,7 +153,7 @@ export type FieldDraft = string | boolean | number[];
 
 /** The dialog draft of a stored value (absent = empty). */
 export function draftFromValue(
-  field: Pick<ProjectField, 'field_type'>,
+  field: Pick<ProjectField, 'field_type' | 'decimals'>,
   value: ProjectFieldValue | undefined
 ): FieldDraft {
   switch (field.field_type) {
@@ -93,7 +164,10 @@ export function draftFromValue(
     case 'select':
       return valueOptionIds(value).length ? String(valueOptionIds(value)[0]) : '';
     case 'number':
-      return typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+      // Shown rounded to the field's decimals (stored values are never rewritten).
+      return typeof value === 'number' && Number.isFinite(value)
+        ? fieldNumberInputText(value, field.decimals)
+        : '';
     default:
       return typeof value === 'string' ? value : '';
   }
@@ -103,11 +177,12 @@ export function draftFromValue(
  * The value to send for a draft, in the API's shape; null = no value (a
  * toggle that is off counts as none). Dropdown items outside `allowedIds`
  * (the items that apply to the project's site and teams) are dropped, and a
- * multiselect lists its items in item order. `undefined` = the draft is not
+ * multiselect lists its items in item order. A number is rounded to the
+ * field's decimals, as the server stores it. `undefined` = the draft is not
  * a valid value (a number that does not parse).
  */
 export function valueFromDraft(
-  field: Pick<ProjectField, 'field_type' | 'options'>,
+  field: Pick<ProjectField, 'field_type' | 'options' | 'decimals'>,
   draft: FieldDraft | undefined,
   allowedIds?: ReadonlySet<number>
 ): ProjectFieldValue | undefined {
@@ -128,7 +203,7 @@ export function valueFromDraft(
       const text = typeof draft === 'string' ? draft.trim() : '';
       if (text === '') return null;
       const n = Number(text);
-      return Number.isFinite(n) ? n : undefined;
+      return Number.isFinite(n) ? roundFieldNumber(n, field.decimals) : undefined;
     }
     default: {
       const text = typeof draft === 'string' ? draft.trim() : '';
@@ -139,7 +214,7 @@ export function valueFromDraft(
 
 /** The stored value in the shape `valueFromDraft` returns (for a "did it change" check). */
 export function normalizeStoredValue(
-  field: Pick<ProjectField, 'field_type' | 'options'>,
+  field: Pick<ProjectField, 'field_type' | 'options' | 'decimals'>,
   value: ProjectFieldValue | undefined
 ): ProjectFieldValue {
   return valueFromDraft(field, draftFromValue(field, value)) ?? null;

@@ -5,10 +5,15 @@
  * - Built-in fields: Customer, Sales PM, Volume and Confirmed keep their
  *   place in the dialog; each can get another label instance-wide, and all
  *   but Confirmed can be hidden (Confirmed drives the project status, the
- *   default ordering and the counts). Stored in the settings
- *   `project_field_labels` / `project_fields_hidden`.
+ *   default ordering and the counts); Volume has a Format like a number
+ *   field (default 1.0). Stored in the settings `project_field_labels` /
+ *   `project_fields_hidden` / `volume_decimals`.
  * - Custom fields: text, number, switch, dropdown and multi-select dropdown,
- *   in a drag-reorderable list. The type is fixed at creation. Deleting a
+ *   in a drag-reorderable list. The type is fixed at creation. A number
+ *   field has a Format, picked as the pattern of 1 (As typed / 1 / 1.0 /
+ *   1.00 / 1.000 = decimals null / 0-3) in the add row or the row's edit
+ *   form (the pencil, saved with its Save), with a live preview of 12.345:
+ *   new values are rounded to it, stored ones shown rounded. Deleting a
  *   field removes every project's value (the confirmation names the count).
  * - Items of the dropdown fields: colour, and like tags, all sites or only
  *   some, per site optionally only some teams. Drag to reorder within the field.
@@ -39,9 +44,17 @@ import {
   hiddenFieldsValue,
   parseFieldLabels,
   parseHiddenFields,
+  volumeDecimals,
+  volumeDecimalsValue,
 } from '@/utils/instanceSettings';
 import type { BuiltInFieldKey } from '@/utils/instanceSettings';
-import { FIELD_TYPE_LABELS, isDropdownField } from '@/utils/projectFields';
+import {
+  FIELD_DECIMALS,
+  FIELD_TYPE_LABELS,
+  fieldNumberInputText,
+  formatFieldNumber,
+  isDropdownField,
+} from '@/utils/projectFields';
 import type { ProjectField, ProjectFieldOption, ProjectFieldType, Site, Team } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
@@ -64,6 +77,43 @@ const TYPE_OPTIONS: { value: ProjectFieldType; label: string }[] = [
   { value: 'number', label: FIELD_TYPE_LABELS.number },
   { value: 'toggle', label: FIELD_TYPE_LABELS.toggle },
 ];
+
+/** A number field's format, shown as the pattern of 1 ('1.0' = 1 decimal); '' = as typed (null). */
+const FORMAT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'As typed' },
+  ...FIELD_DECIMALS.map((d) => ({ value: String(d), label: fieldNumberInputText(1, d) })),
+];
+
+/** The preview of the As typed format */
+export const FORMAT_AS_TYPED_PREVIEW = 'Values are saved as typed.';
+/** After the preview of a format in a field's edit form */
+export const FORMAT_EXISTING_NOTE = 'Existing values are not changed, only shown rounded.';
+
+/** The number the preview rounds: 12.345 shows both a cut and a half-up carry */
+const PREVIEW_SAMPLE = 12.345;
+
+function decimalsFromChoice(value: string): number | null {
+  return value === '' ? null : Number(value);
+}
+
+function choiceFromDecimals(decimals: number | null | undefined): string {
+  return decimals == null ? '' : String(decimals);
+}
+
+/** What a format does, with the field's own rounding: "12.345 is saved and shown as 12.3." */
+function formatPreview(decimals: number | null, withExistingNote: boolean): string {
+  if (decimals === null) return FORMAT_AS_TYPED_PREVIEW;
+  const sample = `${formatFieldNumber(PREVIEW_SAMPLE, null)} is saved and shown as ${formatFieldNumber(PREVIEW_SAMPLE, decimals)}.`;
+  return withExistingNote ? `${sample} ${FORMAT_EXISTING_NOTE}` : sample;
+}
+
+/** The type pill: "Number · 1.0" for a number field with a format */
+function typeBadgeText(field: ProjectField): string {
+  const type = FIELD_TYPE_LABELS[field.field_type];
+  return field.field_type === 'number' && field.decimals != null
+    ? `${type} · ${fieldNumberInputText(1, field.decimals)}`
+    : type;
+}
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -124,13 +174,19 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const [savedHidden, setSavedHidden] = useState<string[]>([]);
   const [labels, setLabels] = useState<Labels>({});
   const [hidden, setHidden] = useState<string[]>([]);
+  // Volume's format, as a FORMAT_OPTIONS choice ('' = as typed)
+  const [savedVolumeFormat, setSavedVolumeFormat] = useState(choiceFromDecimals(1));
+  const [volumeFormat, setVolumeFormat] = useState(choiceFromDecimals(1));
   const [builtInSuccess, setBuiltInSuccess] = useState<string | null>(null);
 
   // Custom fields
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<ProjectFieldType>('select');
-  const [renamingFieldId, setRenamingFieldId] = useState<number | null>(null);
-  const [renameValue, setRenameValue] = useState('');
+  const [newFieldDecimals, setNewFieldDecimals] = useState('');
+  // The field whose edit form is open (the pencil): its name and, for a number field, its format
+  const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDecimals, setEditDecimals] = useState('');
   const [expandedFieldId, setExpandedFieldId] = useState<number | null>(null);
 
   // Items of the expanded field
@@ -168,6 +224,9 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
         setLabels(initialLabels);
         setSavedHidden(initialHidden);
         setHidden(initialHidden);
+        const initialVolumeFormat = choiceFromDecimals(volumeDecimals(settings));
+        setSavedVolumeFormat(initialVolumeFormat);
+        setVolumeFormat(initialVolumeFormat);
       }),
     ])
       .catch((err) => {
@@ -185,10 +244,16 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
 
   const labelsValue = fieldLabelsValue(labels);
   const hiddenValue = hiddenFieldsValue(hidden);
-  const builtInDirty = labelsValue !== fieldLabelsValue(savedLabels) || hiddenValue !== hiddenFieldsValue(savedHidden);
+  const builtInDirty =
+    labelsValue !== fieldLabelsValue(savedLabels) ||
+    hiddenValue !== hiddenFieldsValue(savedHidden) ||
+    volumeFormat !== savedVolumeFormat;
 
-  const renamedField = renamingFieldId !== null ? fields.find((f) => f.id === renamingFieldId) : undefined;
-  const renameDirty = !!renamedField && renameValue !== renamedField.name;
+  const editedField = editingFieldId !== null ? fields.find((f) => f.id === editingFieldId) : undefined;
+  const fieldEditDirty =
+    !!editedField &&
+    (editName !== editedField.name ||
+      (editedField.field_type === 'number' && editDecimals !== choiceFromDecimals(editedField.decimals)));
   const editedItem = useMemo(() => {
     if (!itemEdit) return undefined;
     for (const field of fields) {
@@ -207,7 +272,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       !sameIds(itemEdit.teamIds, editedItem.team_ids ?? []));
   useReportDirty(
     onDirtyChange,
-    builtInDirty || renameDirty || itemDirty || newFieldName.trim() !== '' || newItemName.trim() !== ''
+    builtInDirty || fieldEditDirty || itemDirty || newFieldName.trim() !== '' || newItemName.trim() !== ''
   );
 
   const run = async (action: () => Promise<unknown>, fallback: string) => {
@@ -243,6 +308,12 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
           saved.project_fields_hidden = hiddenValue;
           setSavedHidden(parseHiddenFields(hiddenValue));
         }
+        if (volumeFormat !== savedVolumeFormat) {
+          const value = volumeDecimalsValue(decimalsFromChoice(volumeFormat));
+          await updateSetting('volume_decimals', value);
+          saved.volume_decimals = value;
+          setSavedVolumeFormat(volumeFormat);
+        }
         setBuiltInSuccess('Built-in fields saved');
       } catch (err) {
         setError(errorMessage(err, 'Failed to save the built-in fields'));
@@ -257,6 +328,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const handleResetBuiltIn = () => {
     setLabels(savedLabels);
     setHidden(savedHidden);
+    setVolumeFormat(savedVolumeFormat);
     setBuiltInSuccess(null);
   };
 
@@ -267,36 +339,46 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       const name = newFieldName.trim();
       if (!name) return;
       await run(async () => {
-        const created = await projectFieldsApi.create({ name, field_type: newFieldType });
+        const created = await projectFieldsApi.create({
+          name,
+          field_type: newFieldType,
+          ...(newFieldType === 'number' ? { decimals: decimalsFromChoice(newFieldDecimals) } : {}),
+        });
         setNewFieldName('');
+        setNewFieldDecimals('');
         // A new dropdown opens on its items, ready for the first one
         if (isDropdownField(created)) setExpandedFieldId(created.id);
       }, 'Failed to add field');
     });
 
-  const startRename = (field: ProjectField) => {
-    setRenamingFieldId(field.id);
-    setRenameValue(field.name);
+  const startEditing = (field: ProjectField) => {
+    setEditingFieldId(field.id);
+    setEditName(field.name);
+    setEditDecimals(choiceFromDecimals(field.decimals));
   };
 
-  const handleRename = (field: ProjectField) =>
+  // Name and format go in one PUT; a number field always sends its format (null = as typed)
+  const handleSaveField = (field: ProjectField) =>
     editSave.guard(async () => {
-      const name = renameValue.trim();
+      const name = editName.trim();
       if (!name) return;
       await run(async () => {
-        await projectFieldsApi.update(field.id, { name });
-        setRenamingFieldId(null);
-      }, 'Failed to rename field');
+        await projectFieldsApi.update(
+          field.id,
+          field.field_type === 'number' ? { name, decimals: decimalsFromChoice(editDecimals) } : { name }
+        );
+        setEditingFieldId(null);
+      }, 'Failed to update field');
     });
 
-  const handleRenameKeyDown = (e: KeyboardEvent<HTMLInputElement>, field: ProjectField) => {
-    if (e.key === 'Enter') {
+  const handleEditKeyDown = (e: KeyboardEvent<HTMLElement>, field: ProjectField) => {
+    if (e.key === 'Enter' && e.currentTarget instanceof HTMLInputElement) {
       e.preventDefault();
-      void handleRename(field);
+      void handleSaveField(field);
     } else if (e.key === 'Escape') {
-      // Cancel the rename without closing the Settings hub
+      // Cancel the edit without closing the Settings hub
       e.stopPropagation();
-      setRenamingFieldId(null);
+      setEditingFieldId(null);
     }
   };
 
@@ -433,6 +515,13 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                 setLabels((prev) => ({ ...prev, [key]: value }));
               }}
               onShownChange={(shown) => toggleShown(key, shown)}
+              {...(key === 'volume' && {
+                format: volumeFormat,
+                onFormatChange: (value: string) => {
+                  setBuiltInSuccess(null);
+                  setVolumeFormat(value);
+                },
+              })}
             />
           ))}
         </div>
@@ -459,7 +548,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
         ) : (
           <div className={styles.list}>
             {fields.map((field) => {
-              const isRenaming = renamingFieldId === field.id;
+              const isEditing = editingFieldId === field.id;
               const isExpanded = expandedFieldId === field.id;
               const dropdown = isDropdownField(field);
               return (
@@ -467,19 +556,19 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                   key={field.id}
                   className={`${styles.item} ${fieldDrag.rowClass(field.id)}`}
                   data-testid={`field-${field.id}`}
-                  {...fieldDrag.rowProps(field.id, !isRenaming && !isExpanded)}
+                  {...fieldDrag.rowProps(field.id, !isEditing && !isExpanded)}
                 >
                   <div className={styles.mainRow}>
                     <span className={styles.dragHandle} aria-hidden="true">
                       <Icon icon={DragHandleIcon} size={16} />
                     </span>
                     <div className={styles.name}>
-                      {isRenaming ? (
+                      {isEditing ? (
                         <Input
                           className={styles.renameInput}
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onKeyDown={(e) => handleRenameKeyDown(e, field)}
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => handleEditKeyDown(e, field)}
                           aria-label="Field name"
                           maxLength={100}
                           autoFocus
@@ -488,21 +577,21 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                         <span>{field.name}</span>
                       )}
                     </div>
-                    <span className={styles.typeBadge}>{FIELD_TYPE_LABELS[field.field_type]}</span>
+                    <span className={styles.typeBadge}>{typeBadgeText(field)}</span>
                     {dropdown && (
                       <span className={styles.meta}>
                         {field.options.length} item{field.options.length === 1 ? '' : 's'}
                       </span>
                     )}
                     <div className={styles.actions}>
-                      {isRenaming ? (
+                      {isEditing ? (
                         <>
-                          <Button variant="secondary" onClick={() => setRenamingFieldId(null)}>
+                          <Button variant="secondary" onClick={() => setEditingFieldId(null)}>
                             Cancel
                           </Button>
                           <Button
-                            onClick={() => void handleRename(field)}
-                            disabled={!renameValue.trim() || editSave.isSubmitting}
+                            onClick={() => void handleSaveField(field)}
+                            disabled={!editName.trim() || editSave.isSubmitting}
                           >
                             Save
                           </Button>
@@ -524,9 +613,9 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           <button
                             type="button"
                             className={styles.iconBtn}
-                            onClick={() => startRename(field)}
-                            title="Rename"
-                            aria-label={`Rename ${field.name}`}
+                            onClick={() => startEditing(field)}
+                            title={field.field_type === 'number' ? 'Edit name and format' : 'Edit name'}
+                            aria-label={`Edit ${field.name}`}
                           >
                             <Icon icon={EditIcon} size={15} />
                           </button>
@@ -543,6 +632,22 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                       </button>
                     </div>
                   </div>
+                  {isEditing && field.field_type === 'number' && (
+                    <div className={styles.formatEdit}>
+                      <Select
+                        className={styles.format}
+                        label="Format"
+                        value={editDecimals}
+                        options={FORMAT_OPTIONS}
+                        onChange={(e) => setEditDecimals(e.target.value)}
+                        onKeyDown={(e) => handleEditKeyDown(e, field)}
+                        aria-label={`Format of ${field.name}`}
+                      />
+                      <p className={styles.hint} aria-live="polite">
+                        {formatPreview(decimalsFromChoice(editDecimals), true)}
+                      </p>
+                    </div>
+                  )}
                   {isExpanded && dropdown && (
                     <ItemsEditor
                       field={field}
@@ -591,6 +696,15 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
               onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
               aria-label="Type"
             />
+            {newFieldType === 'number' && (
+              <Select
+                className={styles.format}
+                label="Format"
+                value={newFieldDecimals}
+                options={FORMAT_OPTIONS}
+                onChange={(e) => setNewFieldDecimals(e.target.value)}
+              />
+            )}
             <Button
               type="submit"
               icon={<Icon icon={PlusIcon} />}
@@ -600,6 +714,11 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
               Add field
             </Button>
           </div>
+          {newFieldType === 'number' && (
+            <p className={styles.hint} aria-live="polite">
+              {formatPreview(decimalsFromChoice(newFieldDecimals), false)}
+            </p>
+          )}
         </form>
       </section>
     </div>
@@ -618,9 +737,22 @@ interface BuiltInRowProps {
   disabled: boolean;
   onLabelChange: (label: string) => void;
   onShownChange: (shown: boolean) => void;
+  /** A number field's format (a FORMAT_OPTIONS choice): the picker shows only when passed (Volume) */
+  format?: string;
+  onFormatChange?: (format: string) => void;
 }
 
-function BuiltInRow({ fieldKey, defaultLabel, label, shown, disabled, onLabelChange, onShownChange }: BuiltInRowProps) {
+function BuiltInRow({
+  fieldKey,
+  defaultLabel,
+  label,
+  shown,
+  disabled,
+  onLabelChange,
+  onShownChange,
+  format,
+  onFormatChange,
+}: BuiltInRowProps) {
   const hintId = useId();
   const locked = fieldKey === 'confirmed';
   return (
@@ -635,6 +767,17 @@ function BuiltInRow({ fieldKey, defaultLabel, label, shown, disabled, onLabelCha
         maxLength={MAX_FIELD_LABEL_LENGTH}
         disabled={disabled}
       />
+      {format !== undefined && onFormatChange && (
+        <Select
+          className={styles.format}
+          label="Format"
+          value={format}
+          options={FORMAT_OPTIONS}
+          onChange={(e) => onFormatChange(e.target.value)}
+          aria-label={`Format of ${defaultLabel}`}
+          disabled={disabled}
+        />
+      )}
       <ToggleSwitch
         checked={locked || shown}
         onChange={onShownChange}
@@ -646,6 +789,11 @@ function BuiltInRow({ fieldKey, defaultLabel, label, shown, disabled, onLabelCha
       {locked && (
         <span id={hintId} className={styles.builtInHint}>
           {CONFIRMED_HINT}
+        </span>
+      )}
+      {format !== undefined && onFormatChange && (
+        <span className={styles.builtInHint} aria-live="polite">
+          {formatPreview(decimalsFromChoice(format), true)}
         </span>
       )}
     </div>

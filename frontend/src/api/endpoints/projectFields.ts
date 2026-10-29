@@ -14,11 +14,17 @@ import type { ProjectField, ProjectFieldOption, ProjectFieldType } from '@/types
 export interface ProjectFieldCreate {
   name: string;
   field_type: ProjectFieldType;
+  /** Number fields only (422 otherwise): 0-3, null = as typed. */
+  decimals?: number | null;
 }
 
-/** The type of a field never changes (422); only the name does. */
+/**
+ * The type of a field never changes (422); the name and a number field's
+ * decimals do. `decimals: null` resets to "as typed" (sent = applied).
+ */
 export interface ProjectFieldUpdate {
   name?: string;
+  decimals?: number | null;
 }
 
 export interface ProjectFieldOptionCreate {
