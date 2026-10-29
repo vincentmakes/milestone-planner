@@ -79,12 +79,15 @@ export default defineConfig({
       // and sankey charts, rounded down from lines 93.54, statements 92.54,
       // functions 94.13, branches 85.11; with their builder rules, from
       // lines 93.55, statements 92.55, functions 94.13, branches 85.14.
-      // Each floor is the higher of the two lines (rebase of 2.2.0).
+      // Each floor was the higher of the two lines at the rebase onto 2.1.0;
+      // then raised just under the merged totals (lines 94.08, statements
+      // 93.1, functions 94.4, branches 86.19) of 2.3.0, which the rebase
+      // onto 2.2.0 measured again unchanged.
       thresholds: {
-        lines: 93.7,
-        statements: 92.7,
-        functions: 94.1,
-        branches: 85.5,
+        lines: 93.8,
+        statements: 92.8,
+        functions: 94.2,
+        branches: 85.9,
       },
     },
   },
