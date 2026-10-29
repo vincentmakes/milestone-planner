@@ -326,7 +326,7 @@ frontend/
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
                        #   roles, pendingBookings (+ assignmentLock), myAssignments, relativeTime, themeColors, colorSwatches, projectLevels,
                        #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel /
-                       #   builtInFieldLabel / isBuiltInFieldHidden)
+                       #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals)
                        #   (criticalPath/diffProjects/dependencies/completionStatus live in
                        #   components/gantt/utils/)
     styles/            # global.css, variables.css (design tokens), themes/themes.css,

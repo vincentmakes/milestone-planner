@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   FIELD_TYPE_LABELS,
+  acceptsNumberText,
   draftFromValue,
   fieldNumberInputText,
   formatFieldNumber,
@@ -187,5 +188,40 @@ describe('number decimals', () => {
     // Without decimals, as typed.
     expect(draftFromValue(num, 0.125)).toBe('0.125');
     expect(valueFromDraft(num, '0.125')).toBe(0.125);
+  });
+});
+
+// The number input's typing gate: [text, decimals, accepted].
+const TYPING_CASES: [string, number | null, boolean][] = [
+  ['', 1, true],
+  ['-', 1, true],
+  ['12', 1, true],
+  ['12.', 1, true],
+  ['12.3', 1, true],
+  ['-12.3', 1, true],
+  ['.5', 1, true],
+  ['12.34', 1, false],
+  ['1e5', 1, false],
+  ['1,5', 1, false],
+  ['+1', 1, false],
+  ['12', 0, true],
+  ['-7', 0, true],
+  ['12.', 0, false],
+  ['12.3', 0, false],
+  ['12.34', 2, true],
+  ['12.345', 2, false],
+  ['0.125', 3, true],
+  ['0.1255', 3, false],
+  ['12.3456', null, true],
+  ['1e5', null, true],
+];
+
+describe('acceptsNumberText', () => {
+  it.each(TYPING_CASES)('takes %j at %s decimals: %s', (text, decimals, accepted) => {
+    expect(acceptsNumberText(text, decimals)).toBe(accepted);
+  });
+
+  it('treats undefined decimals as typed', () => {
+    expect(acceptsNumberText('1.23456', undefined)).toBe(true);
   });
 });

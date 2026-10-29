@@ -118,6 +118,19 @@ export function fieldNumberInputText(value: number, decimals: number | null | un
   return Math.abs(rounded) >= 1e21 ? String(rounded) : rounded.toFixed(decimals);
 }
 
+/**
+ * Whether the number input may take `text` as typed: always as typed (null
+ * decimals); else digits with at most `decimals` of them after the dot -- so
+ * at 1, `12.`, `12.3`, `-` and `''` pass while `12.34` and `1e5` do not. At 0
+ * no dot at all. The gate of `NumberFieldInput`: a refused keystroke never
+ * lands, and blur pads to the format ({@link fieldNumberInputText}).
+ */
+export function acceptsNumberText(text: string, decimals: number | null | undefined): boolean {
+  if (decimals == null) return true;
+  const pattern = decimals === 0 ? /^-?\d*$/ : new RegExp(`^-?\\d*(\\.\\d{0,${decimals}})?$`);
+  return pattern.test(text);
+}
+
 /** Human name of a field type, for badges and the type picker. */
 export const FIELD_TYPE_LABELS: Record<ProjectFieldType, string> = {
   text: 'Text',

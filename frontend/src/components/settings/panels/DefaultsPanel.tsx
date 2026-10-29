@@ -38,8 +38,11 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import styles from './DefaultsPanel.module.css';
 
-/** The settings of this panel (the project field labels live in Settings → Project fields) */
-type DefaultsKey = Exclude<DefaultedSettingKey, 'project_field_labels' | 'project_fields_hidden'>;
+/** The settings of this panel (the built-in project field settings live in Settings → Project fields) */
+type DefaultsKey = Exclude<
+  DefaultedSettingKey,
+  'project_field_labels' | 'project_fields_hidden' | 'volume_decimals'
+>;
 
 /** The seven settings as the backend stores them */
 type Values = Record<DefaultsKey, string>;

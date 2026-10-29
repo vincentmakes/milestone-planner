@@ -20,6 +20,8 @@ from app.services.instance_settings import (
     flag_enabled,
     get_value,
     is_enabled,
+    volume_decimals,
+    volume_decimals_from,
     with_defaults,
 )
 from app.services.permissions import DISABLEABLE_KEYS, PERMISSION_KEYS, PermissionSet
@@ -35,6 +37,7 @@ DEFAULTS = {
     "gantt_completion_badges": "true",
     "project_field_labels": "{}",
     "project_fields_hidden": "[]",
+    "volume_decimals": "1",
 }
 
 BOOLEAN_KEYS = [
@@ -254,6 +257,51 @@ def test_hidden_fields_reject_confirmed_and_unknown_keys(raw):
         canonicalise("project_fields_hidden", raw)
 
 
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [("any", "any"), (" ANY ", "any"), ("0", "0"), ("1", "1"), (" 2", "2"), ("3", "3")],
+)
+def test_volume_decimals_choices(raw, canonical):
+    assert canonicalise("volume_decimals", raw) == canonical
+
+
+@pytest.mark.parametrize("raw", ["", "4", "-1", "1.0", "none", "null", "[1]"])
+def test_volume_decimals_rejects_other_values(raw):
+    with pytest.raises(ValueError):
+        canonicalise("volume_decimals", raw)
+
+
+@pytest.mark.parametrize(
+    ("stored", "decimals"),
+    [
+        (None, 1),  # no row: the default
+        ("", 1),
+        ("any", None),  # as typed
+        ("0", 0),
+        ("1", 1),
+        ("2", 2),
+        ("3", 3),
+        # Rows written before validation never raise: they read as the default.
+        ("4", 1),
+        ("ANY", 1),
+        ("1.5", 1),
+        ("two", 1),
+    ],
+)
+def test_volume_decimals_from_never_raises(stored, decimals):
+    assert volume_decimals_from(stored) == decimals
+
+
+@pytest.mark.parametrize(("stored", "decimals"), [(None, 1), ("any", None), ("3", 3)])
+async def test_volume_decimals_reads_the_setting(stored, decimals):
+    db = AsyncMock()
+    db.execute.return_value = scalar_result(stored)
+
+    assert await volume_decimals(db) == decimals
+    sql = str(db.execute.await_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "settings.key = 'volume_decimals'" in sql
+
+
 # ---------------------------------------------------------------------------
 # Unknown keys, defaults merge
 # ---------------------------------------------------------------------------
@@ -328,7 +376,11 @@ async def test_is_enabled_defaults_to_on(stored, enabled):
     assert await is_enabled(db, "nager_enabled") is enabled
 
 
-def test_project_field_setting_keys_are_the_two_known_field_settings():
+def test_project_field_setting_keys_are_the_three_known_field_settings():
     """The keys PUT /settings/{key} also opens to project_fields.manage."""
-    assert PROJECT_FIELD_SETTING_KEYS == {"project_field_labels", "project_fields_hidden"}
+    assert PROJECT_FIELD_SETTING_KEYS == {
+        "project_field_labels",
+        "project_fields_hidden",
+        "volume_decimals",
+    }
     assert PROJECT_FIELD_SETTING_KEYS <= KNOWN_SETTINGS.keys()

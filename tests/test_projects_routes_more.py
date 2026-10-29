@@ -548,7 +548,12 @@ async def test_update_project_every_field(authed_client, mock_db_session, broadc
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
     project = make_project(1, pm_id=7)
-    mock_db_session.execute.side_effect = [scalar_result(project), scalar_result(8)]
+    # The project, the new PM, then the volume_decimals setting (no row: 1).
+    mock_db_session.execute.side_effect = [
+        scalar_result(project),
+        scalar_result(8),
+        scalar_result(None),
+    ]
 
     with patch(
         "app.routers.projects.validate_project_tags", AsyncMock(return_value=["T"])
@@ -582,6 +587,84 @@ async def test_update_project_every_field(authed_client, mock_db_session, broadc
     assert project.tags == ["T"]
     validate.assert_awaited_once_with(mock_db_session, 1, [], [])
     assert broadcast.await_args.kwargs["summary"] == "Renamed"
+
+
+# Volume is kept to its Format (volume_decimals): no row = 1 decimal, "any" = as typed.
+VOLUME_ROUNDING = [(None, 12.75, 12.8), ("any", 12.75, 12.75), ("0", 12.75, 13.0), ("2", 7, 7.0)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("setting", "sent", "stored"), VOLUME_ROUNDING)
+async def test_create_project_rounds_the_volume_to_its_format(
+    authed_client, mock_db_session, broadcast, setting, sent, stored
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    mock_db_session.execute.side_effect = [
+        scalar_result(1),
+        scalar_result(7),
+        scalar_result(setting),
+    ]
+
+    with patch("app.routers.projects.validate_project_tags", AsyncMock(return_value=[])):
+        response = await client.post("/api/projects", json=_project_body(volume=sent, phases=[]))
+
+    assert response.status_code == 200
+    project = mock_db_session.add.call_args_list[0].args[0]
+    assert project.volume == stored
+    assert "settings.key = 'volume_decimals'" in sql(mock_db_session, 2)
+
+
+@pytest.mark.asyncio
+async def test_create_project_without_volume_reads_no_setting(
+    authed_client, mock_db_session, broadcast
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result(1), scalar_result(7)]
+
+    with patch("app.routers.projects.validate_project_tags", AsyncMock(return_value=[])):
+        response = await client.post("/api/projects", json=_project_body(phases=[]))
+
+    assert response.status_code == 200
+    assert mock_db_session.add.call_args_list[0].args[0].volume is None
+    assert mock_db_session.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("setting", "sent", "stored"), VOLUME_ROUNDING)
+async def test_update_project_rounds_the_volume_to_its_format(
+    authed_client, mock_db_session, broadcast, setting, sent, stored
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    project = make_project(1, pm_id=7)
+    mock_db_session.execute.side_effect = [scalar_result(project), scalar_result(setting)]
+
+    response = await client.put("/api/projects/1", json={"volume": sent})
+
+    assert response.status_code == 200
+    assert project.volume == stored
+    assert "settings.key = 'volume_decimals'" in sql(mock_db_session, 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("setting", "sent"), [(None, 12.7), (None, 12.71), ("any", 12.699999809265137)]
+)
+async def test_update_project_keeps_a_stored_volume_reading_the_same(
+    authed_client, mock_db_session, broadcast, setting, sent
+):
+    """A REAL column hands 12.7 back as 12.699999809...: re-saving it is no change."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    project = make_project(1, pm_id=7, volume=12.699999809265137)
+    mock_db_session.execute.side_effect = [scalar_result(project), scalar_result(setting)]
+
+    response = await client.put("/api/projects/1", json={"volume": sent})
+
+    assert response.status_code == 200
+    assert project.volume == 12.699999809265137
 
 
 @pytest.mark.asyncio

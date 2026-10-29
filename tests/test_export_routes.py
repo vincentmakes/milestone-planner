@@ -24,6 +24,7 @@ from app.models.note import Note
 from app.models.project import Project
 from app.models.project_field import ProjectField, ProjectFieldSelection, ProjectFieldValue
 from app.models.rbac import ApprovalRequest
+from app.models.settings import Settings
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
 from app.models.tag import Tag
@@ -1120,6 +1121,28 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     comment = _sheet(wb, "Card comments")[0]
     assert comment[2] == "Alpha"
     assert comment[6:9] == ["Alice Martin", "Looks good @Bob", "12, 13"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("setting", "stored", "cell"),
+    [([], 12.75, 12.8), (["any"], 12.75, 12.75), (["0"], 12.75, 13), ([], None, None)],
+)
+async def test_site_workbook_rounds_the_volume_to_its_format(setting, stored, cell):
+    """The Projects sheet shows Volume as the dialog does (volume_decimals, default 1)."""
+    openpyxl = pytest.importorskip("openpyxl")
+    rows = _site_rows()
+    rows[Project][0].volume = stored
+    rows[Settings] = setting
+    db = _fake_site_db(rows)
+
+    content, _ = await build_site_export_workbook(db, 1)
+
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    (project_row,) = (r for r in _sheet(wb, "Projects") if r[0] == "Project")
+    assert project_row[12] == cell
+    # One read of the setting per export.
+    assert [s.column_descriptions[0].get("entity") for s in db.statements].count(Settings) == 1
 
 
 @pytest.mark.asyncio

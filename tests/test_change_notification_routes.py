@@ -489,9 +489,27 @@ async def test_a_project_put_echoing_every_field_notifies_nobody(
 ):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [scalar(_project())]
+    # The project, then the volume_decimals setting (ECHO sends the volume).
+    mock_db_session.execute.side_effect = [scalar(_project()), scalar(None)]
 
     response = await client.put("/api/projects/1", json=ECHO)
+
+    assert response.status_code == 200
+    assert only_call(change_intents)[1] == []
+
+
+async def test_echoing_a_float4_volume_notifies_nobody(
+    authed_client, mock_db_session, change_intents
+):
+    # A REAL column stores 12.7 as 12.699999809...; the dialog shows and sends 12.7.
+    client, set_user = authed_client
+    set_user(admin())
+    mock_db_session.execute.side_effect = [
+        scalar(_project(volume=12.699999809265137)),
+        scalar(None),
+    ]
+
+    response = await client.put("/api/projects/1", json={**ECHO, "volume": 12.7})
 
     assert response.status_code == 200
     assert only_call(change_intents)[1] == []
@@ -511,7 +529,7 @@ async def test_notes_and_sales_pm_never_notify(authed_client, mock_db_session, c
 async def test_a_real_project_change_tells_the_pm(authed_client, mock_db_session, change_intents):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [scalar(_project())]
+    mock_db_session.execute.side_effect = [scalar(_project()), scalar(None)]
 
     response = await client.put(
         "/api/projects/1",
@@ -544,7 +562,7 @@ async def test_handing_a_project_over_tells_the_old_and_the_new_pm(
 ):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [scalar(_project()), scalar(ANN)]
+    mock_db_session.execute.side_effect = [scalar(_project()), scalar(ANN), scalar(None)]
 
     response = await client.put("/api/projects/1", json={**ECHO, "pm_id": ANN})
 

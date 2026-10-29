@@ -5,8 +5,9 @@
  * - Built-in fields: Customer, Sales PM, Volume and Confirmed keep their
  *   place in the dialog; each can get another label instance-wide, and all
  *   but Confirmed can be hidden (Confirmed drives the project status, the
- *   default ordering and the counts). Stored in the settings
- *   `project_field_labels` / `project_fields_hidden`.
+ *   default ordering and the counts); Volume has a Format like a number
+ *   field (default 1.0). Stored in the settings `project_field_labels` /
+ *   `project_fields_hidden` / `volume_decimals`.
  * - Custom fields: text, number, switch, dropdown and multi-select dropdown,
  *   in a drag-reorderable list. The type is fixed at creation. A number
  *   field has a Format, picked as the pattern of 1 (As typed / 1 / 1.0 /
@@ -43,6 +44,8 @@ import {
   hiddenFieldsValue,
   parseFieldLabels,
   parseHiddenFields,
+  volumeDecimals,
+  volumeDecimalsValue,
 } from '@/utils/instanceSettings';
 import type { BuiltInFieldKey } from '@/utils/instanceSettings';
 import {
@@ -171,6 +174,9 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const [savedHidden, setSavedHidden] = useState<string[]>([]);
   const [labels, setLabels] = useState<Labels>({});
   const [hidden, setHidden] = useState<string[]>([]);
+  // Volume's format, as a FORMAT_OPTIONS choice ('' = as typed)
+  const [savedVolumeFormat, setSavedVolumeFormat] = useState(choiceFromDecimals(1));
+  const [volumeFormat, setVolumeFormat] = useState(choiceFromDecimals(1));
   const [builtInSuccess, setBuiltInSuccess] = useState<string | null>(null);
 
   // Custom fields
@@ -218,6 +224,9 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
         setLabels(initialLabels);
         setSavedHidden(initialHidden);
         setHidden(initialHidden);
+        const initialVolumeFormat = choiceFromDecimals(volumeDecimals(settings));
+        setSavedVolumeFormat(initialVolumeFormat);
+        setVolumeFormat(initialVolumeFormat);
       }),
     ])
       .catch((err) => {
@@ -235,7 +244,10 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
 
   const labelsValue = fieldLabelsValue(labels);
   const hiddenValue = hiddenFieldsValue(hidden);
-  const builtInDirty = labelsValue !== fieldLabelsValue(savedLabels) || hiddenValue !== hiddenFieldsValue(savedHidden);
+  const builtInDirty =
+    labelsValue !== fieldLabelsValue(savedLabels) ||
+    hiddenValue !== hiddenFieldsValue(savedHidden) ||
+    volumeFormat !== savedVolumeFormat;
 
   const editedField = editingFieldId !== null ? fields.find((f) => f.id === editingFieldId) : undefined;
   const fieldEditDirty =
@@ -296,6 +308,12 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
           saved.project_fields_hidden = hiddenValue;
           setSavedHidden(parseHiddenFields(hiddenValue));
         }
+        if (volumeFormat !== savedVolumeFormat) {
+          const value = volumeDecimalsValue(decimalsFromChoice(volumeFormat));
+          await updateSetting('volume_decimals', value);
+          saved.volume_decimals = value;
+          setSavedVolumeFormat(volumeFormat);
+        }
         setBuiltInSuccess('Built-in fields saved');
       } catch (err) {
         setError(errorMessage(err, 'Failed to save the built-in fields'));
@@ -310,6 +328,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const handleResetBuiltIn = () => {
     setLabels(savedLabels);
     setHidden(savedHidden);
+    setVolumeFormat(savedVolumeFormat);
     setBuiltInSuccess(null);
   };
 
@@ -496,6 +515,13 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                 setLabels((prev) => ({ ...prev, [key]: value }));
               }}
               onShownChange={(shown) => toggleShown(key, shown)}
+              {...(key === 'volume' && {
+                format: volumeFormat,
+                onFormatChange: (value: string) => {
+                  setBuiltInSuccess(null);
+                  setVolumeFormat(value);
+                },
+              })}
             />
           ))}
         </div>
@@ -711,9 +737,22 @@ interface BuiltInRowProps {
   disabled: boolean;
   onLabelChange: (label: string) => void;
   onShownChange: (shown: boolean) => void;
+  /** A number field's format (a FORMAT_OPTIONS choice): the picker shows only when passed (Volume) */
+  format?: string;
+  onFormatChange?: (format: string) => void;
 }
 
-function BuiltInRow({ fieldKey, defaultLabel, label, shown, disabled, onLabelChange, onShownChange }: BuiltInRowProps) {
+function BuiltInRow({
+  fieldKey,
+  defaultLabel,
+  label,
+  shown,
+  disabled,
+  onLabelChange,
+  onShownChange,
+  format,
+  onFormatChange,
+}: BuiltInRowProps) {
   const hintId = useId();
   const locked = fieldKey === 'confirmed';
   return (
@@ -728,6 +767,17 @@ function BuiltInRow({ fieldKey, defaultLabel, label, shown, disabled, onLabelCha
         maxLength={MAX_FIELD_LABEL_LENGTH}
         disabled={disabled}
       />
+      {format !== undefined && onFormatChange && (
+        <Select
+          className={styles.format}
+          label="Format"
+          value={format}
+          options={FORMAT_OPTIONS}
+          onChange={(e) => onFormatChange(e.target.value)}
+          aria-label={`Format of ${defaultLabel}`}
+          disabled={disabled}
+        />
+      )}
       <ToggleSwitch
         checked={locked || shown}
         onChange={onShownChange}
@@ -739,6 +789,11 @@ function BuiltInRow({ fieldKey, defaultLabel, label, shown, disabled, onLabelCha
       {locked && (
         <span id={hintId} className={styles.builtInHint}>
           {CONFIRMED_HINT}
+        </span>
+      )}
+      {format !== undefined && onFormatChange && (
+        <span className={styles.builtInHint} aria-live="polite">
+          {formatPreview(decimalsFromChoice(format), true)}
         </span>
       )}
     </div>

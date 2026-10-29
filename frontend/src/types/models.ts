@@ -614,6 +614,8 @@ export interface InstanceSettings {
   project_field_labels?: string;
   /** Compact JSON array of the hidden built-in project fields (customer, sales_pm, volume) */
   project_fields_hidden?: string;
+  /** Decimals the built-in Volume keeps: `any` (as typed) or `0`–`3` */
+  volume_decimals?: string;
   [key: string]: string | undefined;
 }
 

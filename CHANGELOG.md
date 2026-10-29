@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Number project fields can keep a set number of decimals: give each number field a Format (1, 1.0, 1.00, 1.000, or As typed) in Settings → Project fields, with a preview of how 12.345 is saved; new values are rounded half up when saved, values entered before are shown (and exported) rounded but never changed, and the site export lists each field's decimals
 - Administrators can hide the completion badges (40%) of the Gantt rows for everyone with **Show completion badges in the Gantt** in Settings → Features & defaults; the bars stay filled, and a phase's or subphase's progress can still be set from its right-click menu with the new **Set progress…**
 - Sites can be deleted from Settings → Sites: the bin on a site's row asks you to type the site's name and says what goes with it; the last active site cannot be deleted, and everyone signed in moves off a deleted site straight away
+- The built-in Volume field has a Format too (one decimal by default), set in Settings → Project fields
 
 ### Changed
 
@@ -22,10 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Cross-Site view shows the real project names and customers of every site you can see, not only of your current site
 - The Cross-Site entry no longer appears in the sidebar when you can see only one site, instead of being shown disabled
 - A new booking on a phase or subphase — from Assign Staff, Assign me…, Join this card or a Kanban assignee — now starts unpinned with the phase's dates as its own, so it is clipped, never stretched, when the phase changes; pin it (or turn on Follow the phase dates) to make it follow the phase. Picking someone already on the phase still places their second booking automatically; a person dropped from the panel onto a phase still follows the phase
+- A number field with a format no longer accepts more decimals than it keeps while you type
 
 ### Removed
 
 - The "Confidential Project" masking of other sites' projects in the Cross-Site view (and the "[External Project]" rows of the project list API); sites you cannot see still stay out of the view entirely, so site visibility keeps protecting them
+
+### Fixed
+
+- Volume lost its decimals when saved (12.7 became 12)
 
 ## [2.0.0] - 2026-10-23
 

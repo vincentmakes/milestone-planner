@@ -688,10 +688,11 @@ Project fields are what a project holds besides its name, dates, manager and tea
 
 - **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name replaces the default everywhere the field is named, for the whole workspace: in the project dialog, the Gantt chart's Shift-hover tooltip and the Archived view (*No Client*). The defaults shown here are the names used everywhere else too.
 - **Shown** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again.
+- **Format** (Volume only) — Volume is a number and has a **Format** like a [number field](#custom-fields), **1.0** (one decimal) by default, with the same choices and preview line. The project dialog shows Volume in that format and refuses a decimal beyond it; new values are rounded half up when saved, and the site export shows Volume rounded. Volumes saved before are not changed.
 
 **Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts.
 
-Click **Save Changes** to apply the labels and switches; **Reset** discards the edits.
+Click **Save Changes** to apply the labels, switches and Volume's format; **Reset** discards the edits.
 
 ### Custom Fields
 
@@ -707,7 +708,7 @@ In the add row under the **Custom fields** list, type the new field's name, pick
 
 - **Order** — Drag fields to change the order of the project dialog, the [Filter](gantt-charts.md#filtering-projects) and the **Group by** / **Colour by** lists.
 - **Edit** — Click the pencil to rename the field (and, on a number field, change its **Format**), then **Save**; **Cancel** or Escape discards the edit. A field's type cannot be changed after it is created.
-- **Format** — A number field's **Format** is picked in the add row while **Number** is chosen, or in its edit form. It is shown as the pattern of the number 1: **As typed** keeps every decimal entered, **1**, **1.0**, **1.00** and **1.000** keep none to three. A line under the picker previews the choice: "Values are saved as typed.", or for **1.0** "12.345 is saved and shown as 12.3." — in the edit form followed by "Existing values are not changed, only shown rounded." New values are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at **1.00**), and the project dialog shows the field in that format. Values saved before are not changed; they are shown — and exported — rounded. The field's type pill in the list names its format, e.g. **Number · 1.0** (plain **Number** for As typed).
+- **Format** — A number field's **Format** is picked in the add row while **Number** is chosen, or in its edit form. It is shown as the pattern of the number 1: **As typed** keeps every decimal entered, **1**, **1.0**, **1.00** and **1.000** keep none to three. A line under the picker previews the choice: "Values are saved as typed.", or for **1.0** "12.345 is saved and shown as 12.3." — in the edit form followed by "Existing values are not changed, only shown rounded." New values are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at **1.00**), and the project dialog shows the field in that format: it does not let you type more decimals than the format keeps (12.34 cannot be entered at **1.0**) and completes the missing ones when you leave the box (12 → 12.0). Values saved before are not changed; they are shown — and exported — rounded. The field's type pill in the list names its format, e.g. **Number · 1.0** (plain **Number** for As typed).
 - **Delete** — Click the bin; the confirmation says how many projects hold a value, and every value of the field is removed.
 
 No field is required, and custom fields cannot be hidden — delete one you no longer need.

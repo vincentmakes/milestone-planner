@@ -304,7 +304,8 @@
 
 /* A number field's Format picker: its visible label beside the select, in one line */
 .addRow .format,
-.formatEdit .format {
+.formatEdit .format,
+.builtInRow .format {
   flex: 0 0 auto;
   flex-direction: row;
   align-items: center;

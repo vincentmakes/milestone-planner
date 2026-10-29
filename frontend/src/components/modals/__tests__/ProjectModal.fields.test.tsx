@@ -6,6 +6,8 @@
  *   []), and the store shows them at once;
  * - dropdowns offer only the items applying to the project's site and teams,
  *   and items no longer applying are dropped on save;
+ * - a number with a format refuses a keystroke adding decimals past it and
+ *   pads on blur; Volume has one too (volume_decimals, default 1.0);
  * - built-in fields take their custom label; a hidden one is neither shown
  *   nor sent (Confirmed is never hidden);
  * - "Manage fields…" (project_fields.manage) leads to Settings → Project fields.
@@ -241,7 +243,7 @@ describe('ProjectModal number field decimals', () => {
       projectFields: [makeProjectField({ id: 6, name: 'Cost', field_type: 'number', sort_order: 5, decimals })],
     });
 
-  it('steps by the last kept decimal and reformats on blur, half-up', async () => {
+  it('steps by the last kept decimal, refuses a third decimal and pads on blur', async () => {
     withCost(2);
     act(() => useUIStore.getState().openProjectModal({ ...project, field_values: { 6: 0.125 } }));
     render(<ProjectModal />);
@@ -252,9 +254,9 @@ describe('ProjectModal number field decimals', () => {
     expect(cost).toHaveAttribute('step', '0.01');
     expect(cost).toHaveAttribute('inputmode', 'decimal');
 
+    // More decimals than the format keeps never land (typed or pasted).
     fireEvent.change(cost, { target: { value: '1.005' } });
-    fireEvent.blur(cost);
-    expect(cost).toHaveDisplayValue('1.01');
+    expect(cost).toHaveDisplayValue('0.13');
     fireEvent.change(cost, { target: { value: '12.5' } });
     fireEvent.blur(cost);
     expect(cost).toHaveDisplayValue('12.50');
@@ -285,6 +287,29 @@ describe('ProjectModal number field decimals', () => {
     expect(cost).toHaveDisplayValue('1.005');
   });
 
+  it('refuses a keystroke adding more decimals than the format keeps', () => {
+    withCost(1);
+    act(() => useUIStore.getState().openProjectModal({ ...project, field_values: {} }));
+    render(<ProjectModal />);
+
+    const cost = screen.getByLabelText('Cost');
+    fireEvent.change(cost, { target: { value: '12.3' } });
+    fireEvent.change(cost, { target: { value: '12.34' } });
+    expect(cost).toHaveDisplayValue('12.3');
+    fireEvent.change(cost, { target: { value: '1e5' } });
+    expect(cost).toHaveDisplayValue('12.3');
+  });
+
+  it('takes any decimals as typed', () => {
+    withCost(null);
+    act(() => useUIStore.getState().openProjectModal({ ...project, field_values: {} }));
+    render(<ProjectModal />);
+
+    const cost = screen.getByLabelText('Cost');
+    fireEvent.change(cost, { target: { value: '12.34' } });
+    expect(cost).toHaveDisplayValue('12.34');
+  });
+
   it('leaves an empty or unparsable number alone on blur', () => {
     withCost(0);
     act(() => useUIStore.getState().openProjectModal({ ...project, field_values: {} }));
@@ -294,6 +319,79 @@ describe('ProjectModal number field decimals', () => {
     fireEvent.blur(cost);
     expect(cost).toHaveDisplayValue('');
     expect(cost).toHaveAttribute('step', '1');
+  });
+});
+
+describe('ProjectModal Volume format', () => {
+  it('shows a stored volume in its format, refuses extra decimals and pads on blur', async () => {
+    act(() => useUIStore.getState().openProjectModal(project));
+    render(<ProjectModal />);
+
+    const volume = screen.getByLabelText('Volume');
+    // Default format 1.0
+    expect(volume).toHaveDisplayValue('1000.0');
+    expect(volume).toHaveAttribute('step', '0.1');
+    fireEvent.change(volume, { target: { value: '12' } });
+    fireEvent.blur(volume);
+    expect(volume).toHaveDisplayValue('12.0');
+    fireEvent.change(volume, { target: { value: '12.7' } });
+    fireEvent.change(volume, { target: { value: '12.75' } });
+    expect(volume).toHaveDisplayValue('12.7');
+    await save();
+
+    // No longer truncated to a whole number
+    expect(sent(updateProject).volume).toBe(12.7);
+  });
+
+  it('sends the volume as typed with the As typed format', async () => {
+    useAppStore.setState({ instanceSettings: { volume_decimals: 'any' } });
+    act(() => useUIStore.getState().openProjectModal(project));
+    render(<ProjectModal />);
+
+    const volume = screen.getByLabelText('Volume');
+    expect(volume).toHaveDisplayValue('1000');
+    fireEvent.change(volume, { target: { value: '12.75' } });
+    await save();
+
+    expect(sent(updateProject).volume).toBe(12.75);
+  });
+
+  it('shows a stored volume rounded to the format, and sends it so', async () => {
+    useAppStore.setState({ instanceSettings: { volume_decimals: '0' } });
+    act(() => useUIStore.getState().openProjectModal({ ...project, volume: 12.5 }));
+    render(<ProjectModal />);
+
+    expect(screen.getByLabelText('Volume')).toHaveDisplayValue('13');
+    await save();
+    expect(sent(updateProject).volume).toBe(13);
+  });
+
+  it('sends an emptied volume as null', async () => {
+    act(() => useUIStore.getState().openProjectModal(project));
+    render(<ProjectModal />);
+
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '' } });
+    await save();
+    expect(sent(updateProject).volume).toBeNull();
+  });
+
+  it('starts a new project without a volume', async () => {
+    act(() => useUIStore.getState().openProjectModal());
+    render(<ProjectModal />);
+
+    expect(screen.getByLabelText('Volume')).toHaveDisplayValue('');
+  });
+
+  it('shows a volume that is not a finite number in place and sends nothing', async () => {
+    // The input itself only yields numbers; a stored non-finite value is the way in.
+    useAppStore.setState({ instanceSettings: { project_field_labels: '{"volume":"Amount"}' } });
+    act(() => useUIStore.getState().openProjectModal({ ...project, volume: Infinity }));
+    render(<ProjectModal />);
+
+    await save();
+
+    expect(screen.getByText('Invalid value for "Amount"')).toBeInTheDocument();
+    expect(updateProject).not.toHaveBeenCalled();
   });
 });
 

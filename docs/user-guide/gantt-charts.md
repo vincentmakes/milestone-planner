@@ -104,7 +104,7 @@ Besides its name, dates and manager, a project carries **fields**. Four are buil
 
 - **Dropdown** — pick one item (for example *Project type* → Internal / Customer), or several items in a multi-select dropdown such as *Area*: open the dropdown and tick the items (click a row, or move with the arrow keys and press Space); it stays open until you click elsewhere or press Escape, the box lists the chosen items, and **Clear** unticks them all
 - **Text** — up to 2,000 characters
-- **Number** — any number, shown as typed
+- **Number** — a number in the field's **Format** (for example one decimal): the box refuses a decimal beyond it and completes the missing ones when you leave it (12 → 12.0); with **As typed**, any number. **Volume** works the same way, with one decimal unless an administrator changed its format
 - **Switch** — on or off
 
 No field is required. A dropdown item can be limited to some sites and to some [teams](settings.md#teams) of a site, so the dialog only offers the items that apply to the project's site and teams; unticking a project's last matching team removes such an item from the project when you save. People who can manage project fields (admins by default) see a **Manage fields…** link that opens Settings → Project fields.

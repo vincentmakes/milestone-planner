@@ -50,6 +50,7 @@ export const INSTANCE_SETTING_DEFAULTS = {
   gantt_completion_badges: 'true',
   project_field_labels: '{}',
   project_fields_hidden: '[]',
+  volume_decimals: '1',
 } as const;
 
 export type DefaultedSettingKey = keyof typeof INSTANCE_SETTING_DEFAULTS;

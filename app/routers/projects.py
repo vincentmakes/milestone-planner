@@ -41,7 +41,7 @@ from app.schemas.project import (
     SubphaseReorderRequest,
     SubphaseUpdate,
 )
-from app.services import approvals, change_notifications
+from app.services import approvals, change_notifications, instance_settings
 from app.services.booking_segments import effective_dates
 from app.services.card_status import apply_completion, apply_status
 from app.services.date_range import ensure_date_order
@@ -57,6 +57,7 @@ from app.services.project_field_rules import (
     apply_field_values,
     current_selection_ids,
     load_project_field_values,
+    round_field_number,
     validate_field_values,
 )
 from app.services.site_access import (
@@ -812,6 +813,11 @@ async def create_project(
         db, data.site_id, team_ids_of(teams), data.field_values or {}
     )
 
+    # Volume is kept to its Format (the volume_decimals setting), like a number field.
+    volume = data.volume
+    if volume is not None:
+        volume = round_field_number(volume, await instance_settings.volume_decimals(db))
+
     project = Project(
         name=data.name,
         site_id=data.site_id,
@@ -819,7 +825,7 @@ async def create_project(
         pm_id=data.pm_id,
         sales_pm=data.sales_pm,
         confirmed=1 if data.confirmed else 0,
-        volume=data.volume,
+        volume=volume,
         start_date=data.start_date,
         end_date=data.end_date,
         notes=data.notes,
@@ -937,7 +943,13 @@ async def update_project(
     if data.confirmed is not None:
         project.confirmed = 1 if data.confirmed else 0
     if data.volume is not None:
-        project.volume = data.volume
+        # Rounded to Volume's format. A stored value that already reads the
+        # same is kept: tenants provisioned with a REAL column hand back 12.7
+        # as 12.699999809..., and every dialog save would otherwise be a change.
+        decimals = await instance_settings.volume_decimals(db)
+        volume = round_field_number(data.volume, decimals)
+        if project.volume is None or round_field_number(project.volume, decimals) != volume:
+            project.volume = volume
     if data.start_date is not None:
         project.start_date = data.start_date
     if data.end_date is not None:

@@ -243,6 +243,7 @@ describe('settings endpoints', () => {
       gantt_completion_badges: 'false',
       project_field_labels: '{"customer":"Client"}',
       project_fields_hidden: '["volume"]',
+      volume_decimals: 'any',
     });
     await expect(settings.getInstanceSettings()).resolves.toEqual({
       instance_title: 'T',
@@ -257,6 +258,7 @@ describe('settings endpoints', () => {
       gantt_completion_badges: 'false',
       project_field_labels: '{"customer":"Client"}',
       project_fields_hidden: '["volume"]',
+      volume_decimals: 'any',
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
   });
@@ -275,8 +277,9 @@ describe('settings endpoints', () => {
       gantt_completion_badges: 'true',
       project_field_labels: '{}',
       project_fields_hidden: '[]',
+      volume_decimals: '1',
     });
-    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(12);
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(13);
   });
 });
 

@@ -1,8 +1,8 @@
 /**
  * Settings › Project fields:
  * - Built-in fields: a label and a "Shown" switch per field; Confirmed cannot
- *   be hidden; Save writes the two settings in their canonical form and
- *   applies them to the store.
+ *   be hidden; Volume has a Format (volume_decimals, default 1.0); Save writes
+ *   the settings in their canonical form and applies them to the store.
  * - Custom fields: listed in order with their type, added with a type,
  *   renamed in the row's edit form, reordered by drag, deleted after a confirm
  *   naming how many projects lose a value.
@@ -168,6 +168,67 @@ describe('ProjectFieldsPanel — built-in fields', () => {
     api.getInstanceSettings.mockRejectedValue(new Error('Settings unavailable'));
     render(<ProjectFieldsPanel />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Settings unavailable');
+  });
+});
+
+describe('ProjectFieldsPanel — Volume format', () => {
+  const volumeRow = () => screen.getByTestId('builtin-volume');
+
+  it('shows the Format picker on the Volume row only, 1.0 by default, with its preview', async () => {
+    await renderPanel();
+
+    const picker = within(volumeRow()).getByRole('combobox', { name: 'Format of Volume' });
+    expect(picker).toHaveValue('1');
+    expect(within(volumeRow()).getByText('Format', { selector: 'label' })).toBeInTheDocument();
+    expect(
+      within(volumeRow()).getByText(`12.345 is saved and shown as 12.3. ${FORMAT_EXISTING_NOTE}`)
+    ).toBeInTheDocument();
+    for (const key of ['customer', 'sales_pm', 'confirmed']) {
+      expect(within(screen.getByTestId(`builtin-${key}`)).queryByRole('combobox')).not.toBeInTheDocument();
+    }
+  });
+
+  it('reads the stored format, As typed included', async () => {
+    api.getInstanceSettings.mockResolvedValue({ volume_decimals: 'any' });
+    await renderPanel();
+
+    expect(screen.getByRole('combobox', { name: 'Format of Volume' })).toHaveValue('');
+    expect(within(volumeRow()).getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
+  });
+
+  it('saves a changed format with the built-in fields, into the store too', async () => {
+    const onDirtyChange = await renderPanel();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Format of Volume' }), { target: { value: '2' } });
+    expect(
+      within(volumeRow()).getByText(`12.345 is saved and shown as 12.35. ${FORMAT_EXISTING_NOTE}`)
+    ).toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(api.updateSetting).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await screen.findByText('Built-in fields saved');
+    expect(api.updateSetting).toHaveBeenCalledTimes(1);
+    expect(api.updateSetting).toHaveBeenCalledWith('volume_decimals', '2');
+    expect(useAppStore.getState().instanceSettings).toEqual({ instance_title: 'Lab', volume_decimals: '2' });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('saves As typed as "any"', async () => {
+    await renderPanel();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Format of Volume' }), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await screen.findByText('Built-in fields saved');
+    expect(api.updateSetting).toHaveBeenCalledWith('volume_decimals', 'any');
+  });
+
+  it('resets an unsaved format', async () => {
+    await renderPanel();
+    const picker = screen.getByRole('combobox', { name: 'Format of Volume' });
+    fireEvent.change(picker, { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(picker).toHaveValue('1');
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled();
   });
 });
 
@@ -346,6 +407,8 @@ describe('ProjectFieldsPanel — number format', () => {
     '12.345 is saved and shown as 12.35.',
     '12.345 is saved and shown as 12.345.',
   ];
+  /** The custom fields (the built-in Volume row has a Format picker of its own) */
+  const custom = () => within(screen.getByRole('region', { name: 'Custom fields' }));
 
   it('names the format in the type pill: "Number · 1.0", plain "Number" as typed', async () => {
     projectFieldsApi.getAll.mockResolvedValue([
@@ -361,34 +424,34 @@ describe('ProjectFieldsPanel — number format', () => {
     expect(within(screen.getByTestId('field-5')).getByText('Number · 1')).toBeInTheDocument();
     expect(within(screen.getByTestId('field-3')).getByText('Switch')).toBeInTheDocument();
     // No picker in the rows: the format is changed in the edit form
-    expect(screen.queryByRole('combobox', { name: /Format/ })).not.toBeInTheDocument();
+    expect(custom().queryByRole('combobox', { name: /Format/ })).not.toBeInTheDocument();
   });
 
   it('offers the Format picker in the add row only while Number is picked, previewing each choice', async () => {
     await renderPanel();
-    expect(screen.queryByLabelText('Format')).not.toBeInTheDocument();
-    expect(screen.queryByText(FORMAT_AS_TYPED_PREVIEW)).not.toBeInTheDocument();
+    expect(custom().queryByLabelText('Format')).not.toBeInTheDocument();
+    expect(custom().queryByText(FORMAT_AS_TYPED_PREVIEW)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'number' } });
-    const picker = screen.getByLabelText('Format');
+    const picker = custom().getByLabelText('Format');
     // A visible label, beside the select
-    expect(screen.getByText('Format', { selector: 'label' })).toBeVisible();
+    expect(custom().getByText('Format', { selector: 'label' })).toBeVisible();
     const options = within(picker).getAllByRole('option') as HTMLOptionElement[];
     expect(options.map((o) => o.textContent)).toEqual(FORMAT_LABELS);
     expect(options.map((o) => o.value)).toEqual(FORMAT_VALUES);
     expect(picker).toHaveValue('');
-    expect(screen.getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
+    expect(custom().getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
 
     FORMAT_VALUES.forEach((value, i) => {
       fireEvent.change(picker, { target: { value } });
-      expect(screen.getByText(PREVIEWS[i])).toBeInTheDocument();
+      expect(custom().getByText(PREVIEWS[i])).toBeInTheDocument();
     });
     // A new field has no values yet: no word about existing ones
-    expect(screen.queryByText(new RegExp(FORMAT_EXISTING_NOTE))).not.toBeInTheDocument();
+    expect(custom().queryByText(new RegExp(FORMAT_EXISTING_NOTE))).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'text' } });
-    expect(screen.queryByLabelText('Format')).not.toBeInTheDocument();
-    expect(screen.queryByText(/is saved and shown as/)).not.toBeInTheDocument();
+    expect(custom().queryByLabelText('Format')).not.toBeInTheDocument();
+    expect(custom().queryByText(/is saved and shown as/)).not.toBeInTheDocument();
   });
 
   it('creates a number field with its format; other types send none', async () => {
@@ -398,14 +461,14 @@ describe('ProjectFieldsPanel — number format', () => {
 
     fireEvent.change(screen.getByLabelText('New field name'), { target: { value: 'Cost' } });
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'number' } });
-    fireEvent.change(screen.getByLabelText('Format'), { target: { value: '2' } });
+    fireEvent.change(custom().getByLabelText('Format'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
     await waitFor(() =>
       expect(projectFieldsApi.create).toHaveBeenCalledWith({ name: 'Cost', field_type: 'number', decimals: 2 })
     );
     // The add row starts over on As typed.
-    await waitFor(() => expect(screen.getByLabelText('Format')).toHaveValue(''));
-    expect(screen.getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
+    await waitFor(() => expect(custom().getByLabelText('Format')).toHaveValue(''));
+    expect(custom().getByText(FORMAT_AS_TYPED_PREVIEW)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('New field name'), { target: { value: 'Note' } });
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'text' } });

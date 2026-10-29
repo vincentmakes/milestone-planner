@@ -154,12 +154,14 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "gantt_completion_badges": SettingSpec(_boolean, "true"),
     "project_field_labels": SettingSpec(_field_labels, "{}"),
     "project_fields_hidden": SettingSpec(_hidden_fields, "[]"),
+    # 2.1.0: the built-in Volume's decimals; ``any`` = as typed.
+    "volume_decimals": SettingSpec(_choice("any", "0", "1", "2", "3"), "1"),
 }
 
 # The settings Settings -> Project fields saves: writable with
 # project_fields.manage as well as settings.general (PUT /settings/{key}).
 PROJECT_FIELD_SETTING_KEYS: frozenset[str] = frozenset(
-    {"project_field_labels", "project_fields_hidden"}
+    {"project_field_labels", "project_fields_hidden", "volume_decimals"}
 )
 
 # The permission keys a switch turned off disables for everyone.
@@ -195,6 +197,19 @@ def flag_enabled(value: str | None) -> bool:
     return value != "false"
 
 
+def volume_decimals_from(value: str | None) -> int | None:
+    """
+    The decimals the stored ``volume_decimals`` keeps Volume to (None = as
+    typed). Never raises: a missing, empty or malformed row (written before
+    validation) reads as the default, 1.
+    """
+    if value == "any":
+        return None
+    if value in {"0", "1", "2", "3"}:
+        return int(value)
+    return 1
+
+
 def disabled_permission_keys(kanban_value: str | None) -> frozenset[str]:
     """The permission keys disabled by the stored ``kanban_enabled`` value."""
     if flag_enabled(kanban_value):
@@ -216,3 +231,8 @@ async def get_value(db: "AsyncSession", key: str) -> str | None:
 async def is_enabled(db: "AsyncSession", key: str) -> bool:
     """Whether the switch ``key`` is on (one query)."""
     return flag_enabled(await get_value(db, key))
+
+
+async def volume_decimals(db: "AsyncSession") -> int | None:
+    """Volume's decimals (None = as typed), from the stored setting (one query)."""
+    return volume_decimals_from(await get_value(db, "volume_decimals"))

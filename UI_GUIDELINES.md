@@ -454,6 +454,9 @@ decision, not an oversight.
   (an id is generated when none is given); an `error` replaces the `hint`, sets `aria-invalid`
   and is announced (`role="alert"`, linked through `aria-describedby`; a `hint` is linked the
   same way).
+- **`NumberFieldInput`** (`components/modals/ProjectFieldInputs.tsx`): a number with a format (a
+  number project field, the built-in Volume). It refuses a keystroke that adds more decimals
+  than the format keeps and pads on blur (12 → 12.0); As typed takes anything.
 - **Two fields side by side** (a start/end date pair): a grid of `minmax(0, 1fr) minmax(0, 1fr)`
   (or a flex row whose items have `min-width: 0`), never `1fr 1fr`. A `1fr` track cannot shrink
   below its content, so a wide field overflows its neighbour on a narrow dialog. The token test

@@ -247,7 +247,7 @@ Requests are filed by the self-booking routes (202, see [Assignments](#assignmen
 
 ### Predefined phases & settings (`predefined_phases.py`, `settings.py`)
 
-**Settings keys** (`KNOWN_SETTINGS` in `app/services/instance_settings.py`, mirrored by `INSTANCE_SETTING_DEFAULTS` in `frontend/src/api/endpoints/settings.ts` and edited in Settings → Features & defaults; the two `project_field*` keys in Settings → Project fields). Shape is validated, not existence: consumers ignore skill ids and type names that no longer exist. A switch is on unless stored as exactly `false` (`is_enabled` / client `isSettingOn`), which also covers rows written before validation.
+**Settings keys** (`KNOWN_SETTINGS` in `app/services/instance_settings.py`, mirrored by `INSTANCE_SETTING_DEFAULTS` in `frontend/src/api/endpoints/settings.ts` and edited in Settings → Features & defaults; the two `project_field*` keys and `volume_decimals` in Settings → Project fields). Shape is validated, not existence: consumers ignore skill ids and type names that no longer exist. A switch is on unless stored as exactly `false` (`is_enabled` / client `isSettingOn`), which also covers rows written before validation.
 
 | Key | Canonical value | Default | Consumer |
 |-----|-----------------|---------|----------|
@@ -260,6 +260,7 @@ Requests are filed by the self-booking routes (202, see [Assignments](#assignmen
 | `gantt_completion_badges` | `true` / `false` | `true` | `false` hides the % badges of `ProjectRow` / `PhaseRow` / `SubphaseRow` (2.1.0); bar fill, tooltips and the slider (badge click, or the context menu's *Set progress…*) unchanged |
 | `project_field_labels` | compact JSON object, keys ⊆ `customer`/`sales_pm`/`volume`/`confirmed` in that order, labels trimmed 1–60 chars (`{"customer":"Client"}`) | `{}` | Built-in field labels (`builtInFieldLabel(settings, key)` in `utils/instanceSettings.ts`: one default per field, the short names of `BUILT_IN_FIELD_DEFAULTS`; a label replaces the name wherever it appears): `ProjectModal`, `ShiftTooltip`, Archived view |
 | `project_fields_hidden` | compact JSON array ⊆ `customer`/`sales_pm`/`volume` in that order (`confirmed` → 422) | `[]` | Built-in fields hidden from the dialog and the views (`isBuiltInFieldHidden`); values stay stored and writable (UI only) |
+| `volume_decimals` | `any` / `0` / `1` / `2` / `3` | `1` | Volume's Format (2.1.0): `POST /projects` and `PUT /projects/{id}` round `volume` half-up to it (`round_field_number`, read once per request, only when `volume` is sent), and the site export's Projects sheet shows it rounded; `any` = as typed. Stored volumes are never rewritten, and a PUT whose rounded `volume` equals the stored one rounded keeps the stored value (provisioned tenants store `volume REAL`: 12.7 reads back as 12.699999809…, so a dialog echo is no change and notifies nobody). Reader `volume_decimals_from` never raises (missing / malformed → 1); client `volumeDecimals(settings)`, used by `ProjectModal` (`NumberFieldInput`) |
 
 Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `true` / `false`. Saving a key broadcasts `change:settings`, which refreshes the `settings` **and** `currentUser` slices (the Kanban switch changes `/auth/me`); the saving admin is excluded from the broadcast, so `DefaultsPanel` re-reads `/auth/me` itself after a `kanban_enabled` change.
 
@@ -269,7 +270,7 @@ Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `tru
 | GET | `/predefined-phases/all` | superuser (`predefined_phases.manage`) | All templates |
 | POST / PUT / DELETE | `/predefined-phases`, `…/reorder`, `…/{id}` | superuser (`predefined_phases.manage`) | Template CRUD + reorder |
 | GET | `/settings`, `/settings/{key}` | ⚠ none | Instance settings (no auth dependency — do not store secrets in `settings`). Known keys without a row read as their default (merged into `GET /settings`; nothing written) |
-| PUT | `/settings/{key}` | admin (`settings.general`; `project_field_labels` / `project_fields_hidden` also `project_fields.manage`) | Update setting. A known key stores its canonical form (422 `Invalid value for <key>` otherwise) and `value: null` deletes its row (answered with the default); any other key is stored as given |
+| PUT | `/settings/{key}` | admin (`settings.general`; `project_field_labels` / `project_fields_hidden` / `volume_decimals` also `project_fields.manage`) | Update setting. A known key stores its canonical form (422 `Invalid value for <key>` otherwise) and `value: null` deletes its row (answered with the default); any other key is stored as given |
 | GET / PUT | `/settings/sso` | none / admin (`settings.sso`) | Tenant SSO settings (read / write) |
 
 ### Import & export (`mpp_import.py`, `export.py`)

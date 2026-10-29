@@ -37,6 +37,7 @@ from app.models.tag import Tag, TagSite
 from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
+from app.services import instance_settings
 from app.services.approvals import pending_change_text
 from app.services.booking_segments import effective_dates
 from app.services.project_field_rules import load_project_field_values, round_field_number
@@ -857,6 +858,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             )
             append_subphase_rows(project, ("subphase", sp.id), depth + 1)
 
+    # Volume as the dialog shows it: rounded to its Format (stored values keep theirs).
+    volume_decimals = await instance_settings.volume_decimals(db)
     for p in project_rows:
         hierarchy_rows.append(
             [
@@ -872,7 +875,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 user_by_id[p.pm_id].full_name if p.pm_id and p.pm_id in user_by_id else "",
                 p.sales_pm,
                 _yes_no(p.confirmed),
-                p.volume,
+                None if p.volume is None else round_field_number(p.volume, volume_decimals),
                 _iso(p.start_date),
                 _iso(p.end_date),
                 "",  # Completion (project-level rollup not stored)

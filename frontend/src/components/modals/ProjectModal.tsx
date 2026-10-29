@@ -24,20 +24,22 @@ import { exportProjectToXML } from '@/utils/xmlExport';
 import { tagsForProjectScope } from '@/utils/tags';
 import {
   draftFromValue,
+  fieldNumberInputText,
   normalizeStoredValue,
   optionsForProjectScope,
+  roundFieldNumber,
   sameFieldValue,
   valueFromDraft,
 } from '@/utils/projectFields';
 import type { FieldDraft } from '@/utils/projectFields';
 import { teamIdsOnSite, teamsForSite } from '@/utils/teams';
 import { TagPicker } from './TagPicker';
-import { ProjectFieldInputs } from './ProjectFieldInputs';
+import { NumberFieldInput, ProjectFieldInputs } from './ProjectFieldInputs';
 import styles from './ProjectModal.module.css';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { TeamChecklist } from '@/components/common/TeamChecklist';
 import { can } from '@/utils/permissions';
-import { builtInFieldLabel, isBuiltInFieldHidden, isSettingOn } from '@/utils/instanceSettings';
+import { builtInFieldLabel, isBuiltInFieldHidden, isSettingOn, volumeDecimals } from '@/utils/instanceSettings';
 import type { ProjectFieldOption, ProjectFieldValue } from '@/types';
 import { Icon, DownloadIcon } from '@/components/common/Icon';
 
@@ -188,7 +190,12 @@ export function ProjectModal() {
         setCustomer(editingProject.customer || '');
         setPmId(editingProject.pm_id?.toString() || '');
         setSalesPm(editingProject.sales_pm || '');
-        setVolume(editingProject.volume?.toString() || '');
+        // Shown in Volume's format (Settings → Project fields), like a number field
+        setVolume(
+          editingProject.volume == null
+            ? ''
+            : fieldNumberInputText(editingProject.volume, volumeDecimals(useAppStore.getState().instanceSettings))
+        );
         setConfirmed(editingProject.confirmed);
         setArchived(editingProject.archived || false);
         setStartDate(toInputDateFormat(editingProject.start_date));
@@ -264,6 +271,13 @@ export function ProjectModal() {
     );
     const tagIds = Array.from(selectedTagIds).filter((id) => applicableTagIds.has(id));
 
+    // Volume keeps its format's decimals (the server rounds the same way).
+    const volumeNumber = volume.trim() === '' ? null : Number(volume);
+    if (!volumeHidden && volumeNumber !== null && !Number.isFinite(volumeNumber)) {
+      setError(`Invalid value for "${builtInFieldLabel(instanceSettings, 'volume')}"`);
+      return;
+    }
+
     // Project fields: only those that changed are sent (a teammate's edit to
     // another field is kept); items no longer applying are dropped like tags.
     const fieldValues: Record<number, ProjectFieldValue> = {};
@@ -317,7 +331,9 @@ export function ProjectModal() {
         ...(customerHidden ? {} : { customer: customer.trim() || null }),
         pm_id: pmId ? parseInt(pmId) : null,
         ...(salesPmHidden ? {} : { sales_pm: salesPm.trim() || null }),
-        ...(volumeHidden ? {} : { volume: volume ? parseInt(volume) : null }),
+        ...(volumeHidden
+          ? {}
+          : { volume: volumeNumber === null ? null : roundFieldNumber(volumeNumber, volumeDecimals(instanceSettings)) }),
         confirmed,
         archived,
         start_date: startDate,
@@ -513,12 +529,12 @@ export function ProjectModal() {
               />
             )}
             {!volumeHidden && (
-              <Input
+              <NumberFieldInput
                 label={builtInFieldLabel(instanceSettings, 'volume')}
-                type="number"
+                decimals={volumeDecimals(instanceSettings)}
                 className={styles.field}
                 value={volume}
-                onChange={(e) => setVolume(e.target.value)}
+                onChange={setVolume}
                 placeholder="0"
               />
             )}

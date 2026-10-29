@@ -16,6 +16,8 @@ import {
   parseHiddenFields,
   parseIdList,
   parseNameList,
+  volumeDecimals,
+  volumeDecimalsValue,
 } from '../instanceSettings';
 
 describe('parseIdList', () => {
@@ -130,5 +132,34 @@ describe('built-in project fields', () => {
     expect(fieldLabelsValue({})).toBe('{}');
     expect(hiddenFieldsValue(['volume', 'customer', 'confirmed', 'volume'])).toBe('["customer","volume"]');
     expect(hiddenFieldsValue([])).toBe('[]');
+  });
+});
+
+describe('volume decimals', () => {
+  it.each([
+    [undefined, 1],
+    ['', 1],
+    ['any', null],
+    ['0', 0],
+    ['1', 1],
+    ['2', 2],
+    ['3', 3],
+    // Malformed or stale rows read as the default, never throw.
+    ['4', 1],
+    ['ANY', 1],
+    ['1.0', 1],
+  ] as [string | undefined, number | null][])('reads %j as %s', (value, decimals) => {
+    expect(volumeDecimals({ volume_decimals: value })).toBe(decimals);
+  });
+
+  it('reads unloaded settings as the default', () => {
+    expect(volumeDecimals(null)).toBe(1);
+    expect(volumeDecimals(undefined)).toBe(1);
+  });
+
+  it('writes the canonical value the backend stores', () => {
+    expect(volumeDecimalsValue(null)).toBe('any');
+    expect(volumeDecimalsValue(0)).toBe('0');
+    expect(volumeDecimalsValue(3)).toBe('3');
   });
 });
