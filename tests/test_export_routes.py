@@ -1006,6 +1006,12 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
         [1, "Alpha", "Remark", "'=1+1"],
         [1, "Alpha", "Rate", 2.5],
     ]
+    # A Format carries over as the cell's number format; As typed stays General.
+    formats = {
+        r[2].value: r[3].number_format for r in wb["Project field values"].iter_rows(min_row=2)
+    }
+    assert formats["Budget"] == "0"
+    assert formats["Rate"] == "General"
     assert _sheet(wb, "Absence types")[0][3] == "Yes"
     assert _sheet(wb, "Vacations")[0][2] == "Alice Martin"
     assert _sheet(wb, "Vacations")[0][7] == "Vacation"
@@ -1125,10 +1131,18 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("setting", "stored", "cell"),
-    [([], 12.75, 12.8), (["any"], 12.75, 12.75), (["0"], 12.75, 13), ([], None, None)],
+    ("setting", "stored", "cell", "number_format"),
+    [
+        ([], 12.75, 12.8, "0.0"),
+        ([], 12, 12.0, "0.0"),  # 12.0 stays 12.0 in Excel
+        (["any"], 12.75, 12.75, "General"),
+        (["any"], 12.0, 12, "General"),
+        (["0"], 12.75, 13, "0"),
+        (["2"], 12.5, 12.5, "0.00"),
+        ([], None, None, "General"),
+    ],
 )
-async def test_site_workbook_rounds_the_volume_to_its_format(setting, stored, cell):
+async def test_site_workbook_rounds_the_volume_to_its_format(setting, stored, cell, number_format):
     """The Projects sheet shows Volume as the dialog does (volume_decimals, default 1)."""
     openpyxl = pytest.importorskip("openpyxl")
     rows = _site_rows()
@@ -1141,6 +1155,8 @@ async def test_site_workbook_rounds_the_volume_to_its_format(setting, stored, ce
     wb = openpyxl.load_workbook(io.BytesIO(content))
     (project_row,) = (r for r in _sheet(wb, "Projects") if r[0] == "Project")
     assert project_row[12] == cell
+    (volume_cell,) = (r[12] for r in wb["Projects"].iter_rows(min_row=2) if r[0].value == "Project")
+    assert volume_cell.number_format == number_format
     # One read of the setting per export.
     assert [s.column_descriptions[0].get("entity") for s in db.statements].count(Settings) == 1
 
