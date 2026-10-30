@@ -17,6 +17,10 @@
  *   field removes every project's value (the confirmation names the count).
  * - Items of the dropdown fields: colour, and like tags, all sites or only
  *   some, per site optionally only some teams. Drag to reorder within the field.
+ * - Gantt details: which rows the Gantt's Shift-hover details of a project
+ *   bar show (the setting `project_tooltip_rows`), in a fixed order -- the
+ *   built-in fields (renamed labels), PM, the fixed rows, then every custom
+ *   field. Saved with its own Save; a hidden built-in field is never shown.
  *
  * Writes need project_fields.manage (admins by default); the server rejects
  * conflicting changes (409) with a message shown inline.
@@ -40,14 +44,18 @@ import { confirmAction } from '@/utils/confirmDialog';
 import {
   BUILT_IN_PROJECT_FIELDS,
   MAX_FIELD_LABEL_LENGTH,
+  PROJECT_TOOLTIP_ROWS,
   fieldLabelsValue,
   hiddenFieldsValue,
   parseFieldLabels,
   parseHiddenFields,
+  parseTooltipRows,
+  tooltipRowLabel,
+  tooltipRowsValue,
   volumeDecimals,
   volumeDecimalsValue,
 } from '@/utils/instanceSettings';
-import type { BuiltInFieldKey } from '@/utils/instanceSettings';
+import type { BuiltInFieldKey, TooltipRow } from '@/utils/instanceSettings';
 import {
   FIELD_DECIMALS,
   FIELD_TYPE_LABELS,
@@ -69,6 +77,13 @@ const DRAG_CLASSES = { dragging: styles.dragging, dropBefore: styles.dropBefore,
 
 /** Hint under the Confirmed row: why it cannot be hidden */
 export const CONFIRMED_HINT = 'Confirmed drives the project status, ordering and counts';
+
+/** Hint under a Gantt details row whose built-in field is hidden */
+export const HIDDEN_DETAILS_HINT = 'Hidden fields are never shown';
+
+const HIDEABLE_KEYS: readonly string[] = BUILT_IN_PROJECT_FIELDS.filter((f) => f.key !== 'confirmed').map(
+  (f) => f.key
+);
 
 const TYPE_OPTIONS: { value: ProjectFieldType; label: string }[] = [
   { value: 'select', label: FIELD_TYPE_LABELS.select },
@@ -179,6 +194,12 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const [volumeFormat, setVolumeFormat] = useState(choiceFromDecimals(1));
   const [builtInSuccess, setBuiltInSuccess] = useState<string | null>(null);
 
+  // Gantt details: the saved rows and the edited copy. Both keep the ids of
+  // deleted fields, so they compare equal; those are dropped only on save.
+  const [savedDetailRows, setSavedDetailRows] = useState<TooltipRow[]>([]);
+  const [detailRows, setDetailRows] = useState<TooltipRow[]>([]);
+  const [detailsSuccess, setDetailsSuccess] = useState<string | null>(null);
+
   // Custom fields
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<ProjectFieldType>('select');
@@ -196,6 +217,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
 
   // One write of each kind at a time (Enter twice would send two writes)
   const builtInSave = useSubmitGuard();
+  const detailsSave = useSubmitGuard();
   const fieldAdd = useSubmitGuard();
   const itemAdd = useSubmitGuard();
   const editSave = useSubmitGuard();
@@ -227,6 +249,9 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
         const initialVolumeFormat = choiceFromDecimals(volumeDecimals(settings));
         setSavedVolumeFormat(initialVolumeFormat);
         setVolumeFormat(initialVolumeFormat);
+        const initialRows = parseTooltipRows(settings.project_tooltip_rows);
+        setSavedDetailRows(initialRows);
+        setDetailRows(initialRows);
       }),
     ])
       .catch((err) => {
@@ -248,6 +273,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
     labelsValue !== fieldLabelsValue(savedLabels) ||
     hiddenValue !== hiddenFieldsValue(savedHidden) ||
     volumeFormat !== savedVolumeFormat;
+  const detailsDirty = tooltipRowsValue(detailRows) !== tooltipRowsValue(savedDetailRows);
 
   const editedField = editingFieldId !== null ? fields.find((f) => f.id === editingFieldId) : undefined;
   const fieldEditDirty =
@@ -272,7 +298,12 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       !sameIds(itemEdit.teamIds, editedItem.team_ids ?? []));
   useReportDirty(
     onDirtyChange,
-    builtInDirty || fieldEditDirty || itemDirty || newFieldName.trim() !== '' || newItemName.trim() !== ''
+    builtInDirty ||
+      detailsDirty ||
+      fieldEditDirty ||
+      itemDirty ||
+      newFieldName.trim() !== '' ||
+      newItemName.trim() !== ''
   );
 
   const run = async (action: () => Promise<unknown>, fallback: string) => {
@@ -331,6 +362,41 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
     setVolumeFormat(savedVolumeFormat);
     setBuiltInSuccess(null);
   };
+
+  // ---- Gantt details ----
+
+  const toggleDetailRow = (row: TooltipRow, shown: boolean) => {
+    setDetailsSuccess(null);
+    setDetailRows((prev) => (shown ? [...prev.filter((r) => r !== row), row] : prev.filter((r) => r !== row)));
+  };
+
+  const handleSaveDetails = () =>
+    detailsSave.guard(async () => {
+      setError(null);
+      setDetailsSuccess(null);
+      // The ids of deleted fields go now: what is saved lists only live rows.
+      const fieldIds = new Set(fields.map((f) => f.id));
+      const value = tooltipRowsValue(detailRows.filter((r) => typeof r !== 'number' || fieldIds.has(r)));
+      try {
+        await updateSetting('project_tooltip_rows', value);
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to save the Gantt details'));
+        return;
+      }
+      const rows = parseTooltipRows(value);
+      setSavedDetailRows(rows);
+      setDetailRows(rows);
+      setInstanceSettings({ ...(useAppStore.getState().instanceSettings ?? {}), project_tooltip_rows: value });
+      setDetailsSuccess('Gantt details saved');
+    });
+
+  const handleResetDetails = () => {
+    setDetailRows(savedDetailRows);
+    setDetailsSuccess(null);
+  };
+
+  // The built-in rows are captioned with the labels being edited above.
+  const detailLabelSettings = { project_field_labels: labelsValue };
 
   // ---- Custom fields ----
 
@@ -721,6 +787,100 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
           )}
         </form>
       </section>
+
+      <section className={styles.block} aria-labelledby="project-fields-details">
+        <h3 id="project-fields-details" className={styles.blockTitle}>
+          Gantt details
+        </h3>
+        <p className={styles.hint}>Rows of the details shown when holding Shift over a project bar.</p>
+        <div className={styles.list}>
+          {PROJECT_TOOLTIP_ROWS.map(({ key }) => (
+            <DetailsRow
+              key={key}
+              testId={`details-${key}`}
+              caption={tooltipRowLabel(detailLabelSettings, key)}
+              shown={detailRows.includes(key)}
+              hidden={HIDEABLE_KEYS.includes(key) && hidden.includes(key)}
+              disabled={detailsSave.isSubmitting}
+              onChange={(shown) => toggleDetailRow(key, shown)}
+            />
+          ))}
+          {fields.map((field) => (
+            <DetailsRow
+              key={field.id}
+              testId={`details-field-${field.id}`}
+              caption={field.name}
+              badge={typeBadgeText(field)}
+              shown={detailRows.includes(field.id)}
+              hidden={false}
+              disabled={detailsSave.isSubmitting}
+              onChange={(shown) => toggleDetailRow(field.id, shown)}
+            />
+          ))}
+        </div>
+        {detailsSuccess && <Notice tone="success">{detailsSuccess}</Notice>}
+        <div className={styles.saveRow}>
+          <span className={styles.hint}>{detailsDirty ? 'You have unsaved changes' : ''}</span>
+          {detailsDirty && (
+            <Button
+              variant="ghost"
+              onClick={handleResetDetails}
+              disabled={detailsSave.isSubmitting}
+              aria-label="Reset Gantt details"
+            >
+              Reset
+            </Button>
+          )}
+          <Button
+            onClick={() => void handleSaveDetails()}
+            disabled={!detailsDirty}
+            loading={detailsSave.isSubmitting}
+            aria-label="Save Gantt details"
+          >
+            Save
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// =============================================================================
+// GANTT DETAILS ROW
+// =============================================================================
+
+interface DetailsRowProps {
+  testId: string;
+  caption: string;
+  /** A custom field's type pill */
+  badge?: string;
+  shown: boolean;
+  /** A built-in field hidden instance-wide: never shown, so the switch is off and locked */
+  hidden: boolean;
+  disabled: boolean;
+  onChange: (shown: boolean) => void;
+}
+
+function DetailsRow({ testId, caption, badge, shown, hidden, disabled, onChange }: DetailsRowProps) {
+  const hintId = useId();
+  return (
+    <div className={styles.builtInRow} data-testid={testId}>
+      <span className={styles.detailsName}>{caption}</span>
+      {badge && <span className={styles.typeBadge}>{badge}</span>}
+      <ToggleSwitch
+        className={styles.detailsSwitch}
+        checked={shown && !hidden}
+        onChange={onChange}
+        label="Shown"
+        aria-label={`Show ${caption} in Gantt details`}
+        aria-describedby={hidden ? hintId : undefined}
+        disabled={disabled || hidden}
+      />
+      {hidden && (
+        <span id={hintId} className={styles.builtInHint}>
+          {HIDDEN_DETAILS_HINT}
+        </span>
+      )}
     </div>
   );
 }

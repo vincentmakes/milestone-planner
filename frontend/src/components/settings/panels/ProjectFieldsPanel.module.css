@@ -86,6 +86,21 @@
   color: var(--text-muted);
 }
 
+/* Gantt details */
+
+.detailsName {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.detailsSwitch {
+  margin-left: auto;
+}
+
 .saveRow {
   display: flex;
   flex-wrap: wrap;

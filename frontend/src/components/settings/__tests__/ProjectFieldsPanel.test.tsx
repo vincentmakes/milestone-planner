@@ -11,11 +11,19 @@
  *   Save); the type pill names the format.
  * - Items of a dropdown field: added, edited (colour, sites, teams — the tag
  *   edit row's controls), reordered and deleted.
+ * - Gantt details: a switch per row of the Shift-hover project details
+ *   (built-in rows with their labels, the fixed rows, every custom field), a
+ *   hidden built-in field locked off, its own Save / Reset.
  * - One dirty flag for the hub.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
-import { FORMAT_AS_TYPED_PREVIEW, FORMAT_EXISTING_NOTE, ProjectFieldsPanel } from '../panels/ProjectFieldsPanel';
+import {
+  FORMAT_AS_TYPED_PREVIEW,
+  FORMAT_EXISTING_NOTE,
+  HIDDEN_DETAILS_HINT,
+  ProjectFieldsPanel,
+} from '../panels/ProjectFieldsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import { makeProjectField, makeProjectFieldOption, makeSite, makeTeam } from '@/test/factories';
@@ -79,7 +87,7 @@ afterEach(() => {
 
 async function renderPanel(onDirtyChange = vi.fn()) {
   render(<ProjectFieldsPanel onDirtyChange={onDirtyChange} />);
-  await screen.findByText('Project type');
+  await screen.findByTestId('field-1');
   return onDirtyChange;
 }
 
@@ -315,7 +323,7 @@ describe('ProjectFieldsPanel — custom fields', () => {
         <ProjectFieldsPanel onDirtyChange={onDirtyChange} />
       </div>
     );
-    await screen.findByText('Project type');
+    await screen.findByTestId('field-1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Budget' }));
     fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Cost' } });
@@ -511,7 +519,7 @@ describe('ProjectFieldsPanel — number format', () => {
         <ProjectFieldsPanel />
       </div>
     );
-    await screen.findByText('Project type');
+    await screen.findByTestId('field-1');
     const row = screen.getByTestId('field-2');
 
     fireEvent.click(within(row).getByRole('button', { name: 'Edit Budget' }));
@@ -583,7 +591,7 @@ describe('ProjectFieldsPanel — items', () => {
     });
     const onDirtyChange = vi.fn();
     render(<ProjectFieldsPanel onDirtyChange={onDirtyChange} />);
-    await screen.findByText('Project type');
+    await screen.findByTestId('field-1');
     fireEvent.click(screen.getByRole('button', { name: 'Items of Project type' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Internal' }));
@@ -671,7 +679,7 @@ describe('ProjectFieldsPanel — items', () => {
     stubConfirm(true);
     const onDirtyChange = vi.fn();
     render(<ProjectFieldsPanel onDirtyChange={onDirtyChange} />);
-    await screen.findByText('Project type');
+    await screen.findByTestId('field-1');
     fireEvent.click(screen.getByRole('button', { name: 'Items of Project type' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit Internal' }));
     fireEvent.change(screen.getByLabelText('Item name'), { target: { value: 'Changed' } });
@@ -701,5 +709,156 @@ describe('ProjectFieldsPanel — items', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete Project type' }));
     await waitFor(() => expect(projectFieldsApi.remove).toHaveBeenCalledWith(1));
     await waitFor(() => expect(screen.queryByRole('group', { name: 'Items of Project type' })).not.toBeInTheDocument());
+  });
+});
+
+describe('ProjectFieldsPanel — Gantt details', () => {
+  const DEFAULT_ROWS =
+    '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]';
+  const detailsSwitch = (name: string) => screen.getByRole('switch', { name: `Show ${name} in Gantt details` });
+  const section = () => screen.getByRole('region', { name: 'Gantt details' });
+
+  it('lists the built-in rows with their labels, the fixed rows, then every custom field in order', async () => {
+    api.getInstanceSettings.mockResolvedValue({
+      project_field_labels: '{"customer":"Client"}',
+      project_tooltip_rows: DEFAULT_ROWS,
+    });
+    await renderPanel();
+
+    expect(within(section()).getByText('Rows of the details shown when holding Shift over a project bar.')).toBeInTheDocument();
+    const rows = within(section()).getAllByTestId(/^details-/);
+    expect(rows.map((r) => r.dataset.testid)).toEqual([
+      'details-customer',
+      'details-pm',
+      'details-sales_pm',
+      'details-volume',
+      'details-confirmed',
+      'details-tags',
+      'details-period',
+      'details-completion',
+      'details-work_days',
+      'details-total_days',
+      'details-staff',
+      'details-field-1',
+      'details-field-2',
+      'details-field-3',
+    ]);
+    expect(rows.map((r) => r.firstChild?.textContent)).toEqual([
+      'Client',
+      'PM',
+      'Sales PM',
+      'Volume',
+      'Confirmed',
+      'Tags',
+      'Period',
+      'Completion',
+      'Work days',
+      'Total',
+      'Assigned staff',
+      'Project type',
+      'Budget',
+      'Regulated',
+    ]);
+    expect(within(rows[11]).getByText('Dropdown')).toBeInTheDocument();
+    // The default rows: Volume, Sales PM and custom fields are off
+    expect(detailsSwitch('Client')).toBeChecked();
+    expect(detailsSwitch('Volume')).not.toBeChecked();
+    expect(detailsSwitch('Confirmed')).toBeChecked();
+    expect(detailsSwitch('Assigned staff')).toBeChecked();
+    expect(detailsSwitch('Budget')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save Gantt details' })).toBeDisabled();
+  });
+
+  it('follows a label being edited above', async () => {
+    await renderPanel();
+    fireEvent.change(screen.getByLabelText('Label of Confirmed'), { target: { value: 'Won' } });
+    expect(within(screen.getByTestId('details-confirmed')).getByText('Won')).toBeInTheDocument();
+    expect(detailsSwitch('Won')).toBeChecked();
+  });
+
+  it('locks off the row of a hidden built-in field, following the Shown switch being edited', async () => {
+    api.getInstanceSettings.mockResolvedValue({
+      project_fields_hidden: '["sales_pm"]',
+      project_tooltip_rows: '["sales_pm","volume"]',
+    });
+    await renderPanel();
+
+    const salesPm = detailsSwitch('Sales PM');
+    expect(salesPm).toBeDisabled();
+    expect(salesPm).not.toBeChecked();
+    expect(salesPm).toHaveAccessibleDescription(HIDDEN_DETAILS_HINT);
+    expect(detailsSwitch('Volume')).toBeEnabled();
+    expect(detailsSwitch('Volume')).toBeChecked();
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Show Volume' }));
+    expect(detailsSwitch('Volume')).toBeDisabled();
+    expect(detailsSwitch('Volume')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('switch', { name: 'Show Sales PM' }));
+    expect(detailsSwitch('Sales PM')).toBeEnabled();
+    expect(detailsSwitch('Sales PM')).toBeChecked();
+    // Confirmed cannot be hidden: its row is never locked
+    expect(detailsSwitch('Confirmed')).toBeEnabled();
+    // Hiding a field leaves the saved rows alone
+    expect(screen.getByRole('button', { name: 'Save Gantt details' })).toBeDisabled();
+  });
+
+  it('marks the panel dirty and saves the canonical rows into the store', async () => {
+    const onDirtyChange = await renderPanel();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    fireEvent.click(detailsSwitch('Regulated'));
+    fireEvent.click(detailsSwitch('Volume'));
+    fireEvent.click(detailsSwitch('Period'));
+    fireEvent.click(detailsSwitch('Budget'));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(within(section()).getByText('You have unsaved changes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Gantt details' }));
+    await screen.findByText('Gantt details saved');
+    const value = '["customer","pm","volume","confirmed","tags","completion","work_days","total_days","staff",2,3]';
+    expect(api.updateSetting).toHaveBeenCalledTimes(1);
+    expect(api.updateSetting).toHaveBeenCalledWith('project_tooltip_rows', value);
+    expect(useAppStore.getState().instanceSettings).toEqual({ instance_title: 'Lab', project_tooltip_rows: value });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole('button', { name: 'Save Gantt details' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Reset Gantt details' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the id of a deleted field without marking the panel dirty, and drops it on save', async () => {
+    api.getInstanceSettings.mockResolvedValue({ project_tooltip_rows: '["pm",1,77]' });
+    const onDirtyChange = await renderPanel();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(detailsSwitch('Project type')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save Gantt details' })).toBeDisabled();
+
+    fireEvent.click(detailsSwitch('PM'));
+    fireEvent.click(detailsSwitch('PM'));
+    expect(screen.getByRole('button', { name: 'Save Gantt details' })).toBeDisabled();
+    fireEvent.click(detailsSwitch('Regulated'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Gantt details' }));
+    await screen.findByText('Gantt details saved');
+    expect(api.updateSetting).toHaveBeenCalledWith('project_tooltip_rows', '["pm",1,3]');
+  });
+
+  it('resets the unsaved rows', async () => {
+    await renderPanel();
+    fireEvent.click(detailsSwitch('Tags'));
+    expect(detailsSwitch('Tags')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Gantt details' }));
+    expect(detailsSwitch('Tags')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save Gantt details' })).toBeDisabled();
+  });
+
+  it('shows a failed save inline and keeps the rows unsaved', async () => {
+    api.updateSetting.mockRejectedValueOnce(new Error('Invalid value for project_tooltip_rows'));
+    await renderPanel();
+    fireEvent.click(detailsSwitch('Assigned staff'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Gantt details' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid value for project_tooltip_rows');
+    expect(useAppStore.getState().instanceSettings).toEqual({ instance_title: 'Lab' });
+    expect(screen.queryByText('Gantt details saved')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Gantt details' })).toBeEnabled();
   });
 });
