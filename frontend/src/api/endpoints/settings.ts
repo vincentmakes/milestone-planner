@@ -51,6 +51,8 @@ export const INSTANCE_SETTING_DEFAULTS = {
   project_field_labels: '{}',
   project_fields_hidden: '[]',
   volume_decimals: '1',
+  project_tooltip_rows:
+    '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]',
 } as const;
 
 export type DefaultedSettingKey = keyof typeof INSTANCE_SETTING_DEFAULTS;

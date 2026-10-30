@@ -7,8 +7,10 @@ import {
   FIELD_TYPE_LABELS,
   acceptsNumberText,
   draftFromValue,
+  fieldValueItems,
   fieldNumberInputText,
   formatFieldNumber,
+  formatFieldValue,
   isDropdownField,
   isEmptyFieldValue,
   normalizeStoredValue,
@@ -223,5 +225,53 @@ describe('acceptsNumberText', () => {
 
   it('treats undefined decimals as typed', () => {
     expect(acceptsNumberText('1.23456', undefined)).toBe(true);
+  });
+});
+
+describe('read-only display', () => {
+  const red = makeProjectFieldOption({ id: 11, name: 'Red', color: '#ff0000', sort_order: 0 });
+  const blue = makeProjectFieldOption({ id: 12, name: 'Blue', color: '#0000ff', sort_order: 1 });
+  const colour = makeProjectField({ id: 20, name: 'Colour', field_type: 'select', options: [red, blue] });
+  const colours = makeProjectField({ id: 21, name: 'Colours', field_type: 'multiselect', options: [red, blue] });
+  const budget = makeProjectField({ id: 22, name: 'Budget', field_type: 'number', decimals: 2 });
+
+  it('formats each kind with the site export words', () => {
+    expect(formatFieldValue(text, '  Pilot plant  ')).toBe('Pilot plant');
+    expect(formatFieldValue(budget, 12.7)).toBe(formatFieldNumber(12.7, 2));
+    expect(formatFieldValue(num, 3)).toBe(formatFieldNumber(3, undefined));
+    expect(formatFieldValue(num, 0)).toBe('0');
+    expect(formatFieldValue(toggle, true)).toBe('Yes');
+    // An off toggle is a value, not an empty one.
+    expect(formatFieldValue(toggle, false)).toBe('No');
+    expect(formatFieldValue(colour, 12)).toBe('Blue');
+    expect(formatFieldValue(colours, [12, 11])).toBe('Blue, Red');
+  });
+
+  it('reads empty values as none', () => {
+    expect(formatFieldValue(text, '   ')).toBeNull();
+    expect(formatFieldValue(text, null)).toBeNull();
+    expect(formatFieldValue(num, undefined)).toBeNull();
+    expect(formatFieldValue(colours, [])).toBeNull();
+  });
+
+  it('drops deleted items, and reads a value of deleted items only as none', () => {
+    expect(formatFieldValue(colours, [99, 11])).toBe('Red');
+    expect(formatFieldValue(colour, 99)).toBeNull();
+  });
+
+  it('reads a value of the wrong shape as none', () => {
+    expect(formatFieldValue(toggle, 'yes')).toBeNull();
+    expect(formatFieldValue(num, 'x')).toBeNull();
+    expect(formatFieldValue(text, 4)).toBeNull();
+  });
+
+  it('gives the items of a dropdown value as pills, deleted ones dropped', () => {
+    expect(fieldValueItems(colours, [12, 99, 11])).toEqual([
+      { id: 12, label: 'Blue', color: '#0000ff' },
+      { id: 11, label: 'Red', color: '#ff0000' },
+    ]);
+    expect(fieldValueItems(colour, 11)).toEqual([{ id: 11, label: 'Red', color: '#ff0000' }]);
+    expect(fieldValueItems(text, 'x')).toEqual([]);
+    expect(fieldValueItems(colours, null)).toEqual([]);
   });
 });

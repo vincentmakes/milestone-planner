@@ -131,6 +131,55 @@ export function acceptsNumberText(text: string, decimals: number | null | undefi
   return pattern.test(text);
 }
 
+// =============================================================================
+// READ-ONLY DISPLAY
+// =============================================================================
+
+/**
+ * The dropdown items a value holds, in the value's order, for drawing as
+ * pills; ids of deleted items are dropped. Non-dropdown fields → [].
+ */
+export function fieldValueItems(
+  field: Pick<ProjectField, 'field_type' | 'options'>,
+  value: ProjectFieldValue | undefined
+): { id: number; label: string; color: string }[] {
+  if (!isDropdownField(field)) return [];
+  const items: { id: number; label: string; color: string }[] = [];
+  for (const id of valueOptionIds(value)) {
+    const option = field.options.find((o) => o.id === id);
+    if (option) items.push({ id: option.id, label: option.name, color: option.color });
+  }
+  return items;
+}
+
+/**
+ * A value as read-only text, null when there is none: text trimmed, numbers
+ * in the field's Format ({@link formatFieldNumber}), toggles `Yes` / `No` (an
+ * off toggle is a value), dropdowns as item names joined with `, ` (deleted
+ * items dropped). The words of the site export's `field_value_cell`.
+ */
+export function formatFieldValue(
+  field: Pick<ProjectField, 'field_type' | 'options' | 'decimals'>,
+  value: ProjectFieldValue | undefined
+): string | null {
+  if (isEmptyFieldValue(value)) return null;
+  switch (field.field_type) {
+    case 'toggle':
+      return value === true ? 'Yes' : value === false ? 'No' : null;
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value)
+        ? formatFieldNumber(value, field.decimals)
+        : null;
+    case 'select':
+    case 'multiselect': {
+      const names = fieldValueItems(field, value).map((item) => item.label);
+      return names.length ? names.join(', ') : null;
+    }
+    default:
+      return typeof value === 'string' ? value.trim() : null;
+  }
+}
+
 /** Human name of a field type, for badges and the type picker. */
 export const FIELD_TYPE_LABELS: Record<ProjectFieldType, string> = {
   text: 'Text',

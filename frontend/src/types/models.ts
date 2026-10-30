@@ -616,6 +616,12 @@ export interface InstanceSettings {
   project_fields_hidden?: string;
   /** Decimals the built-in Volume keeps: `any` (as typed) or `0`–`3` */
   volume_decimals?: string;
+  /**
+   * Compact JSON array: the rows of the Gantt's Shift-hover project details --
+   * built-in row keys (utils/instanceSettings.ts `PROJECT_TOOLTIP_ROWS`) then
+   * custom project field ids
+   */
+  project_tooltip_rows?: string;
   [key: string]: string | undefined;
 }
 
