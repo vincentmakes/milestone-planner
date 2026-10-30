@@ -200,12 +200,10 @@ On a tablet or phone, the same gestures work with a finger: press a bar and move
 
 A booking on a phase or subphase is either **linked** to it (pinned): it covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged — or **unlinked**, with its own dates inside the phase. The badge at the start of the booking's row in the project panel shows which: it holds a **pin** and the phase's name, and a filled pin means the booking follows the phase dates.
 
-A new booking from **Assign Staff**, **Assign me…** or the Kanban card (**Join this card**, adding an assignee) starts **unlinked, with the phase's dates**: its own dates are the phase's start and end. Because they are its own, the booking does not stretch when the phase grows or moves later — it is fitted inside the phase as described below. To make it follow the phase, pin it:
+A new booking from **Assign Staff**, **Assign me…**, a drag from the resource panel onto a phase or subphase bar, or the Kanban card (**Join this card**, adding an assignee) starts **unlinked, with the phase's dates**: its own dates are the phase's start and end. Because they are its own, the booking does not stretch when the phase grows or moves later — it is fitted inside the phase as described below. To make it follow the phase, pin it:
 
 - **Click the pin** on the booking's row. An outlined pin (*Own dates*) turns into a filled one and the booking follows the phase dates; click it again to give the booking its own dates (it keeps the phase's dates for now).
 - Or, in the [assignment dialog](staff-management.md#assignment-modal), turn on **Follow the phase dates**; turn it off to pick the booking's own dates. The calendar only offers days inside the phase.
-
-A drag from the resource panel onto a phase bar still books the person linked to the phase.
 
 An unlinked booking's bar can be moved and resized on the timeline like any other bar, but it stops at the phase's start and end. The pin can only be clicked by people who may change that booking; for everyone else, and while the booking or your change to it awaits approval, it is greyed out but still shows whether the booking follows the phase. An unlinked booking's pin is also greyed out while another booking of the same person on that phase covers part of the phase's dates (*Can't follow the phase dates while another booking of this person overlaps them*): following the phase would make the two overlap.
 
@@ -349,7 +347,7 @@ Child phases/subphases move along with their parent when dates are adjusted. Par
 
 ### Deleting a Dependency
 
-Click the dependency arrow on the timeline and choose **Delete Dependency** in the popup, or edit the target phase or subphase and remove the dependency from its list. This also works for links created by older versions.
+Click the dependency arrow on the timeline and choose **Delete Dependency** in the popup — the link is removed at once, without a confirmation (draw it again to restore it) — or edit the target phase or subphase and remove the dependency from its list. This also works for links created by older versions.
 
 ### Visual Arrows
 

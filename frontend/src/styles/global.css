@@ -35,6 +35,32 @@ body {
 }
 
 /* =============================================
+   COMPACT SCALE (the timeline views)
+   The Gantt, Staff Overview, Equipment, Cross-site and Archived views keep
+   the denser pre-2.2 text and icon sizes: their root carries `compact-ui`.
+   Custom properties resolve where they are declared, so the scope re-declares
+   the size tokens themselves (a factor on the root tokens could not be undone
+   here), and resets the inherited body size to its own base.
+   ============================================= */
+
+.compact-ui {
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-base: 14px;
+  --icon-scale: 1;
+  font-size: var(--font-size-base);
+}
+
+[data-theme="s-theme-dark"] .compact-ui,
+[data-theme="s-theme-light"] .compact-ui {
+  --font-size-xs: 12px;
+  --font-size-sm: 12px;
+  --font-size-md: 12px;
+  --font-size-base: 14px;
+}
+
+/* =============================================
    TYPOGRAPHY
    ============================================= */
 
@@ -396,7 +422,11 @@ body.phantom-sibling-mode * {
   
   /* Smaller font sizes for mobile */
   body {
-    font-size: 13px;
+    font-size: var(--font-size-md);
+  }
+
+  .compact-ui {
+    font-size: var(--font-size-md);
   }
   
   /* Larger touch targets - but NOT for inline badges/controls, and not for

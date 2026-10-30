@@ -119,6 +119,17 @@ describe('ProjectPanel header accessible names', () => {
   });
 });
 
+describe('ProjectPanel scale', () => {
+  it('keeps the header strip at the app scale, the column headers and rows compact (compact-ui)', () => {
+    seedUser('admin');
+    useCustomColumnStore.setState({ customColumns: [column] });
+    const { container } = render(<ProjectPanel projects={[]} width={320} />);
+    expect(screen.getByText('Projects').closest('.compact-ui')).toBeNull();
+    expect(container.querySelector('[class*="columnHeaders"]')).toHaveClass('compact-ui');
+    expect(container.querySelector('[class*="body"]')).toHaveClass('compact-ui');
+  });
+});
+
 describe('ProjectPanel column visibility dropdown', () => {
   it('is a dialog that Escape closes, focus back on the trigger', () => {
     seedUser('admin');

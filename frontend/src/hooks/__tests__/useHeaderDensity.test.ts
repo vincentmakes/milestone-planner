@@ -44,8 +44,9 @@ afterEach(() => {
 describe('useHeaderDensity', () => {
   it.each([
     [1920, 'full'],
-    [1600, 'full'],
-    [1599, 'compact'],
+    [1650, 'full'],
+    [1649, 'compact'],
+    [1600, 'compact'],
     [1440, 'compact'],
     [1280, 'compact'],
     [1279, 'condensed'],

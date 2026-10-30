@@ -54,6 +54,12 @@ beforeEach(() => {
 });
 
 describe('GanttContainer default overview panel', () => {
+  it('leaves its root at the app scale: the compact scale sits on the data areas inside', () => {
+    seed('none');
+    const { container } = render(<GanttContainer />);
+    expect(container.firstElementChild).not.toHaveClass('compact-ui');
+  });
+
   it('opens the Staff panel when the default is staff', () => {
     seed('staff');
     render(<GanttContainer />);

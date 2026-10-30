@@ -131,33 +131,69 @@ describe('ResourceDropOverlay in America/New_York', () => {
   });
 });
 
-describe('ResourceDropOverlay on a phase', () => {
-  it('creates a linked booking: no dates, it follows the phase', async () => {
-    const withPhase = {
-      ...project,
-      phases: [{ id: 10, name: 'Design', start_date: '2026-03-02', end_date: '2026-03-13', children: [] }],
-    } as unknown as Project;
-    useAppStore.setState({ projects: [withPhase] });
+describe('ResourceDropOverlay on a phase or subphase', () => {
+  const withCards = {
+    ...project,
+    phases: [
+      {
+        id: 10,
+        name: 'Design',
+        start_date: '2026-03-02',
+        end_date: '2026-03-13',
+        children: [{ id: 20, name: 'Sketches', start_date: '2026-03-03', end_date: '2026-03-06', children: [] }],
+      },
+    ],
+  } as unknown as Project;
+
+  async function dropOnRow(y: number) {
+    useAppStore.setState({ projects: [withCards] });
     const container = document.createElement('div');
     container.getBoundingClientRect = () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) });
     const { container: host } = render(
       <ResourceDropOverlay
-        projects={[withPhase]}
+        projects={[withCards]}
         cells={cells}
         cellWidth={CELL_WIDTH}
         totalWidth={cells.length * CELL_WIDTH}
         containerRef={{ current: container }}
-        rowPositions={new Map([['project-1', { top: 0, height: 32 }], ['phase-10', { top: 32, height: 32 }]])}
+        rowPositions={
+          new Map([
+            ['project-1', { top: 0, height: 32 }],
+            ['phase-10', { top: 32, height: 32 }],
+            ['subphase-20', { top: 64, height: 32 }],
+          ])
+        }
       />
     );
     const overlay = host.firstChild as HTMLElement;
-    fireDrag('dragOver', overlay, 120, 40);
-    fireDrag('drop', overlay, 120, 40);
+    fireDrag('dragOver', overlay, 120, y);
+    fireDrag('drop', overlay, 120, y);
     await act(async () => {});
+    expect(createStaffAssignment).toHaveBeenCalledTimes(1);
+    return vi.mocked(createStaffAssignment).mock.calls[0][0];
+  }
 
-    expect(createStaffAssignment).toHaveBeenCalledWith(expect.objectContaining({ staff_id: 7, phase_id: 10, project_id: 1 }));
-    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+  it('creates an unpinned booking on a phase: `unpinned` and no dates, the server takes the phase dates', async () => {
+    const body = await dropOnRow(40);
+
+    expect(body).toEqual(expect.objectContaining({ staff_id: 7, phase_id: 10, project_id: 1, allocation: 80, unpinned: true }));
+    expect(body.subphase_id).toBeUndefined();
     expect(body).not.toHaveProperty('start_date');
     expect(body).not.toHaveProperty('end_date');
+  });
+
+  it('creates an unpinned booking on a subphase the same way', async () => {
+    const body = await dropOnRow(72);
+
+    expect(body).toEqual(expect.objectContaining({ staff_id: 7, subphase_id: 20, project_id: 1, unpinned: true }));
+    expect(body).not.toHaveProperty('start_date');
+    expect(body).not.toHaveProperty('end_date');
+  });
+
+  it('keeps the dropped days at project level, without `unpinned`', async () => {
+    const body = await dropOnRow(10);
+
+    expect(body).toEqual(expect.objectContaining({ project_id: 1, start_date: '2026-03-04', end_date: '2026-03-08' }));
+    expect(body).not.toHaveProperty('unpinned');
   });
 });

@@ -15,7 +15,7 @@ describe('OverlapWarningIcon', () => {
     const svg = img.querySelector('svg') as SVGElement;
     expect(svg).toHaveAttribute('aria-hidden', 'true');
     expect(svg).toHaveAttribute('data-testid', 'WarningAmberOutlinedIcon');
-    expect(svg.style.fontSize).toBe('14px');
+    expect(svg.style.fontSize).toBe('calc(14px * var(--icon-scale))');
   });
 
   it('takes a title, a size and an extra class', () => {
@@ -23,6 +23,8 @@ describe('OverlapWarningIcon', () => {
     const img = screen.getByRole('img', { name: 'Blocked twice' });
     expect(img).toHaveClass('extra');
     expect(img.className.split(' ').length).toBe(2);
-    expect((img.querySelector('svg') as SVGElement).style.fontSize).toBe('12px');
+    expect((img.querySelector('svg') as SVGElement).style.fontSize).toBe(
+      'calc(12px * var(--icon-scale))'
+    );
   });
 });

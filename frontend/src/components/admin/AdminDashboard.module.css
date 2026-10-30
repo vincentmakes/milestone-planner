@@ -30,7 +30,7 @@
 }
 
 .title {
-  font-size: 1.125rem;
+  font-size: var(--font-size-xl);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
@@ -46,13 +46,13 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
 .roleBadge {
   padding: 0.25rem 0.5rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--accent-purple);
@@ -74,7 +74,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.625rem 1rem;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   font-weight: 500;
   color: var(--text-secondary);
   background: transparent;

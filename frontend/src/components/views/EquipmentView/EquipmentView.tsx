@@ -379,7 +379,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   
   return (
     <div 
-      className={`${styles.container} ${embedded ? styles.embedded : ''}`}
+      className={`${styles.container} ${embedded ? `${styles.embedded} compact-ui` : ''}`}
       style={containerStyle}
     >
       {/* Left Panel - Equipment List */}
@@ -456,7 +456,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
             </div>
           )}
         </div>
-        <div className={styles.panelBody} ref={panelRef}>
+        <div className={`${styles.panelBody} compact-ui`} ref={panelRef}>
           {siteEquipment.length === 0 ? (
             <div className={styles.empty}>
               <p>No equipment found</p>
@@ -595,7 +595,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
       />
       
       {/* Right Side - Timeline */}
-      <div className={styles.timeline}>
+      <div className={`${styles.timeline} compact-ui`}>
         {/* Purple header spacer in embedded mode - stays fixed above scroll */}
         {embedded && <div className={styles.timelineHeaderSpacer} />}
         

@@ -6,7 +6,11 @@ export type IconComponent = typeof SvgIcon;
 export interface IconProps {
   /** The icon to draw, from `./icons` */
   icon: IconComponent;
-  /** Width and height in px (default 16) */
+  /**
+   * Width and height in px at the compact scale (default 16). The stylesheet
+   * multiplies it by `--icon-scale`: 1.125 across the app, 1 inside the
+   * `.compact-ui` timeline views, so the same `size` reads right in both.
+   */
   size?: number;
   className?: string;
   /**
@@ -17,7 +21,7 @@ export interface IconProps {
 }
 
 /**
- * Renders one app icon at `size` px in the current text colour.
+ * Renders one app icon at `size` px × `--icon-scale` in the current text colour.
  *
  * The size is the svg's font size (Material icons are 1em square), so a
  * stylesheet that sets the svg's `width` / `height` — the shared `Button`'s
@@ -28,7 +32,7 @@ export function Icon({ icon: Component, size = 16, className, title }: IconProps
     <Component
       className={className}
       fontSize="inherit"
-      style={{ fontSize: size }}
+      style={{ fontSize: `calc(${size}px * var(--icon-scale))` }}
       titleAccess={title}
       role={title ? 'img' : undefined}
       aria-hidden={title ? undefined : true}

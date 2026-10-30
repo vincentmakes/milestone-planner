@@ -143,7 +143,7 @@ export function CrossSiteView() {
         <div className={styles.panelHeader}>
           <span className={styles.headerTitle}>Cross-Site Overview</span>
         </div>
-        <div className={styles.panelBody} ref={panelRef}>
+        <div className={`${styles.panelBody} compact-ui`} ref={panelRef}>
           {rows.map((row) => {
             if (row.type === 'site') {
               return (
@@ -179,7 +179,7 @@ export function CrossSiteView() {
       </div>
       
       {/* Right Side - Timeline */}
-      <div className={styles.timeline}>
+      <div className={`${styles.timeline} compact-ui`}>
         <div className={styles.timelineScroll} ref={timelineScrollRef}>
           <div className={styles.timelineContent} style={{ width: totalWidth }}>
             <TimelineHeader

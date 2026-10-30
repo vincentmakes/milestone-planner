@@ -233,16 +233,16 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                     <td>{getDbStatusBadge(tenant.database_status)}</td>
                     <td>
                       {tenant.organization_name ? (
-                        <span style={{ fontSize: '0.8125rem' }}>
+                        <span style={{ fontSize: 'var(--font-size-md)' }}>
                           {tenant.organization_name}
                           {tenant.required_group_ids && tenant.required_group_ids.length > 0 && (
-                            <span style={{ marginLeft: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                            <span style={{ marginLeft: '0.25rem', color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>
                               ({tenant.required_group_ids.length} groups)
                             </span>
                           )}
                         </span>
                       ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>—</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-md)' }}>—</span>
                       )}
                     </td>
                     <td>{tenant.admin_email}</td>

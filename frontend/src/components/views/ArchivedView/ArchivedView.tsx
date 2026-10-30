@@ -72,7 +72,7 @@ export function ArchivedView() {
         <div className={styles.panelHeader}>
           Archived Projects
         </div>
-        <div className={styles.panelContent} ref={panelRef}>
+        <div className={`${styles.panelContent} compact-ui`} ref={panelRef}>
           {archivedProjects.length === 0 ? (
             <div className={styles.emptyState}>
               <p>No archived projects</p>
@@ -126,7 +126,7 @@ export function ArchivedView() {
       </div>
       
       {/* Right Side - Timeline (matches Gantt Timeline structure) */}
-      <div className={styles.timelineWrapper}>
+      <div className={`${styles.timelineWrapper} compact-ui`}>
         <div className={styles.timelineScroll}>
           <div className={styles.timelineContent} style={{ width: totalWidth }}>
             {/* Timeline Header */}

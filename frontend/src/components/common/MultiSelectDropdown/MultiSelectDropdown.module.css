@@ -22,7 +22,7 @@
 .clear {
   padding: 0.4rem 0.75rem;
   font-family: inherit;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--accent-blue);
   text-align: left;

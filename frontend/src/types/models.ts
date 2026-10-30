@@ -787,6 +787,13 @@ export interface CreateStaffAssignmentRequest {
    * approvers, added to the thread once approved.
    */
   comment?: string;
+  /**
+   * Phase / subphase only, without dates: a first booking takes the card's
+   * current dates as its own (unpinned) instead of following the card; a
+   * second one is placed by the server as usual. With dates the server
+   * answers 422. The resource-panel drop sends it.
+   */
+  unpinned?: boolean;
 }
 
 /**

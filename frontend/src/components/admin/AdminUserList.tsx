@@ -112,7 +112,7 @@ export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
                     <td>
                       <strong>{user.email}</strong>
                       {user.id === currentUser?.id && (
-                        <span style={{ marginLeft: 8, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        <span style={{ marginLeft: 8, fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>
                           (you)
                         </span>
                       )}

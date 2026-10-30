@@ -223,6 +223,22 @@ describe('StaffView panel', () => {
     expect(within(rowFor('Alice Ames')).getByText('0% available')).toBeInTheDocument();
   });
 
+  it('keeps the title strip at the app scale and the rows and timeline compact (compact-ui)', () => {
+    useAppStore.setState({ currentSite: site, currentUser: makeUser(), staff: [] });
+    const { container } = render(<StaffView />);
+    expect(container.firstElementChild).not.toHaveClass('compact-ui');
+    expect(container.querySelector('[class*="panelHeader"]')).not.toHaveClass('compact-ui');
+    expect(container.querySelector('[class*="panelHeader"]')!.closest('.compact-ui')).toBeNull();
+    expect(container.querySelector('[class*="panelBody"]')).toHaveClass('compact-ui');
+    expect(container.querySelector('[class*="timeline"]')).toHaveClass('compact-ui');
+  });
+
+  it('keeps the whole panel compact when embedded below the Gantt', () => {
+    useAppStore.setState({ currentSite: site, currentUser: makeUser(), staff: [] });
+    const { container } = render(<StaffView embedded />);
+    expect(container.firstElementChild).toHaveClass('compact-ui');
+  });
+
   it('shows the empty state when the site has no staff', () => {
     useAppStore.setState({ currentSite: site, currentUser: makeUser(), staff: [] });
     render(<StaffView />);

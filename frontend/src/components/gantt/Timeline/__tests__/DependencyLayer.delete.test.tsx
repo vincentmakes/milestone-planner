@@ -15,7 +15,6 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase } from '@/api/endpoints/projects';
 import type { Dependency, Phase, Project, Subphase } from '@/types';
-import { stubConfirm } from '@/test/confirmDialog';
 import { makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -62,7 +61,6 @@ async function deleteArrow(container: HTMLElement, from: string, to: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  stubConfirm(true);
   useViewStore.setState({ viewMode: 'month', showAssignments: false });
 });
 

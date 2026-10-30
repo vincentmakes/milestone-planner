@@ -92,7 +92,7 @@
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -103,7 +103,7 @@
 
 .clearBtn {
   padding: 0 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   font-family: inherit;
   text-transform: none;
@@ -135,7 +135,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.75rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: var(--text-primary);
   cursor: pointer;
   transition: background var(--transition-fast);

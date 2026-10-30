@@ -10,7 +10,7 @@
 /* Toolbar (layout comes from the shared PanelToolbar) */
 
 .resultCount {
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -26,7 +26,7 @@
   height: 32px;
   padding: 0 0.625rem;
   font-family: var(--font-family);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
@@ -78,7 +78,7 @@
   border: none;
   color: var(--accent-blue);
   cursor: pointer;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   padding: 0;
 }
 
@@ -111,7 +111,7 @@
   padding: 0.75rem 1rem;
   color: var(--text-muted);
   font-weight: 500;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border-color);
@@ -158,12 +158,12 @@
 }
 
 .userEmail {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
 .disabledBadge {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   padding: 2px 6px;
   border-radius: 3px;
   background: rgba(239, 68, 68, 0.15);
@@ -174,7 +174,7 @@
 
 /* Not bookable as a resource: informational, so neutral (not the red of Disabled) */
 .notBookableBadge {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   padding: 2px 6px;
   border-radius: 3px;
   background: var(--bg-tertiary);
@@ -187,7 +187,7 @@
 /* Job Title Cell */
 .jobTitleCell {
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
 }
 
 .noValue {
@@ -199,7 +199,7 @@
   display: inline-block;
   padding: 4px 10px;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
 }
 
@@ -215,7 +215,7 @@
   display: inline-block;
   padding: 2px 8px;
   border-radius: 3px;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: 500;
   max-width: 100px;
   overflow: hidden;
@@ -224,7 +224,7 @@
 }
 
 .moreSkills {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   padding: 2px 4px;
 }
@@ -232,7 +232,7 @@
 /* Sites Cell */
 .sitesCell {
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -288,7 +288,7 @@
 
 .formHeader h3 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--font-size-xl);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -316,7 +316,7 @@
 }
 
 .field label {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -367,7 +367,7 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   overflow-y: auto;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
 }
 
 /* Flex, so the text sits centred in the 44 px phone row (global.css) */
@@ -413,7 +413,7 @@
 }
 
 .hint {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   margin-top: 0.25rem;
 }
@@ -430,7 +430,7 @@
 }
 
 .capacityHint {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: var(--accent-blue);
   font-weight: 500;
 }
@@ -443,7 +443,7 @@
 }
 
 .sitesSection > label {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -468,7 +468,7 @@
   gap: 0.5rem;
   cursor: pointer;
   padding: 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 
@@ -496,7 +496,7 @@
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   cursor: pointer;
   transition: all var(--transition-fast);
   display: flex;
@@ -541,7 +541,7 @@
 .noOptions {
   color: var(--text-muted);
   font-style: italic;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
 }
 
 /* New Item Input (for quick skill add) */
@@ -602,7 +602,7 @@
 }
 
 .skillsSection > label {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -629,7 +629,7 @@
   gap: 0.5rem;
   cursor: pointer;
   padding: 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 
@@ -715,6 +715,6 @@
 .sliderLabels {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }

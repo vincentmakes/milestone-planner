@@ -146,18 +146,18 @@
 }
 
 .iconSlot svg {
-  width: 14px;
-  height: 14px;
+  width: calc(14px * var(--icon-scale));
+  height: calc(14px * var(--icon-scale));
 }
 
 .sm .iconSlot svg {
-  width: 12px;
-  height: 12px;
+  width: calc(12px * var(--icon-scale));
+  height: calc(12px * var(--icon-scale));
 }
 
 .lg .iconSlot svg {
-  width: 20px;
-  height: 20px;
+  width: calc(20px * var(--icon-scale));
+  height: calc(20px * var(--icon-scale));
 }
 
 @keyframes spin {

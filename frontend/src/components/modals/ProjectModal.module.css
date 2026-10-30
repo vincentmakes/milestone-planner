@@ -25,13 +25,14 @@
   min-width: 0;
 }
 
-/* A number project field: digits line up */
+/* A number project field: digits line up, figures in a medium weight */
 .numberField input {
   font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
 }
 
 .label {
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
 }
@@ -61,7 +62,7 @@
 
 .hint {
   margin-right: auto;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   color: var(--text-muted);
 }
 
@@ -74,7 +75,7 @@
 
 .phaseTag {
   padding: 0.375rem 0.75rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -102,7 +103,7 @@
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: var(--radius-sm);
   color: var(--accent-red);
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
 }
 
 /* Footer */

@@ -1196,3 +1196,197 @@ async def test_kanban_first_assign_is_unpinned_and_locks_the_card(
     assert response.json()["linked"] is False
     lock = mock_db_session.execute.await_args_list[2].args[0]
     assert lock._for_update_arg is not None
+
+
+# ---------------------------------------------------------------------------
+# unpinned: the resource-panel drop books the card's own dates (round 3)
+# ---------------------------------------------------------------------------
+
+
+def _unpinned(level: str, **extra) -> dict:
+    return {**_create(level), "unpinned": True, **extra}
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_unpinned_first_create_files_the_cards_dates_as_its_own(
+    authed_client, mock_db_session, change_intents, level
+):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    _assign_id(mock_db_session)
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        card_lock_result(),
+        _placement(),  # the person holds no booking on the card
+        _detail_row(STAFF, start_date=CARD_START, end_date=CARD_END),
+    ]
+
+    response = await client.post(_post_path(level), json=_unpinned(level))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["linked"], body["start_date"], body["end_date"]) == (
+        False,
+        "2026-03-02T00:00:00.000Z",
+        "2026-03-13T00:00:00.000Z",
+    )
+    assert body["adjusted"] == []
+    added = mock_db_session.add.call_args[0][0]
+    assert (added.start_date, added.end_date) == (CARD_START, CARD_END)
+    ((_, intents, _),) = change_intents
+    assert {i.body for i in intents} == {"at 40% from 2026-03-02 to 2026-03-13"}
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_unpinned_first_create_reads_the_dates_from_the_locked_card(
+    authed_client, mock_db_session, level
+):
+    # The card moved after the route resolved it: the lock's dates win.
+    client, set_user = authed_client
+    set_user(ADMIN)
+    _assign_id(mock_db_session)
+    moved = (date(2026, 4, 6), date(2026, 4, 10))
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        card_lock_result(*moved),
+        _placement(),
+        _detail_row(STAFF, start_date=moved[0], end_date=moved[1]),
+    ]
+
+    response = await client.post(_post_path(level), json=_unpinned(level))
+
+    assert response.status_code == 200, response.text
+    added = mock_db_session.add.call_args[0][0]
+    assert (added.start_date, added.end_date) == moved
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_unpinned_second_create_is_placed(authed_client, mock_db_session, published, level):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    _assign_id(mock_db_session)
+    whole = _row(level, id=7, start_date=CARD_START, end_date=CARD_END)
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        card_lock_result(),
+        _placement(whole),
+        _detail_row(STAFF, start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
+    ]
+
+    response = await client.post(_post_path(level), json=_unpinned(level))
+
+    assert response.status_code == 200, response.text
+    assert (whole.start_date, whole.end_date) == (date(2026, 3, 2), date(2026, 3, 7))
+    added = mock_db_session.add.call_args[0][0]
+    assert (added.start_date, added.end_date) == (date(2026, 3, 8), date(2026, 3, 13))
+    assert [a["id"] for a in response.json()["adjusted"]] == [7]
+
+
+@pytest.mark.parametrize("level", LEVELS)
+@pytest.mark.parametrize(
+    ("existing", "values"),
+    [
+        # First booking: plain dates, no marker, so an approval re-checks
+        # their overlap instead of re-planning the booking linked.
+        (None, {"allocation": 40, "start_date": "2026-03-02", "end_date": "2026-03-13"}),
+        # Second booking: a real placement keeps the marker.
+        (
+            {"id": 7},
+            {
+                "allocation": 40,
+                "start_date": "2026-03-08",
+                "end_date": "2026-03-13",
+                "placement": "auto",
+            },
+        ),
+    ],
+    ids=["first-plain-dates", "second-marked"],
+)
+async def test_unpinned_create_in_approval_mode(
+    authed_client, mock_db_session, submit, change_intents, level, existing, values
+):
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    rows = [] if existing is None else [_row(level, **existing)]
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _pm_result(PM),
+        _scalar_result(True),
+        card_lock_result(),
+        _placement(*rows),
+    ]
+
+    response = await client.post(_post_path(level), json=_unpinned(level))
+
+    assert response.status_code == 202
+    assert submit.await_args.kwargs["values"] == values
+    mock_db_session.add.assert_not_called()
+    assert change_intents == []
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_unpinned_create_beside_a_pending_full_span_booking_is_409(
+    authed_client, mock_db_session, change_intents, level
+):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    pending = _row(level, id=7, approval_status="pending", approval_request_id=50)
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        card_lock_result(),
+        _placement(pending),
+    ]
+
+    response = await client.post(_post_path(level), json=_unpinned(level))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == ALREADY_PENDING_DETAIL
+    mock_db_session.add.assert_not_called()
+    assert change_intents == []
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_unpinned_with_dates_is_422(authed_client, mock_db_session, level):
+    client, set_user = authed_client
+    set_user(ADMIN)
+
+    response = await client.post(_post_path(level), json=_unpinned(level, **SEG))
+
+    assert response.status_code == 422
+    assert "An unpinned booking takes the card's dates" in response.text
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_unpinned_false_keeps_the_linked_first_booking(
+    authed_client, mock_db_session, submit, level
+):
+    # The dialog's "Follow the phase dates" stays linked (marked, re-planned).
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _pm_result(PM),
+        _scalar_result(True),
+        card_lock_result(),
+        _placement(),
+    ]
+
+    response = await client.post(_post_path(level), json={**_create(level), "unpinned": False})
+
+    assert response.status_code == 202
+    assert submit.await_args.kwargs["values"] == {"allocation": 40, "placement": "auto"}
+
+
+def test_the_project_level_create_ignores_unpinned():
+    # A project booking has no card to take dates from: the field is ignored.
+    from app.routers.assignments import ProjectStaffAssignmentCreate
+
+    data = ProjectStaffAssignmentCreate.model_validate(
+        {"staff_id": STAFF, "start_date": "2026-03-02", "end_date": "2026-03-06", "unpinned": True}
+    )
+    assert "unpinned" not in data.model_dump()

@@ -5,7 +5,7 @@
   background: none;
   border: none;
   padding: 0.25rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-md);
   font-family: inherit;
   color: var(--accent-blue);
   cursor: pointer;

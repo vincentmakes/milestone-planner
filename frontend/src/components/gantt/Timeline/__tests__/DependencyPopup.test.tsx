@@ -1,11 +1,13 @@
 /**
  * DependencyPopup is a small popover over an arrow: it dismisses like every
  * other overlay (outside mousedown, Escape, Tab out — `useDismissableOverlay`)
- * and asks before deleting the link.
+ * and deletes the link in one click, below the modal layer.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { DependencyPopup } from '../DependencyPopup';
 import { stubConfirm } from '@/test/confirmDialog';
 
@@ -58,27 +60,26 @@ describe('DependencyPopup', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('deletes only after confirmation, and only for editors', async () => {
-    let answer = false;
-    const confirm = stubConfirm(() => answer);
+  it('deletes on click, without a confirmation, editors only', () => {
+    const confirm = stubConfirm(true);
     const { onDelete } = renderPopup();
-    const remove = screen.getByRole('button', { name: /Remove|Delete/ });
-    fireEvent.click(remove);
-    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-    expect(onDelete).not.toHaveBeenCalled();
-
-    answer = true;
-    fireEvent.click(remove);
-    await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1));
-    expect(confirm).toHaveBeenLastCalledWith({
-      title: 'Delete dependency',
-      message: 'Remove this FS dependency?',
-      destructive: true,
-    });
+    fireEvent.click(screen.getByRole('button', { name: /Remove|Delete/ }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
 
     cleanup();
     renderPopup({ canDelete: false });
     expect(screen.queryByRole('button', { name: /Remove|Delete/ })).not.toBeInTheDocument();
+  });
+
+  it('sits below the modal layer, so no dialog can open behind it', () => {
+    // Read through Node's fs: under Vitest a `.module.css` import is a stub.
+    const css = readFileSync(join(__dirname, '..', 'DependencyPopup.module.css'), 'utf8');
+    const variables = readFileSync(join(__dirname, '..', '..', '..', '..', 'styles', 'variables.css'), 'utf8');
+    const token = css.match(/\.popup\s*\{[^}]*z-index:\s*var\((--z-[a-z-]+)\)/)?.[1];
+    expect(token).toBeDefined();
+    const value = (name: string) => Number(variables.match(new RegExp(`${name}:\\s*(\\d+);`))?.[1]);
+    expect(value(token!)).toBeLessThan(value('--z-modal-backdrop'));
   });
 
   it('renders nothing while hidden', () => {

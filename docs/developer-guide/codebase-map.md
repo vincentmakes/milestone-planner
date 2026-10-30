@@ -330,7 +330,9 @@ frontend/
                        #   (criticalPath/diffProjects/dependencies/completionStatus live in
                        #   components/gantt/utils/)
     styles/            # global.css, variables.css (design tokens), themes/themes.css,
-                       #   __tests__/cssTokens.test.ts (every var(--x) read is defined)
+                       #   __tests__/cssTokens.test.ts (every var(--x) read is defined),
+                       #   __tests__/fontSizeTokens.test.ts (font sizes read the tokens
+                       #   outside the .compact-ui timelines; ratchet)
     test/              # setup.ts (Vitest setup), factories.ts (make* test builders),
                        #   permissionFixtures.ts (role defaults, asSignedIn, makeCatalogue),
                        #   confirmDialog.ts (stubConfirm / restoreConfirm for confirmAction),

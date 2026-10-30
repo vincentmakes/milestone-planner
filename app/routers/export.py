@@ -12,6 +12,7 @@ import csv
 import io
 import json
 import re
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -67,6 +68,31 @@ def _safe_cell(value: Any) -> Any:
     if isinstance(value, str) and value.startswith(_FORMULA_TRIGGERS):
         return "'" + value
     return value
+
+
+@dataclass(frozen=True)
+class _FormattedNumber:
+    """A workbook number written with an Excel number format (``0.0`` keeps 12.0)."""
+
+    value: float
+    number_format: str
+
+    def __str__(self) -> str:
+        decimals = len(self.number_format.partition(".")[2])
+        return f"{self.value:.{decimals}f}"
+
+
+def _number_cell(value: float, decimals: int | None) -> Any:
+    """
+    A number as the app shows it: rounded half-up to a Format's ``decimals``
+    and written with that many places, so Excel keeps 12.0 (``0.0``) instead
+    of collapsing it to 12. As typed (``None``): the value, a whole one as an
+    int.
+    """
+    number = round_field_number(float(value), decimals)
+    if decimals is None:
+        return int(number) if number.is_integer() else number
+    return _FormattedNumber(number, "0." + "0" * decimals if decimals else "0")
 
 
 def calculate_duration_days(start_date: date, end_date: date) -> int:
@@ -771,10 +797,13 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         for cell in ws[1]:
             cell.font = header_font
             cell.fill = header_fill
-        for row in rows:
+        for row_index, row in enumerate(rows, start=2):  # row 1 holds the headers
             # Every workbook cell goes through here: escape user text so it
             # can never be stored as a formula.
-            ws.append([_safe_cell(v) for v in row])
+            ws.append([v.value if isinstance(v, _FormattedNumber) else _safe_cell(v) for v in row])
+            for column, v in enumerate(row, start=1):
+                if isinstance(v, _FormattedNumber):
+                    ws.cell(row=row_index, column=column).number_format = v.number_format
         # Auto-size columns based on content (capped)
         for idx, header in enumerate(headers, start=1):
             max_len = len(str(header))
@@ -858,7 +887,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             )
             append_subphase_rows(project, ("subphase", sp.id), depth + 1)
 
-    # Volume as the dialog shows it: rounded to its Format (stored values keep theirs).
+    # Volume as the dialog shows it: in its Format (stored values keep theirs).
     volume_decimals = await instance_settings.volume_decimals(db)
     for p in project_rows:
         hierarchy_rows.append(
@@ -875,7 +904,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 user_by_id[p.pm_id].full_name if p.pm_id and p.pm_id in user_by_id else "",
                 p.sales_pm,
                 _yes_no(p.confirmed),
-                None if p.volume is None else round_field_number(p.volume, volume_decimals),
+                None if p.volume is None else _number_cell(p.volume, volume_decimals),
                 _iso(p.start_date),
                 _iso(p.end_date),
                 "",  # Completion (project-level rollup not stored)
@@ -1113,14 +1142,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
 
     def field_value_cell(field: ProjectField, value: Any) -> Any:
         """
-        A value as written in the sheet: numbers as numbers (rounded to the
-        field's decimals, as the app shows them), toggles Yes / No.
+        A value as written in the sheet: numbers as numbers in the field's
+        Format (rounded to its decimals and shown with them, as the app shows
+        them), toggles Yes / No.
         """
         if field.field_type == "toggle":
             return _yes_no(value)
         if field.field_type == "number":
-            number = round_field_number(float(value), field.decimals)
-            return int(number) if number.is_integer() else number
+            return _number_cell(value, field.decimals)
         if field.field_type == "select":
             return option_names.get(value, "")
         if field.field_type == "multiselect":

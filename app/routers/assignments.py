@@ -49,7 +49,11 @@ first half and the new one takes the second; else 409 ``CARD_FULL_DETAIL``
 create answers ``adjusted: [{id, start_date, end_date, linked: false}]`` --
 the rows it shortened. In approval mode the request carries the planned
 dates (``placement: "auto"``) and nothing is shortened until it is approved,
-when the placement is planned again.
+when the placement is planned again. With ``unpinned: true`` (the resource
+panel drop) a dateless create's first booking takes the card's own dates
+instead of following the card, filed without the marker (an approval
+re-checks its overlap); a second one is placed as above. ``unpinned`` with
+dates is a 422.
 
 A booking awaiting approval is a real row (``approval_status = 'pending'``):
 a second booking of the same person on the target with explicit dates is a
@@ -203,7 +207,27 @@ class SegmentDates(DateRangeOrdered):
         return "start_date" in self.model_fields_set
 
 
-class PhaseStaffAssignmentCreate(BookingComment, SegmentDates):
+UNPINNED_WITH_DATES_MESSAGE = "An unpinned booking takes the card's dates: give no dates"
+
+
+class SegmentCreateDates(SegmentDates):
+    """
+    The dates of a phase / subphase create, plus ``unpinned``: a dateless
+    create then takes the card's current dates as its own instead of
+    following the card (the resource-panel drop, like the Kanban join); a
+    second booking is placed as usual. ``unpinned`` with dates is a 422.
+    """
+
+    unpinned: bool = False
+
+    @model_validator(mode="after")
+    def _unpinned_without_dates(self):
+        if self.unpinned and self.start_date is not None:
+            raise ValueError(UNPINNED_WITH_DATES_MESSAGE)
+        return self
+
+
+class PhaseStaffAssignmentCreate(BookingComment, SegmentCreateDates):
     """Request to assign staff to a phase.
 
     `project_id` is accepted for wire compatibility but ignored: the server
@@ -222,7 +246,7 @@ class PhaseStaffAssignmentUpdate(SegmentDates):
     allocation: Allocation | None = None
 
 
-class SubphaseStaffAssignmentCreate(BookingComment, SegmentDates):
+class SubphaseStaffAssignmentCreate(BookingComment, SegmentCreateDates):
     """Request to assign staff to a subphase.
 
     `project_id` is accepted for wire compatibility but ignored: the server
@@ -616,6 +640,7 @@ async def _plan_create(
     allocation: int,
     start_date: date | None,
     end_date: date | None,
+    unpinned: bool = False,
 ) -> tuple[approvals.PlannedBooking, dict[str, Any]]:
     """
     Where a new phase / subphase booking goes, and its booking values.
@@ -628,6 +653,11 @@ async def _plan_create(
       shortened only on a direct write), else 409 ``CARD_FULL_DETAIL`` /
       ``ALREADY_PENDING_DETAIL``. The values carry ``placement: "auto"``, so
       an approval re-plans them.
+    - No dates and ``unpinned``: the same, except that a first booking takes
+      the card's own dates, read under the card lock (``link_first=False``,
+      like the Kanban join). It is filed with plain dates, without the
+      marker, so an approval re-checks their overlap instead of re-planning
+      it linked; a real placement keeps the marker.
     """
     if start_date is not None and end_date is not None:
         await _check_segment(db, level, target_id, staff_id, start_date, end_date)
@@ -635,10 +665,13 @@ async def _plan_create(
             allocation, start_date, end_date
         )
     plan = approvals.require_placement(
-        await approvals.plan_placement(db, level, target_id, staff_id)
+        await approvals.plan_placement(db, level, target_id, staff_id, link_first=not unpinned)
     )
     return plan, booking_dict(
-        allocation, plan.start_date, plan.end_date, placement=approvals.AUTO_PLACEMENT
+        allocation,
+        plan.start_date,
+        plan.end_date,
+        placement=None if plan.first and unpinned else approvals.AUTO_PLACEMENT,
     )
 
 
@@ -711,7 +744,14 @@ async def create_phase_staff_assignment(
     )
     await require_bookable_staff(db, data.staff_id)
     plan, values = await _plan_create(
-        db, "phase", phase_id, data.staff_id, data.allocation or 100, data.start_date, data.end_date
+        db,
+        "phase",
+        phase_id,
+        data.staff_id,
+        data.allocation or 100,
+        data.start_date,
+        data.end_date,
+        unpinned=data.unpinned,
     )
     if outcome == "approval":
         return await approvals.submit_request(
@@ -990,6 +1030,7 @@ async def create_subphase_staff_assignment(
         data.allocation or 100,
         data.start_date,
         data.end_date,
+        unpinned=data.unpinned,
     )
     if outcome == "approval":
         return await approvals.submit_request(

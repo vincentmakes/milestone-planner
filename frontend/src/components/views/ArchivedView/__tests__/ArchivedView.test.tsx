@@ -51,6 +51,15 @@ beforeEach(() => {
 });
 
 describe('ArchivedView edit button', () => {
+  it('keeps the title strip at the app scale and the rows and timeline compact (compact-ui)', () => {
+    seed({ id: 1, role: 'admin' });
+    const { container } = render(<ArchivedView />);
+    expect(container.firstElementChild).not.toHaveClass('compact-ui');
+    expect(screen.getByText('Archived Projects').closest('.compact-ui')).toBeNull();
+    expect(container.querySelector('[class*="panelContent"]')).toHaveClass('compact-ui');
+    expect(container.querySelector('[class*="timelineWrapper"]')).toHaveClass('compact-ui');
+  });
+
   it.each(['admin', 'superuser'] as const)('is offered to a %s and opens the editor', (role) => {
     seed({ id: 1, role });
     render(<ArchivedView />);
