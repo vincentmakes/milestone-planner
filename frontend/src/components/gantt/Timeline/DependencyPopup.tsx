@@ -8,7 +8,6 @@ import { memo, useCallback, useRef } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import styles from './DependencyPopup.module.css';
 import type { DependencyType } from '@/types';
-import { confirmAction } from '@/utils/confirmDialog';
 import { Icon, CloseIcon } from '@/components/common/Icon';
 
 interface DependencyPopupProps {
@@ -49,14 +48,11 @@ export const DependencyPopup = memo(function DependencyPopup({
   // is needed to keep it from closing itself.
   const { onBlur } = useDismissableOverlay({ open: visible, onClose, wrapperRef: popupRef });
 
-  const handleDelete = useCallback(async () => {
-    const confirmed = await confirmAction({
-      title: 'Delete dependency',
-      message: `Remove this ${dependencyType} dependency?`,
-      destructive: true,
-    });
-    if (confirmed) onDelete();
-  }, [dependencyType, onDelete]);
+  // No confirmation: the popup is already the deliberate second step (click
+  // the arrow, then Delete Dependency), and a link is re-created by one drag.
+  // A confirm opened from here also left the popup, with its live button, over
+  // the dialog, so a second press queued a second confirm.
+  const handleDelete = useCallback(() => onDelete(), [onDelete]);
 
   if (!visible) return null;
 

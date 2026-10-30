@@ -326,6 +326,12 @@ underline.
 
 Debt: 103 raw `z-index` literals versus 14 token reads. New code uses the scale.
 
+**An overlay that can be open while a dialog is up sits below `--z-modal-backdrop`** — a
+popover that opens a confirmation (`useDismissableOverlay` keeps it open until the answer), a
+panel left open when a dialog appears: `--z-dropdown` or `--z-popover`, never a raw value above
+the modal layer. `DependencyPopup` once had a raw 2000 and was drawn over the confirmation it
+opened, live button included.
+
 ### 2.12 Breakpoints
 
 | Range | Name | What changes |
@@ -676,7 +682,7 @@ All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef
 (`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper; pass
 `panelRef` when the panel is portaled out of the wrapper (see `AnchoredPanel` below). While a
 confirmation (§3.12) is pending the hook is inert: the confirm owns Escape and the overlay that
-asked (e.g. the dependency popover) stays open until the answer. Never
+asked (e.g. the notification panel's **Clear all**) stays open until the answer. Never
 hand-roll a click-outside effect. `ProjectFilterDropdown` and `FieldChoiceDropdown` are the
 reference users; the header overflow menu, `UserMenu`, the Panels dropdown, the header `TeamSelector`, `NotificationBell`
 (which also `aria-controls` its panel), the `ProjectPanel` column-visibility dropdown,

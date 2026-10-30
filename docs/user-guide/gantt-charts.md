@@ -349,7 +349,7 @@ Child phases/subphases move along with their parent when dates are adjusted. Par
 
 ### Deleting a Dependency
 
-Click the dependency arrow on the timeline and choose **Delete Dependency** in the popup, or edit the target phase or subphase and remove the dependency from its list. This also works for links created by older versions.
+Click the dependency arrow on the timeline and choose **Delete Dependency** in the popup — the link is removed at once, without a confirmation (draw it again to restore it) — or edit the target phase or subphase and remove the dependency from its list. This also works for links created by older versions.
 
 ### Visual Arrows
 
