@@ -25,13 +25,14 @@
   min-width: 0;
 }
 
-/* A number project field: digits line up */
+/* A number project field: digits line up, figures in a medium weight */
 .numberField input {
   font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
 }
 
 .label {
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
 }

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Text and icons are one step larger across the app, the title bars of the timeline views included; the rows and charts of the Gantt, Staff Overview, Equipment, Cross-site and Archived timelines keep their compact size.
+- Form fields read at the body size in every dialog and panel; number fields show their figures in a medium weight with aligned digits.
 
 ## [2.1.0] - 2026-10-28
 

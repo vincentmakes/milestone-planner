@@ -25,7 +25,7 @@
   height: 36px;
   padding: 0 2rem 0 0.75rem;
   font-family: var(--font-family);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);

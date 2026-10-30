@@ -35,7 +35,7 @@
   height: 36px;
   padding: 0 2rem 0 0.75rem;
   font-family: var(--font-family);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   text-align: left;
   background: var(--bg-tertiary);
@@ -128,7 +128,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.75rem;
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   cursor: pointer;
   user-select: none;

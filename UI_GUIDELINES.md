@@ -294,6 +294,15 @@ put when the scale moves. `src/styles/__tests__/fontSizeTokens.test.ts` is the r
 12 px text does not fit a 16 px badge) and display sizes above `xl` (the instance title, the
 admin stat numerals and sign-in title).
 
+**Form controls read the body size.** The text of every boxed control — `Input` (text and number
+fields, the read-only `DateRangeField` / `DateField` fields), `Select`, and the trigger and option
+rows of `SearchableSelect` / `MultiSelectDropdown` (`dropdownShell.module.css`) — is
+`--font-size-base` (15 px; 14 px inside `.compact-ui`). Their own labels are `--font-size-sm`,
+weight 500; the project dialog's group labels (Teams, Tags, Project Phases) match them, so that
+dialog has one label size. Number fields (`NumberFieldInput`) keep the same size
+and show their figures in `--font-weight-medium` with `tabular-nums`. The boxes stay 36 px tall;
+change the token a control reads, never a per-dialog size.
+
 Weights `--font-weight-normal` 400, `--font-weight-medium` 500 (buttons, labels),
 `--font-weight-semibold` 600 (headings), `--font-weight-bold` 700. Line heights
 `--line-height-tight` 1.25, `--line-height-normal` 1.5, `--line-height-relaxed` 1.75. Headings
@@ -481,13 +490,15 @@ decision, not an oversight.
 ### 3.4 Forms
 
 - **`Input`** (`components/common/Input`): `label`, `error`, `hint`, `leftIcon`, `rightIcon`,
-  `fullWidth`, plus every native input prop. 36 px tall; the label is linked through `htmlFor`
+  `fullWidth`, plus every native input prop. 36 px tall, text `--font-size-base`, label
+  `--font-size-sm` weight 500 (§2.10); the label is linked through `htmlFor`
   (an id is generated when none is given); an `error` replaces the `hint`, sets `aria-invalid`
   and is announced (`role="alert"`, linked through `aria-describedby`; a `hint` is linked the
   same way).
 - **`NumberFieldInput`** (`components/modals/ProjectFieldInputs.tsx`): a number with a format (a
   number project field, the built-in Volume). It refuses a keystroke that adds more decimals
-  than the format keeps and pads on blur (12 → 12.0); As typed takes anything.
+  than the format keeps and pads on blur (12 → 12.0); As typed takes anything. Its figures are
+  `--font-weight-medium` with `tabular-nums`, at the size of every other field.
 - **Two fields side by side** (a start/end date pair): a grid of `minmax(0, 1fr) minmax(0, 1fr)`
   (or a flex row whose items have `min-width: 0`), never `1fr 1fr`. A `1fr` track cannot shrink
   below its content, so a wide field overflows its neighbour on a narrow dialog. The token test
