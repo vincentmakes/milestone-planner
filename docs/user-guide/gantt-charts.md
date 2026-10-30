@@ -118,6 +118,8 @@ Besides its name, dates and manager, a project carries **fields**. Four are buil
 
 No field is required. A dropdown item can be limited to some sites and to some [teams](settings.md#teams) of a site, so the dialog only offers the items that apply to the project's site and teams; unticking a project's last matching team removes such an item from the project when you save. People who can manage project fields (admins by default) see a **Manage fields…** link that opens Settings → Project fields.
 
+**Details on hover (Shift).** Hold Shift and point at a project bar to see its details. By default they show the customer, the PM, whether the project is confirmed (*Confirmed: Yes / No*, under the field's own name if it was renamed), the tags, the period, the completion, the work days, the total days and the assigned staff. An administrator chooses the rows in **Settings → Project fields → Gantt details** (see [Gantt details](settings.md#gantt-details)): Sales PM, Volume (in its format) and any custom project field can be added — a dropdown field shows its items as coloured pills — and any row can be left out. A row with no value for the project is not shown. Phases and subphases always show their own details.
+
 ## Tags
 
 Tags are coloured labels attached to projects to classify and filter them (e.g. *Critical*, *Tech Transfer*). The tag library is shared by the whole workspace: admins define the tags in **Settings → Tags** (see [Tags in Settings](settings.md#tags)), and anyone who can edit a project attaches them. Categories with fixed choices, such as a project type, are [dropdown project fields](#project-fields) rather than tags.

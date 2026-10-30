@@ -4,7 +4,7 @@
 
 | Shortcut | Action |
 |----------|--------|
-| **Shift + Hover** | Show tooltip with details for a phase or subphase |
+| **Shift + Hover** | Show tooltip with details for a project, phase or subphase |
 | **Ctrl + Scroll** | Zoom the timeline in/out |
 | **Click arrow** | Expand/collapse a project, phase, or staff member |
 | **Right-click** | Open context menu with available actions |

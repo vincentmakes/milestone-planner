@@ -24,7 +24,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | Resources | Equipment | Lab equipment on one or more sites — see [Equipment Booking](equipment-booking.md#managing-equipment) | Admin, Superuser |
 | | [Equipment types](#equipment-types) | Equipment categories | Admin, Superuser |
 | Projects | [Predefined phases](#predefined-phases) | Phase templates for new projects | Admin, Superuser |
-| | [Project fields](#project-fields) | The built-in project fields' labels, and your own dropdown, text, number and switch fields | Admin |
+| | [Project fields](#project-fields) | The built-in project fields' labels, your own dropdown, text, number and switch fields, and the rows of the Gantt's Shift-hover details | Admin |
 | | [Tags](#tags) | Project tags and the sites they apply to | Admin |
 | Integrations | SSO | Microsoft Entra single sign-on for this workspace, with a Test configuration button for the entered values and a typed confirmation before a change to live sign-in settings — see [Organization & SSO](../admin-guide/organizations-sso.md#configuring-sso-in-milestone) | Admin |
 
@@ -682,7 +682,7 @@ In the **Equipment View**, use the type filter dropdown to show/hide equipment b
 
 ## Project Fields
 
-Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog.
+Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog. The page also chooses which of them the Gantt chart shows when you hold Shift over a project bar ([Gantt details](#gantt-details)).
 
 ![Settings → Project fields: the built-in fields with their labels and Shown switches, the Project type dropdown open on its items, the Area multi-select field and the add-field row under the list](../assets/screenshots/project-fields-settings.png){ loading=lazy }
 
@@ -727,6 +727,20 @@ Click the list icon (**Items**) of a dropdown or multi-select dropdown field (a 
 - **Delete** — Removes the item from every project; you are asked to confirm.
 
 The item colours are the dots in the project dialog's multi-select dropdowns, the Filter dots, the section headers of **Group by** and the bar colours of **Colour by**.
+
+### Gantt Details
+
+Holding Shift over a project bar in the Gantt chart shows the project's details (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). The **Gantt details** list under the custom fields chooses its rows, one **Shown** switch per row, in the order they appear:
+
+- **Customer**, **PM**, **Sales PM**, **Volume** and **Confirmed** — the built-in fields under their labels from the list above (a rename shows here as you type it). Volume is shown in its format.
+- **Tags**, **Period**, **Completion**, **Work days**, **Total** and **Assigned staff**.
+- Every custom field, in the order of the Custom fields list, with its type. A dropdown field shows its items as coloured pills, a switch *Yes* or *No*, a number in the field's format.
+
+By default the details show what they always did: Customer, PM, Confirmed, Tags, Period, Completion, Work days, Total and Assigned staff. Sales PM, Volume and custom fields are off until you switch them on — a field added later is off too. The order is fixed; you choose what is shown, not where. A row with no value for a project is left out of that project's details.
+
+A built-in field switched off under **Shown** above is never shown in the details either: its Gantt details switch is off and locked, with the note *Hidden fields are never shown*, and comes back as it was when you show the field again.
+
+Click **Save** to apply the rows (for everyone, right away); **Reset** discards the changes. The section saves on its own, separately from the built-in fields' **Save Changes**.
 
 !!! note "Former tag groups"
     Version 2.0.0 turned tag groups into project fields. On upgrade, each tag group became a dropdown field — a single-select group a **Dropdown**, any other group a **Multi-select dropdown** — with its tags as the items, keeping their colours, order and site and team limits; projects keep what they had selected. Tags that were in no group stay tags.
