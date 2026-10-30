@@ -1,16 +1,25 @@
 /**
  * ShiftTooltip
- * Displays detailed information when hovering over a phase/subphase while holding Shift
+ * Displays detailed information when hovering over a bar while holding Shift.
+ * A project's rows are the ones Settings → Project fields → Gantt details
+ * lists (`project_tooltip_rows`), in a fixed order; phases and subphases
+ * always show theirs.
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { differenceInDays, eachDayOfInterval, isWeekend, format } from 'date-fns';
-import type { Phase, Subphase, Project, Tag } from '@/types';
+import type { Phase, Subphase, Project, ProjectField, Tag } from '@/types';
 import styles from './ShiftTooltip.module.css';
 import { parseLocalDate } from '@/utils/date';
 import { barTextColor } from '@/utils/tags';
-import { builtInFieldLabel, isBuiltInFieldHidden } from '@/utils/instanceSettings';
+import {
+  builtInFieldLabel,
+  isTooltipRowShown,
+  volumeDecimals,
+  type TooltipRow,
+} from '@/utils/instanceSettings';
+import { fieldValueItems, formatFieldNumber, formatFieldValue, isDropdownField } from '@/utils/projectFields';
 
 interface StaffInfo {
   name: string;
@@ -35,8 +44,21 @@ interface TooltipData {
   // Project-specific
   customer?: string | null;
   pmName?: string | null;
+  salesPm?: string | null;
+  volume?: number | null;
   confirmed?: boolean;
   tags?: TooltipTag[];
+  /** The project's custom field values, in field order (fields without a value left out) */
+  fieldRows?: TooltipFieldRow[];
+}
+
+interface TooltipFieldRow {
+  id: number;
+  label: string;
+  /** The value as text (text, number, toggle) */
+  text?: string;
+  /** A dropdown value's items, drawn as pills */
+  items?: TooltipTag[];
 }
 
 interface TooltipTag {
@@ -56,6 +78,27 @@ function resolveTooltipTags(project: Project, tags: Tag[]): TooltipTag[] {
     .filter((t) => ids.has(t.id))
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
     .map((t) => ({ id: t.id, label: t.name, color: t.color }));
+}
+
+/**
+ * The project's custom field values as tooltip rows, in the store's field
+ * order (the server's sort order); fields without a value are left out.
+ * Which of them show is decided at render (`project_tooltip_rows`).
+ */
+function resolveFieldRows(project: Project, fields: ProjectField[]): TooltipFieldRow[] {
+  const values = project.field_values ?? {};
+  const rows: TooltipFieldRow[] = [];
+  for (const field of fields) {
+    const value = values[field.id];
+    if (isDropdownField(field)) {
+      const items = fieldValueItems(field, value);
+      if (items.length) rows.push({ id: field.id, label: field.name, items });
+      continue;
+    }
+    const text = formatFieldValue(field, value);
+    if (text !== null) rows.push({ id: field.id, label: field.name, text });
+  }
+  return rows;
 }
 
 // Calculate work days excluding weekends and holidays
@@ -214,7 +257,9 @@ export function ShiftTooltip() {
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const storeTags = useAppStore((s) => s.tags);
   const instanceSettings = useAppStore((s) => s.instanceSettings);
+  const projectFields = useAppStore((s) => s.projectFields);
   const currentBarRef = useRef<HTMLElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
 
   // Track shift key
   useEffect(() => {
@@ -382,13 +427,16 @@ export function ShiftTooltip() {
         staff,
         customer: project.customer,
         pmName: project.pm_name,
+        salesPm: project.sales_pm,
+        volume: project.volume ?? null,
         confirmed: project.confirmed,
         tags: resolveTooltipTags(project, storeTags),
+        fieldRows: resolveFieldRows(project, projectFields),
         x,
         y,
       });
     }
-  }, [projects, bankHolidayDates, storeTags]);
+  }, [projects, bankHolidayDates, storeTags, projectFields]);
 
   // Handle mouse move to track hover and update position
   useEffect(() => {
@@ -473,44 +521,69 @@ export function ShiftTooltip() {
     };
   }, [isShiftHeld, tooltipData, showPhaseTooltip, showSubphaseTooltip, showProjectTooltip]);
 
+  // Offset from the cursor and kept inside the viewport, measured once the
+  // rows are laid out (offsetWidth/Height ignore the fade-in transform). No
+  // re-render per mouse move; never a negative offset.
+  useLayoutEffect(() => {
+    const el = tooltipRef.current;
+    if (!el || !tooltipData) return;
+    const left = Math.max(8, Math.min(tooltipData.x + 15, window.innerWidth - el.offsetWidth - 8));
+    const top = Math.max(8, Math.min(tooltipData.y + 15, window.innerHeight - el.offsetHeight - 8));
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  }, [tooltipData, isShiftHeld]);
+
   if (!tooltipData || !isShiftHeld) return null;
 
   const completionText = tooltipData.completion !== null
     ? `${tooltipData.completion}%${tooltipData.isCalculatedCompletion ? ' (calc)' : ''}`
     : '—';
 
-  // Position tooltip with offset from cursor, ensuring it stays in viewport
-  const tooltipStyle: React.CSSProperties = {
-    left: Math.min(tooltipData.x + 15, window.innerWidth - 380),
-    top: Math.min(tooltipData.y + 15, window.innerHeight - 340),
-  };
+  const isProject = tooltipData.type === 'project';
+  // A project shows the rows Gantt details lists; phases and subphases all of theirs.
+  const shows = (row: TooltipRow) => !isProject || isTooltipRowShown(instanceSettings, row);
+  const fieldRows = isProject ? (tooltipData.fieldRows ?? []).filter((r) => shows(r.id)) : [];
 
   return (
-    <div className={styles.tooltip} style={tooltipStyle}>
+    <div ref={tooltipRef} className={styles.tooltip}>
       <div className={styles.title}>{tooltipData.title}</div>
       
-      {/* Project-specific: show customer, PM, status */}
-      {tooltipData.type === 'project' && (
+      {/* Project-specific: the built-in fields, PM and tags */}
+      {isProject && (
         <>
-          {tooltipData.customer && !isBuiltInFieldHidden(instanceSettings, 'customer') && (
+          {tooltipData.customer && shows('customer') && (
             <div className={styles.row}>
               <span className={styles.label}>{builtInFieldLabel(instanceSettings, 'customer')}:</span>
               <span>{tooltipData.customer}</span>
             </div>
           )}
-          {tooltipData.pmName && (
+          {tooltipData.pmName && shows('pm') && (
             <div className={styles.row}>
               <span className={styles.label}>PM:</span>
               <span>{tooltipData.pmName}</span>
             </div>
           )}
-          <div className={styles.row}>
-            <span className={styles.label}>Status:</span>
-            <span className={tooltipData.confirmed ? styles.confirmed : styles.unconfirmed}>
-              {tooltipData.confirmed ? 'Confirmed' : 'Unconfirmed'}
-            </span>
-          </div>
-          {tooltipData.tags && tooltipData.tags.length > 0 && (
+          {tooltipData.salesPm && shows('sales_pm') && (
+            <div className={styles.row}>
+              <span className={styles.label}>{builtInFieldLabel(instanceSettings, 'sales_pm')}:</span>
+              <span>{tooltipData.salesPm}</span>
+            </div>
+          )}
+          {tooltipData.volume != null && shows('volume') && (
+            <div className={styles.row}>
+              <span className={styles.label}>{builtInFieldLabel(instanceSettings, 'volume')}:</span>
+              <span>{formatFieldNumber(tooltipData.volume, volumeDecimals(instanceSettings))}</span>
+            </div>
+          )}
+          {shows('confirmed') && (
+            <div className={styles.row}>
+              <span className={styles.label}>{builtInFieldLabel(instanceSettings, 'confirmed')}:</span>
+              <span className={tooltipData.confirmed ? styles.confirmed : styles.unconfirmed}>
+                {tooltipData.confirmed ? 'Yes' : 'No'}
+              </span>
+            </div>
+          )}
+          {tooltipData.tags && tooltipData.tags.length > 0 && shows('tags') && (
             <div className={styles.tagSection}>
               <div className={styles.tagHeader}>Tags:</div>
               <div className={styles.tagRow}>
@@ -544,34 +617,68 @@ export function ShiftTooltip() {
         </div>
       )}
       
-      <div className={styles.row}>
-        <span className={styles.label}>Period:</span>
-        <span>{formatDateRange(tooltipData.startDate, tooltipData.endDate)}</span>
-      </div>
-      <div className={styles.row}>
-        <span className={styles.label}>Completion:</span>
-        <span>{completionText}</span>
-      </div>
-      <div className={styles.row}>
-        <span className={styles.label}>Work days:</span>
-        <span>
-          {tooltipData.workDays} days
-          {tooltipData.holidays > 0 && ` (excl. ${tooltipData.holidays} hol.)`}
-        </span>
-      </div>
-      <div className={styles.row}>
-        <span className={styles.label}>Total:</span>
-        <span>{tooltipData.totalDays} days</span>
-      </div>
+      {shows('period') && (
+        <div className={styles.row}>
+          <span className={styles.label}>Period:</span>
+          <span>{formatDateRange(tooltipData.startDate, tooltipData.endDate)}</span>
+        </div>
+      )}
+      {shows('completion') && (
+        <div className={styles.row}>
+          <span className={styles.label}>Completion:</span>
+          <span>{completionText}</span>
+        </div>
+      )}
+      {shows('work_days') && (
+        <div className={styles.row}>
+          <span className={styles.label}>Work days:</span>
+          <span>
+            {tooltipData.workDays} days
+            {tooltipData.holidays > 0 && ` (excl. ${tooltipData.holidays} hol.)`}
+          </span>
+        </div>
+      )}
+      {shows('total_days') && (
+        <div className={styles.row}>
+          <span className={styles.label}>Total:</span>
+          <span>{tooltipData.totalDays} days</span>
+        </div>
+      )}
       
       {/* Staff assignments */}
-      {tooltipData.staff.length > 0 && (
+      {tooltipData.staff.length > 0 && shows('staff') && (
         <div className={styles.staffSection}>
           <div className={styles.staffHeader}>Assigned Staff:</div>
           {tooltipData.staff.map((s, i) => (
             <div key={i} className={styles.staffRow}>
               <span className={styles.staffName}>{s.name}</span>
               <span className={styles.staffAllocation}>{s.allocation}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Project: the custom fields Gantt details lists, in field order */}
+      {fieldRows.length > 0 && (
+        <div className={styles.fieldSection}>
+          {fieldRows.map((row) => (
+            <div key={row.id} className={styles.row}>
+              <span className={styles.label}>{row.label}:</span>
+              {row.items ? (
+                <div className={styles.fieldPills}>
+                  {row.items.map((item) => (
+                    <span
+                      key={item.id}
+                      className={styles.tagPill}
+                      style={{ backgroundColor: item.color, color: barTextColor(item.color) }}
+                    >
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span>{row.text}</span>
+              )}
             </div>
           ))}
         </div>

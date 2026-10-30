@@ -21,7 +21,7 @@
   "components/gantt/ProjectPanel/ProjectPanel.module.css": 6,
   "components/gantt/ProjectPanel/ProjectRow.module.css": 10,
   "components/gantt/ProjectPanel/SubphaseRow.module.css": 18,
-  "components/gantt/ShiftTooltip/ShiftTooltip.module.css": 1,
+  "components/gantt/ShiftTooltip/ShiftTooltip.module.css": 0,
   "components/gantt/Timeline/DragIndicator.module.css": 2,
   "components/gantt/Timeline/PhantomBar.module.css": 1,
   "components/gantt/Timeline/PhantomIndicator.module.css": 1,

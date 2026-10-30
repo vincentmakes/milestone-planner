@@ -2,7 +2,7 @@
 
 .tooltip {
   position: fixed;
-  z-index: 9999;
+  z-index: var(--z-tooltip);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -11,6 +11,9 @@
   pointer-events: none;
   min-width: 240px;
   max-width: 360px;
+  /* The rows are admin-chosen and unbounded; the tooltip cannot scroll (no pointer events). */
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
   animation: tooltipFadeIn 0.15s ease-out;
 }
 
@@ -51,6 +54,8 @@
 .row span:last-child {
   text-align: right;
   color: var(--text-primary);
+  /* A long value (a text field) wraps inside the max width. */
+  overflow-wrap: anywhere;
 }
 
 /* Status styling */
@@ -128,7 +133,21 @@
   border-radius: 999px;
   font-size: 11px;
   font-weight: var(--font-weight-medium);
-  color: #fff;
   white-space: nowrap;
   line-height: 1.4;
+}
+
+/* Custom project fields */
+.fieldSection {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.fieldPills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
 }

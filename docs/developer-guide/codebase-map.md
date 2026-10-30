@@ -294,7 +294,7 @@ frontend/
                        #   AssignmentRow + CardBadge, SectionRow, GroupBy/ColorBy dropdowns over
                        #   FieldChoiceDropdown), Timeline/ (bars, DependencyLayer, phantom
                        #   overlays, ResourceDropOverlay), CustomColumns/, CompletionSlider/,
-                       #   ShiftTooltip/ (Shift-hover date tooltip), ContextMenuContainer.tsx,
+                       #   ShiftTooltip/ (Shift-hover details), ContextMenuContainer.tsx,
                        #   utils/ (autoCalculation, completionStatus, criticalPath, dependencies,
                        #   diffProjects, projectSections, rowPositions, timeline)
       views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView,

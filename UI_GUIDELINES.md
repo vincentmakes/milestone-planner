@@ -321,10 +321,10 @@ underline.
 | `--z-header` | 500 | App header |
 | `--z-popover` | 600 | `AnchoredPanel` (portaled dropdown panels): above the app header, below a modal backdrop |
 | `--z-modal-backdrop` / `--z-modal` | 1000 / 1001 | Modal layer |
-| `--z-tooltip` | 2000 | Tooltips, the Shift-hover date tooltip |
+| `--z-tooltip` | 2000 | Tooltips, the Gantt's Shift-hover details (`ShiftTooltip`) |
 | `--z-what-if-border` / `--z-what-if-banner` | 9999 / 10000 | What-If frame and banner, above everything |
 
-Debt: 103 raw `z-index` literals versus 14 token reads. New code uses the scale.
+Debt: 102 raw `z-index` literals versus 15 token reads. New code uses the scale.
 
 **An overlay that can be open while a dialog is up sits below `--z-modal-backdrop`** — a
 popover that opens a confirmation (`useDismissableOverlay` keeps it open until the answer), a
