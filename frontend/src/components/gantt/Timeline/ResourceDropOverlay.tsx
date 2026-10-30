@@ -232,14 +232,17 @@ export function ResourceDropOverlay({
         const allocation = getStaffDefaultAllocation(resourceDrag.resourceId);
         // An own booking may need approval: the server then files a request
         // (202) and the pending row arrives with the reload below.
-        // On a phase / subphase the booking is linked (it follows the card,
-        // no dates sent -- dates would make an unlinked segment); the user
-        // unlinks it with the pin. At project level it gets the dropped days.
+        // On a phase / subphase the booking is unpinned, like the dialog's
+        // default: no dates sent and `unpinned`, so the server gives a first
+        // booking the card's current dates (read under the card lock) and
+        // places a second one in a free stretch or half of the first. The
+        // user pins it to the card with the pin. At project level it gets
+        // the dropped days.
         const onCard = Boolean(isPhaseLevel || isSubphaseLevel);
         const res = await createStaffAssignment({
           staff_id: resourceDrag.resourceId,
           allocation,
-          ...(onCard ? {} : { start_date: startDate, end_date: endDate }),
+          ...(onCard ? { unpinned: true } : { start_date: startDate, end_date: endDate }),
           // Always pass project_id for all levels
           project_id: hoveredTarget.projectId,
           phase_id: isPhaseLevel ? hoveredTarget.phaseId! : undefined,
