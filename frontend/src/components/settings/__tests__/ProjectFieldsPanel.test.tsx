@@ -15,7 +15,7 @@
  *   naming how many projects lose a value.
  * - Number fields: a Format picker (As typed / 1 / 1.0 / 1.00 / 1.000) with a
  *   live preview, in the add row and the row's edit form (saved with its
- *   Save); the type pill names the format.
+ *   Save); the Format column of the row shows it.
  * - Items of a dropdown field: added, edited (colour, sites, teams — the tag
  *   edit row's controls), reordered and deleted.
  * - One dirty flag for the hub: only unfinished adds and edits.
@@ -127,7 +127,15 @@ describe('ProjectFieldsPanel — the list', () => {
   it('puts a header over the two switch columns, describing the switches under it', async () => {
     await renderPanel();
     const header = screen.getByTestId('pf-column-header');
-    expect([...header.children].map((c) => c.textContent)).toEqual(['Field', 'In project dialog', 'In Gantt details', '']);
+    expect([...header.children].map((c) => c.textContent)).toEqual([
+      'Field',
+      'Label',
+      'Format',
+      'In project dialog',
+      'In Gantt details',
+      '',
+    ]);
+    expect([...header.children].filter((c) => c.textContent)).toHaveLength(5);
     expect(dialogSwitch('Customer')).toHaveAccessibleDescription('In project dialog');
     expect(ganttSwitch('Customer')).toHaveAccessibleDescription('In Gantt details');
     expect(ganttSwitch('Budget')).toHaveAccessibleDescription('In Gantt details');
@@ -405,6 +413,21 @@ describe('ProjectFieldsPanel — labels', () => {
     fireEvent.keyDown(label, { key: 'a' });
     expect(api.updateSetting).not.toHaveBeenCalled();
   });
+
+  it('lets Escape through for a draft that differs from the stored label only by spaces', async () => {
+    const onKeyDown = vi.fn();
+    render(
+      <div onKeyDown={onKeyDown}>
+        <ProjectFieldsPanel />
+      </div>
+    );
+    await screen.findByTestId('field-1');
+    const label = screen.getByLabelText('Label of Customer');
+    fireEvent.change(label, { target: { value: ' Client ' } });
+    fireEvent.keyDown(label, { key: 'Escape' });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(label).toHaveValue('Client');
+  });
 });
 
 describe('ProjectFieldsPanel — preview', () => {
@@ -662,7 +685,7 @@ describe('ProjectFieldsPanel — number format', () => {
   /** The custom fields (the built-in Volume row has a Format picker of its own) */
   const custom = () => within(screen.getByRole('region', { name: 'Custom fields' }));
 
-  it('names the format in the type pill: "Number · 1.0", plain "Number" as typed', async () => {
+  it('shows a number field\'s format in the Format column, the type pill staying "Number"', async () => {
     projectFieldsApi.getAll.mockResolvedValue([
       { ...FIELDS[0], decimals: 1 },
       FIELDS[1],
@@ -671,10 +694,15 @@ describe('ProjectFieldsPanel — number format', () => {
       makeProjectField({ id: 5, name: 'Units', field_type: 'number', sort_order: 4, decimals: 0 }),
     ]);
     await renderPanel();
-    expect(within(screen.getByTestId('field-2')).getByText('Number · 1.0')).toBeInTheDocument();
-    expect(within(screen.getByTestId('field-4')).getByText('Number')).toBeInTheDocument();
-    expect(within(screen.getByTestId('field-5')).getByText('Number · 1')).toBeInTheDocument();
+    for (const id of [2, 4, 5]) {
+      expect(within(screen.getByTestId(`field-${id}`)).getByText('Number')).toBeInTheDocument();
+    }
+    const formatCell = (id: number, text: string) => within(screen.getByTestId(`field-${id}`)).getByText(text);
+    expect(formatCell(2, '1.0')).toHaveClass(/colFormat/);
+    expect(formatCell(4, 'As typed')).toHaveClass(/colFormat/);
+    expect(formatCell(5, '1')).toHaveClass(/colFormat/);
     expect(within(screen.getByTestId('field-3')).getByText('Switch')).toBeInTheDocument();
+    expect(within(screen.getByTestId('field-3')).queryByText('As typed')).not.toBeInTheDocument();
     // No picker in the rows: the format is changed in the edit form
     expect(custom().queryByRole('combobox', { name: /Format/ })).not.toBeInTheDocument();
   });

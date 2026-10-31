@@ -144,12 +144,11 @@ function formatPreview(decimals: number | null, withExistingNote: boolean): stri
   return withExistingNote ? `${sample} ${FORMAT_EXISTING_NOTE}` : sample;
 }
 
-/** The type pill: "Number · 1.0" for a number field with a format */
-function typeBadgeText(field: ProjectField): string {
-  const type = FIELD_TYPE_LABELS[field.field_type];
-  return field.field_type === 'number' && field.decimals != null
-    ? `${type} · ${fieldNumberInputText(1, field.decimals)}`
-    : type;
+/** A number field's format as the Format column shows it: "1.0", "As typed" (other types have none) */
+function formatText(field: ProjectField): string | null {
+  if (field.field_type !== 'number') return null;
+  const choice = choiceFromDecimals(field.decimals);
+  return FORMAT_OPTIONS.find((o) => o.value === choice)?.label ?? null;
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -402,7 +401,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       const draft = labelDrafts[key];
       if (draft === undefined) return;
       // A changed draft is reverted without closing the hub; an unchanged one lets Escape through
-      if (draft !== (storedLabels[key] ?? '')) e.stopPropagation();
+      if (draft.trim() !== (storedLabels[key] ?? '')) e.stopPropagation();
       dropDraft(key);
     }
   };
@@ -590,6 +589,8 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
             <div className={styles.list}>
               <div className={styles.columnHeader} data-testid="pf-column-header">
                 <span>Field</span>
+                <span>Label</span>
+                <span>Format</span>
                 <span id={columnIds.project} className={styles.colProject}>
                   In project dialog
                 </span>
@@ -622,11 +623,11 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                     <span className={styles.builtInName}>{label}</span>
                   </div>
                   {ALWAYS_IN_DIALOG.includes(key) ? (
-                    <SlotText className={styles.colProject} srText="in the project dialog">
+                    <SlotText className={styles.colProject} caption="Dialog" srText="in the project dialog">
                       Always
                     </SlotText>
                   ) : (
-                    <SlotText className={styles.colProject} srText="Not a dialog field">
+                    <SlotText className={styles.colProject} caption="Dialog" srText="Not a dialog field">
                       —
                     </SlotText>
                   )}
@@ -664,32 +665,48 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                     >
                       <div className={styles.fieldRow}>
                         <div className={styles.lead}>
-                          <span className={styles.dragHandle} aria-hidden="true">
-                            <Icon icon={DragHandleIcon} size={16} />
-                          </span>
-                          <div className={styles.name}>
-                            {isEditing ? (
-                              <Input
-                                className={styles.renameInput}
-                                value={editName}
-                                onChange={(e) => setEditName(e.target.value)}
-                                onKeyDown={(e) => handleEditKeyDown(e, field)}
-                                aria-label="Field name"
-                                maxLength={100}
-                                autoFocus
-                              />
-                            ) : (
-                              <span>{field.name}</span>
-                            )}
-                          </div>
-                          <span className={styles.typeBadge}>{typeBadgeText(field)}</span>
-                          {dropdown && (
-                            <span className={styles.meta}>
-                              {field.options.length} item{field.options.length === 1 ? '' : 's'}
+                          <div className={`${styles.colName} ${isEditing ? styles.colNameEditing : ''}`}>
+                            <span className={styles.dragHandle} aria-hidden="true">
+                              <Icon icon={DragHandleIcon} size={16} />
                             </span>
+                            <div className={styles.name}>
+                              {isEditing ? (
+                                <Input
+                                  className={styles.renameInput}
+                                  value={editName}
+                                  onChange={(e) => setEditName(e.target.value)}
+                                  onKeyDown={(e) => handleEditKeyDown(e, field)}
+                                  aria-label="Field name"
+                                  maxLength={100}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span>{field.name}</span>
+                              )}
+                            </div>
+                          </div>
+                          {!isEditing && (
+                            <div
+                              className={`${styles.colLabel} ${styles.colType} ${formatText(field) === null ? styles.colTypeWide : ''}`}
+                            >
+                              <span className={styles.typeBadge}>{FIELD_TYPE_LABELS[field.field_type]}</span>
+                              {dropdown && (
+                                <span className={styles.typeMeta}>
+                                  {field.options.length} item{field.options.length === 1 ? '' : 's'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {!isEditing && formatText(field) !== null && (
+                            <span className={`${styles.colFormat} ${styles.slotText}`}>{formatText(field)}</span>
                           )}
                         </div>
-                        <SlotText className={styles.colProject} title={CUSTOM_ALWAYS_HINT} srText="in the project dialog">
+                        <SlotText
+                          className={styles.colProject}
+                          caption="Dialog"
+                          title={CUSTOM_ALWAYS_HINT}
+                          srText="in the project dialog"
+                        >
                           Always
                         </SlotText>
                         <RowSwitch
@@ -855,17 +872,23 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
 /** A muted word in a switch column ("Always", "—"), with words for screen readers */
 function SlotText({
   className,
+  caption,
   title,
   srText,
   children,
 }: {
   className: string;
+  /** Shown before the word on phones, where the column header is hidden */
+  caption: string;
   title?: string;
   srText: string;
   children: ReactNode;
 }) {
   return (
     <span className={`${styles.slotText} ${className}`} title={title}>
+      <span aria-hidden="true" className={styles.slotCaption}>
+        {caption}:{' '}
+      </span>
       <span aria-hidden="true">{children}</span>
       <span className="sr-only">{srText}</span>
     </span>
@@ -944,7 +967,7 @@ function BuiltInRow({
       <div className={styles.lead}>
         <span className={styles.builtInName}>{defaultLabel}</span>
         <Input
-          className={styles.builtInLabel}
+          className={styles.colLabel}
           value={label}
           onChange={(e) => onLabelChange(e.target.value)}
           onBlur={onLabelBlur}
@@ -955,7 +978,7 @@ function BuiltInRow({
         />
         {format !== undefined && onFormatChange && (
           <Select
-            className={styles.format}
+            className={`${styles.format} ${styles.colFormat}`}
             label="Format"
             value={format}
             options={FORMAT_OPTIONS}
@@ -967,6 +990,7 @@ function BuiltInRow({
       {locked ? (
         <SlotText
           className={styles.colProject}
+          caption="Dialog"
           title={CONFIRMED_HINT}
           srText={`in the project dialog. ${CONFIRMED_HINT}`}
         >
