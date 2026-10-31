@@ -31,7 +31,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 Each person only sees the sections their role's [permissions](#roles-permissions) let them change — with the default roles, **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Someone whose role grants none of these sections has no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
 
 !!! note "Unsaved changes"
-    If you switch section or close the window while a form holds unsaved input — in **General**, **Features & defaults**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types**, **Project fields** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
+    If you switch section or close the window while a form holds unsaved input — in **General**, **Features & defaults**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types**, **Project fields** (an unfinished add or edit only: its labels and switches apply as you change them) or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
 
 Saving is protected against double submission: pressing Enter twice or double-clicking a Save, Add or Delete button runs the action only once.
 
@@ -682,21 +682,28 @@ In the **Equipment View**, use the type filter dropdown to show/hide equipment b
 
 ## Project Fields
 
-Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog. The page also chooses which of them the Gantt chart shows when you hold Shift over a project bar ([Gantt details](#gantt-details)).
+Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog. The same list chooses which of them, and which other rows, the Gantt chart shows when you hold Shift over a project bar, and a [preview](#preview) beside it shows both.
 
 ![Settings → Project fields: the built-in fields with their labels and Shown switches, the Project type dropdown open on its items, the Area multi-select field and the add-field row under the list](../assets/screenshots/project-fields-settings.png){ loading=lazy }
 
 ### Built-in Fields
 
-**Customer**, **Sales PM**, **Volume** and **Confirmed** are part of every project. For each:
+**Customer**, **Sales PM**, **Volume** and **Confirmed** are part of every project. Each row of the list has two switch columns, **In project dialog** and **In Gantt details** (the details shown when you hold Shift over a project bar in the Gantt chart). For each field:
 
-- **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name replaces the default everywhere the field is named, for the whole workspace: in the project dialog, the Gantt chart's Shift-hover tooltip and the Archived view (*No Client*). The defaults shown here are the names used everywhere else too.
-- **Shown** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again.
+- **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name applies when you leave the box or press Enter; Escape puts back the stored name. It replaces the default everywhere the field is named, for the whole workspace: in the project dialog, the Gantt chart's Shift-hover details and the Archived view (*No Client*). The defaults shown here are the names used everywhere else too.
+- **In project dialog** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again. Hiding a field also switches its **In Gantt details** off, and that switch stays off and locked while the field is hidden, with the note *Hidden fields are never shown*. Show the field again and switch **In Gantt details** on again if you want it there.
+- **In Gantt details** — Whether the Shift-hover details show the field. Volume is shown in its format.
 - **Format** (Volume only) — Volume is a number and has a **Format** like a [number field](#custom-fields), **1.0** (one decimal) by default, with the same choices and preview line. The project dialog shows Volume in that format and refuses a decimal beyond it; new values are rounded half up when saved, and the site export writes Volume in that format (12.0 stays 12.0 in Excel). Volumes saved before are not changed.
 
-**Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts.
+**Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts. Its **In project dialog** column reads *Always*.
 
-Click **Save Changes** to apply the labels, switches and Volume's format; **Reset** discards the edits.
+Under **Also in the Gantt details** follow the rows of the details that are not fields: **PM**, **Tags**, **Period**, **Completion**, **Work days**, **Total** and **Assigned staff**, each with its **In Gantt details** switch. PM and Tags are in every project dialog (*Always*); the others are not dialog fields (*—*).
+
+By default the details show what they always did: Customer, PM, Confirmed, Tags, Period, Completion, Work days, Total and Assigned staff. Sales PM, Volume and custom fields are off until you switch them on. The order of the details is fixed; you choose what is shown, not where. A row with no value for a project is left out of that project's details.
+
+Changes apply right away, for everyone — there is no Save button. *Saving…* and then *Saved* show at the top of the page while a change is written; if a change is refused, the message shows there and the page goes back to what is stored.
+
+On a phone the column headings are hidden and each switch is captioned *Dialog* or *Gantt*.
 
 ### Custom Fields
 
@@ -715,7 +722,7 @@ In the add row under the **Custom fields** list, type the new field's name, pick
 - **Format** — A number field's **Format** is picked in the add row while **Number** is chosen, or in its edit form. It is shown as the pattern of the number 1: **As typed** keeps every decimal entered, **1**, **1.0**, **1.00** and **1.000** keep none to three. A line under the picker previews the choice: "Values are saved as typed.", or for **1.0** "12.345 is saved and shown as 12.3." — in the edit form followed by "Existing values are not changed, only shown rounded." New values are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at **1.00**), and the project dialog shows the field in that format: it does not let you type more decimals than the format keeps (12.34 cannot be entered at **1.0**) and completes the missing ones when you leave the box (12 → 12.0). Its figures are drawn in a medium weight with the digits aligned, at the size of the other fields, so the decimal separator stands out. Values saved before are not changed; they are shown — and exported — rounded. The site export writes the values in the field's format, so Excel shows 12.0 at **1.0** rather than 12. The field's type pill in the list names its format, e.g. **Number · 1.0** (plain **Number** for As typed).
 - **Delete** — Click the bin; the confirmation says how many projects hold a value, and every value of the field is removed.
 
-No field is required, and custom fields cannot be hidden — delete one you no longer need.
+No field is required, and custom fields cannot be hidden — they are always in the project dialog (*Always*); delete one you no longer need. Each custom field has an **In Gantt details** switch, off for a new field: switched on, the Shift-hover details show the field after the assigned staff, in the order of the list. A dropdown field shows its items as coloured pills there, a switch *Yes* or *No*, a number in the field's format.
 
 ### Dropdown Items
 
@@ -728,19 +735,14 @@ Click the list icon (**Items**) of a dropdown or multi-select dropdown field (a 
 
 The item colours are the dots in the project dialog's multi-select dropdowns, the Filter dots, the section headers of **Group by** and the bar colours of **Colour by**.
 
-### Gantt Details
+### Preview
 
-Holding Shift over a project bar in the Gantt chart shows the project's details (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). The **Gantt details** list under the custom fields chooses its rows, one **Shown** switch per row, in the order they appear:
+A **Preview** card beside the list (under it on a narrow window) shows a sample project with every field filled. Its two buttons switch between:
 
-- **Customer**, **PM**, **Sales PM**, **Volume** and **Confirmed** — the built-in fields under their labels from the list above (a rename shows here as you type it). Volume is shown in its format.
-- **Tags**, **Period**, **Completion**, **Work days**, **Total** and **Assigned staff**.
-- Every custom field, in the order of the Custom fields list, with its type. A dropdown field shows its items as coloured pills, a switch *Yes* or *No*, a number in the field's format.
+- **Gantt details** (the default) — the Shift-hover details, built the way the Gantt chart builds them, with the rows switched on.
+- **Project dialog** — the dialog's fields with their labels, only the ones shown in the dialog.
 
-By default the details show what they always did: Customer, PM, Confirmed, Tags, Period, Completion, Work days, Total and Assigned staff. Sales PM, Volume and custom fields are off until you switch them on — a field added later is off too. The order is fixed; you choose what is shown, not where. A row with no value for a project is left out of that project's details.
-
-A built-in field switched off under **Shown** above is never shown in the details either: its Gantt details switch is off and locked, with the note *Hidden fields are never shown*, and comes back as it was when you show the field again.
-
-Click **Save** to apply the rows (for everyone, right away); **Reset** discards the changes. The section saves on its own, separately from the built-in fields' **Save Changes**.
+The preview follows every switch at once and a label while you type it. It uses sample values — *Sample project*, *Example Ltd*, today's date and the next 90 days, the first two tags — and its controls are dimmed: it is a picture of the result, not a form. What you switch here is what everyone sees, right away.
 
 !!! note "Former tag groups"
     Version 2.0.0 turned tag groups into project fields. On upgrade, each tag group became a dropdown field — a single-select group a **Dropdown**, any other group a **Multi-select dropdown** — with its tags as the items, keeping their colours, order and site and team limits; projects keep what they had selected. Tags that were in no group stay tags.

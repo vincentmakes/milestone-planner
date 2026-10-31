@@ -343,7 +343,10 @@ opened, live button included.
 The header does not use these. Its four density tiers (`full` ≥ 1650, `compact` ≥ 1280,
 `condensed` ≥ 1024, `minimal` below) are defined once in `hooks/useHeaderDensity.ts` and applied
 as `data-density` (§3.11). Every other `@media` width in a stylesheet is 640 or 1024 px — don't
-add an off-scale one.
+add an off-scale one. A layout that depends on the width of its panel rather than the window
+uses a container query instead: Settings → Project fields (`container-type: inline-size` on the
+panel, `@container (min-width: 66rem)`) puts its preview beside the list only when the panel
+itself has room, whatever the window and the hub's section list take.
 
 ### 2.13 The S-Theme palette
 
@@ -625,6 +628,18 @@ decision, not an oversight.
 - **Native controls follow the theme.** `color-scheme` is set once per theme block in
   `styles/variables.css` / `themes.css` (`dark` or `light`), so the scrollbars and the remaining
   native controls match the theme everywhere. Never set `color-scheme` in a component stylesheet.
+- **Settings that apply immediately.** A Settings panel whose controls are instance settings can
+  drop the Save button: `useSettingWriter` (`components/settings/useSettingWriter.ts`) writes the
+  value to `appStore.instanceSettings` at once and persists it with one PUT per key at a time
+  (a newer value is queued and sent next; the server's answer is re-asserted when the key's last
+  PUT lands; a failure shows in the panel's error `Notice` and reloads the settings). Compute a
+  list value from `useAppStore.getState()` at click time, never from the render. Switches and
+  selects write on change; a text input keeps a draft and writes on blur or Enter, only when the
+  trimmed text differs, and Escape reverts a changed draft (stopping propagation only then, so an
+  unchanged field lets Escape close the hub). One `aria-live="polite"` status in the panel's top
+  row, fixed width, says *Saving…* then *Saved* for 2 s; no success `Notice`, no "unsaved
+  changes" hint, and nothing of this is reported dirty to the hub. Settings → Project fields is
+  the reference; Absence types is the older status-less form of immediate writes.
 
 ### 3.5 Modals and dialogs
 

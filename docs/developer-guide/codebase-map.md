@@ -294,7 +294,8 @@ frontend/
                        #   AssignmentRow + CardBadge, SectionRow, GroupBy/ColorBy dropdowns over
                        #   FieldChoiceDropdown), Timeline/ (bars, DependencyLayer, phantom
                        #   overlays, ResourceDropOverlay), CustomColumns/, CompletionSlider/,
-                       #   ShiftTooltip/ (Shift-hover details), ContextMenuContainer.tsx,
+                       #   ShiftTooltip/ (Shift-hover details: ShiftTooltip, DetailsRows, tooltipData),
+                       #   ContextMenuContainer.tsx,
                        #   utils/ (autoCalculation, completionStatus, criticalPath, dependencies,
                        #   diffProjects, projectSections, rowPositions, timeline)
       views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView,
@@ -310,11 +311,12 @@ frontend/
       screens/         # LoginScreen, LoadingScreen, LoadErrorScreen (initial load failed → Retry)
       settings/        # Settings hub: SettingsHub.tsx (shell), sections.tsx (SETTINGS_SECTIONS
                        #   registry: group/id/label/permission/Panel, canOpenSettings), PanelToolbar.tsx,
-                       #   types.ts, useReportDirty.ts, panels/ (General, Defaults (Features &
+                       #   types.ts, useReportDirty.ts, useSettingWriter.ts (settings that apply at once),
+                       #   panels/ (General, Defaults (Features &
                        #   defaults), Roles (RolesPanel + RoleForm, PermissionMatrix, ApprovalPoliciesForm),
                        #   Sites, Teams, BankHolidays,
                        #   CompanyEvents, Users, Skills, AbsenceTypes, Equipment, EquipmentTypes,
-                       #   PredefinedPhases, ProjectFields, Tags, SSO + helpers ColorSwatchPicker, SiteChecklist,
+                       #   PredefinedPhases, ProjectFields (+ ProjectFieldsPreview), Tags, SSO + helpers ColorSwatchPicker, SiteChecklist,
                        #   SiteForm, TeamForm, TeamScope, calendarUtils, useDragReorder)
       modals/          # ModalContainer (lazy) + dialogs: Project/Phase/Subphase, Assignment
                        #   (Staff/Equipment), EquipmentBlock, KanbanCardModal, TagPicker
@@ -364,7 +366,8 @@ frontend/
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
                        #   roles, pendingBookings (+ assignmentLock), myAssignments, metrics, viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
                        #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel /
-                       #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals)
+                       #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals / tooltipRowGate),
+                       #   projectFieldsPreview (the Project fields preview's sample project)
                        #   (criticalPath/diffProjects/dependencies/completionStatus live in
                        #   components/gantt/utils/)
     styles/            # global.css, variables.css (design tokens), themes/themes.css,
