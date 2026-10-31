@@ -82,11 +82,13 @@ export default defineConfig({
       // Each floor was the higher of the two lines at the rebase onto 2.1.0;
       // then raised just under the merged totals (lines 94.08, statements
       // 93.1, functions 94.4, branches 86.19) of 2.3.0, which the rebase
-      // onto 2.2.0 measured again unchanged.
+      // onto 2.2.0 measured again unchanged; lines, statements and functions
+      // up 0.1 with the Project fields one-list round (94.13 / 93.17 / 94.48,
+      // branches 86.27 unchanged).
       thresholds: {
-        lines: 93.8,
-        statements: 92.8,
-        functions: 94.2,
+        lines: 93.9,
+        statements: 92.9,
+        functions: 94.3,
         branches: 85.9,
       },
     },
