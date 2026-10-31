@@ -407,6 +407,38 @@ describe('ProjectFieldsPanel — labels', () => {
   });
 });
 
+describe('ProjectFieldsPanel — preview', () => {
+  const preview = () => within(screen.getByTestId('pf-preview-body'));
+
+  it('shows the Gantt details beside the list, following every switch and the label being typed', async () => {
+    await renderPanel();
+    expect(screen.getByRole('complementary', { name: 'Preview' })).toBeInTheDocument();
+    expect(preview().getByText('Client:')).toBeInTheDocument();
+    expect(preview().queryByText('Volume:')).not.toBeInTheDocument();
+
+    fireEvent.click(ganttSwitch('Volume'));
+    expect(preview().getByText('Volume:')).toBeInTheDocument();
+    fireEvent.click(ganttSwitch('Assigned staff'));
+    expect(preview().queryByText('A. Researcher')).not.toBeInTheDocument();
+
+    // A label shows while it is typed, before it is written
+    fireEvent.change(screen.getByLabelText('Label of Volume'), { target: { value: 'Litres' } });
+    expect(preview().getByText('Litres:')).toBeInTheDocument();
+    expect(api.updateSetting).not.toHaveBeenCalledWith('project_field_labels', expect.anything());
+    fireEvent.click(within(screen.getByRole('group', { name: 'Preview of' })).getByRole('button', { name: 'Project dialog' }));
+    expect(preview().getByLabelText('Litres')).toBeInTheDocument();
+  });
+
+  it('drops a field hidden in the dialog from both cards', async () => {
+    await renderPanel();
+    fireEvent.click(dialogSwitch('Customer'));
+    expect(preview().queryByText('Client:')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Preview of' })).getByRole('button', { name: 'Project dialog' }));
+    expect(preview().queryByLabelText('Client')).not.toBeInTheDocument();
+    expect(preview().getByLabelText('Project Manager')).toBeInTheDocument();
+  });
+});
+
 describe('ProjectFieldsPanel — Volume format', () => {
   const volumeRow = () => screen.getByTestId('builtin-volume');
 

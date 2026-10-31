@@ -10,12 +10,14 @@
  *   pads on blur; Volume has one too (volume_decimals, default 1.0);
  * - built-in fields take their custom label; a hidden one is neither shown
  *   nor sent (Confirmed is never hidden);
- * - "Manage fields…" (project_fields.manage) leads to Settings → Project fields.
+ * - "Manage fields…" (project_fields.manage) leads to Settings → Project fields;
+ *   ProjectFieldInputs can leave it out and put one field per line (the
+ *   preview in Settings → Project fields).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { ProjectModal } from '../ProjectModal';
-import { MANAGE_FIELDS_CONFIRM } from '../ProjectFieldInputs';
+import { MANAGE_FIELDS_CONFIRM, ProjectFieldInputs } from '../ProjectFieldInputs';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -524,5 +526,37 @@ describe('ProjectModal "Manage fields…"', () => {
     expect(screen.getByRole('switch', { name: 'Regulated' })).toBeDisabled();
     expect(area()).toBeDisabled();
     await act(async () => resolve({}));
+  });
+});
+
+describe('ProjectFieldInputs options', () => {
+  const optionsByField = new Map(FIELDS.map((f) => [f.id, f.options]));
+
+  it('leaves out the Manage row with manageLink={false}, and renders nothing without fields', () => {
+    const { unmount } = render(
+      <ProjectFieldInputs fields={FIELDS} optionsByField={optionsByField} drafts={{}} onChange={vi.fn()} manageLink={false} />
+    );
+    expect(screen.getByLabelText('Budget')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage fields…' })).not.toBeInTheDocument();
+    unmount();
+
+    // A manager would see "No project fields yet." and the link; not here
+    const { container } = render(
+      <ProjectFieldInputs fields={[]} optionsByField={optionsByField} drafts={{}} onChange={vi.fn()} manageLink={false} />
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('puts one field per line with columns={1}', () => {
+    const { container, rerender } = render(
+      <ProjectFieldInputs fields={FIELDS} optionsByField={optionsByField} drafts={{}} onChange={vi.fn()} />
+    );
+    const grid = () => screen.getByLabelText('Budget').closest('[class*="fieldsGrid"]')!;
+    expect(grid().className).not.toMatch(/fieldsGridOne/);
+    rerender(
+      <ProjectFieldInputs fields={FIELDS} optionsByField={optionsByField} drafts={{}} onChange={vi.fn()} columns={1} />
+    );
+    expect(grid().className).toMatch(/fieldsGridOne/);
+    expect(container.querySelectorAll('[class*="fieldsGrid"]')).toHaveLength(1);
   });
 });

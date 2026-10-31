@@ -45,6 +45,11 @@
   align-items: end;
 }
 
+/* One field per line (the preview in Settings → Project fields) */
+.fieldsGridOne {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* A switch sits on the baseline of the inputs beside it */
 .fieldToggle {
   display: flex;

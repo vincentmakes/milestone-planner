@@ -3,9 +3,50 @@
 .container {
   /* The columns every row shares, so the switches line up under the header: lead, dialog, gantt, actions */
   --pf-cols: minmax(0, 1fr) 6.5rem 6.5rem 5.75rem;
+  /* The preview sits beside the list when the panel (not the window) is wide enough */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+/* The blocks, then the preview under them; side by side from 66rem of panel width */
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.preview {
+  min-width: 0;
+}
+
+/* Sticky against the Settings hub's scrolling content; align-self keeps it from stretching */
+@container (min-width: 66rem) {
+  .layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .blocks {
+    flex: 1 1 0;
+  }
+
+  .preview {
+    flex: 0 0 20rem;
+    position: sticky;
+    top: 1rem;
+    align-self: flex-start;
+    max-height: calc(100vh - 6rem);
+    overflow: auto;
+  }
 }
 
 /* The description and the save status, which keeps its width (no layout shift) */

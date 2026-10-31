@@ -29,6 +29,10 @@
  * a label on blur or Enter (Escape reverts it). There is no Save button for
  * them; only an unfinished add or edit counts as unsaved for the hub.
  *
+ * A preview card (ProjectFieldsPreview) beside the list, sticky when the
+ * panel is wide enough (a container query), shows the project dialog or the
+ * Gantt details of a sample project, labels being typed included.
+ *
  * Writes need project_fields.manage (admins by default); the server rejects
  * conflicting changes (409) with a message shown inline.
  */
@@ -74,6 +78,7 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { useSettingWriter } from '../useSettingWriter';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { ProjectFieldsPreview } from './ProjectFieldsPreview';
 import { SiteChecklist } from './SiteChecklist';
 import { TeamScope } from './TeamScope';
 import { useDragReorder, moveId } from './useDragReorder';
@@ -333,6 +338,16 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const shownRows = parseTooltipRows(settings?.project_tooltip_rows);
   const volumeFormat = choiceFromDecimals(volumeDecimals(settings));
 
+  // The preview follows the labels being typed
+  const labelsSetting = settings?.project_field_labels;
+  const previewSettings = useMemo(
+    () => ({
+      ...(settings ?? {}),
+      project_field_labels: fieldLabelsValue({ ...parseFieldLabels(labelsSetting), ...labelDrafts }),
+    }),
+    [settings, labelsSetting, labelDrafts]
+  );
+
   const write = (key: Parameters<typeof writer.write>[0], value: string) => {
     setError(null);
     writer.write(key, value);
@@ -562,266 +577,273 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
 
       {error && <Notice tone="error">{error}</Notice>}
 
-      <section className={styles.block} aria-labelledby="project-fields-builtin">
-        <h3 id="project-fields-builtin" className={styles.blockTitle}>
-          Built-in fields
-        </h3>
-        <p className={styles.hint}>
-          What every project has. Choose the label, what the project dialog shows and what the
-          Gantt&apos;s Shift-hover details show. Changes apply right away.
-        </p>
-        <div className={styles.list}>
-          <div className={styles.columnHeader} data-testid="pf-column-header">
-            <span>Field</span>
-            <span id={columnIds.project} className={styles.colProject}>
-              In project dialog
-            </span>
-            <span id={columnIds.gantt} className={styles.colGantt}>
-              In Gantt details
-            </span>
-            <span aria-hidden="true" />
-          </div>
-          {BUILT_IN_PROJECT_FIELDS.map(({ key, label }) => (
-            <BuiltInRow
-              key={key}
-              fieldKey={key}
-              defaultLabel={label}
-              label={labelDrafts[key] ?? storedLabels[key] ?? ''}
-              shown={!hidden.includes(key)}
-              inGantt={shownRows.includes(key)}
-              columnIds={columnIds}
-              onLabelChange={(value) => setLabelDrafts((prev) => ({ ...prev, [key]: value }))}
-              onLabelBlur={() => commitLabel(key)}
-              onLabelKeyDown={(e) => handleLabelKeyDown(e, key)}
-              onShownChange={(shown) => toggleShown(key, shown)}
-              onGanttChange={(shown) => toggleGantt(key, shown)}
-              {...(key === 'volume' && { format: volumeFormat, onFormatChange: setFormat })}
-            />
-          ))}
-          <div className={styles.subCaption}>Also in the Gantt details</div>
-          {GANTT_ONLY_ROWS.map(({ key, label }) => (
-            <div key={key} className={styles.builtInRow} data-testid={`gantt-only-${key}`}>
-              <div className={styles.lead}>
-                <span className={styles.builtInName}>{label}</span>
+      <div className={styles.layout}>
+        <div className={styles.blocks}>
+          <section className={styles.block} aria-labelledby="project-fields-builtin">
+            <h3 id="project-fields-builtin" className={styles.blockTitle}>
+              Built-in fields
+            </h3>
+            <p className={styles.hint}>
+              What every project has. Choose the label, what the project dialog shows and what the
+              Gantt&apos;s Shift-hover details show. Changes apply right away.
+            </p>
+            <div className={styles.list}>
+              <div className={styles.columnHeader} data-testid="pf-column-header">
+                <span>Field</span>
+                <span id={columnIds.project} className={styles.colProject}>
+                  In project dialog
+                </span>
+                <span id={columnIds.gantt} className={styles.colGantt}>
+                  In Gantt details
+                </span>
+                <span aria-hidden="true" />
               </div>
-              {ALWAYS_IN_DIALOG.includes(key) ? (
-                <SlotText className={styles.colProject} srText="in the project dialog">
-                  Always
-                </SlotText>
-              ) : (
-                <SlotText className={styles.colProject} srText="Not a dialog field">
-                  —
-                </SlotText>
-              )}
-              <RowSwitch
-                className={styles.colGantt}
-                caption="Gantt"
-                checked={shownRows.includes(key)}
-                onChange={(shown) => toggleGantt(key, shown)}
-                aria-label={`Show ${label} in Gantt details`}
-                describedBy={columnIds.gantt}
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.block} aria-labelledby="project-fields-custom">
-        <h3 id="project-fields-custom" className={styles.blockTitle}>
-          Custom fields
-        </h3>
-        {fields.length === 0 ? (
-          <div className={`${styles.list} ${styles.empty}`}>No custom fields yet. Add one below.</div>
-        ) : (
-          <div className={styles.list}>
-            {fields.map((field) => {
-              const isEditing = editingFieldId === field.id;
-              const isExpanded = expandedFieldId === field.id;
-              const dropdown = isDropdownField(field);
-              return (
-                <div
-                  key={field.id}
-                  className={`${styles.item} ${fieldDrag.rowClass(field.id)}`}
-                  data-testid={`field-${field.id}`}
-                  {...fieldDrag.rowProps(field.id, !isEditing && !isExpanded)}
-                >
-                  <div className={styles.fieldRow}>
-                    <div className={styles.lead}>
-                      <span className={styles.dragHandle} aria-hidden="true">
-                        <Icon icon={DragHandleIcon} size={16} />
-                      </span>
-                      <div className={styles.name}>
-                        {isEditing ? (
-                          <Input
-                            className={styles.renameInput}
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={(e) => handleEditKeyDown(e, field)}
-                            aria-label="Field name"
-                            maxLength={100}
-                            autoFocus
-                          />
-                        ) : (
-                          <span>{field.name}</span>
-                        )}
-                      </div>
-                      <span className={styles.typeBadge}>{typeBadgeText(field)}</span>
-                      {dropdown && (
-                        <span className={styles.meta}>
-                          {field.options.length} item{field.options.length === 1 ? '' : 's'}
-                        </span>
-                      )}
-                    </div>
-                    <SlotText className={styles.colProject} title={CUSTOM_ALWAYS_HINT} srText="in the project dialog">
+              {BUILT_IN_PROJECT_FIELDS.map(({ key, label }) => (
+                <BuiltInRow
+                  key={key}
+                  fieldKey={key}
+                  defaultLabel={label}
+                  label={labelDrafts[key] ?? storedLabels[key] ?? ''}
+                  shown={!hidden.includes(key)}
+                  inGantt={shownRows.includes(key)}
+                  columnIds={columnIds}
+                  onLabelChange={(value) => setLabelDrafts((prev) => ({ ...prev, [key]: value }))}
+                  onLabelBlur={() => commitLabel(key)}
+                  onLabelKeyDown={(e) => handleLabelKeyDown(e, key)}
+                  onShownChange={(shown) => toggleShown(key, shown)}
+                  onGanttChange={(shown) => toggleGantt(key, shown)}
+                  {...(key === 'volume' && { format: volumeFormat, onFormatChange: setFormat })}
+                />
+              ))}
+              <div className={styles.subCaption}>Also in the Gantt details</div>
+              {GANTT_ONLY_ROWS.map(({ key, label }) => (
+                <div key={key} className={styles.builtInRow} data-testid={`gantt-only-${key}`}>
+                  <div className={styles.lead}>
+                    <span className={styles.builtInName}>{label}</span>
+                  </div>
+                  {ALWAYS_IN_DIALOG.includes(key) ? (
+                    <SlotText className={styles.colProject} srText="in the project dialog">
                       Always
                     </SlotText>
-                    <RowSwitch
-                      className={styles.colGantt}
-                      caption="Gantt"
-                      checked={shownRows.includes(field.id)}
-                      onChange={(shown) => toggleGantt(field.id, shown)}
-                      aria-label={`Show ${field.name} in Gantt details`}
-                      describedBy={columnIds.gantt}
-                    />
-                    <div className={styles.colActions}>
-                      {!isEditing && dropdown && (
-                        <button
-                          type="button"
-                          className={`${styles.iconBtn} ${isExpanded ? styles.iconBtnActive : ''}`}
-                          onClick={() => toggleItems(field)}
-                          title="Items"
-                          aria-label={`Items of ${field.name}`}
-                          aria-expanded={isExpanded}
-                        >
-                          <Icon icon={ListIcon} size={15} />
-                        </button>
-                      )}
-                      {!isEditing && (
-                        <button
-                          type="button"
-                          className={styles.iconBtn}
-                          onClick={() => startEditing(field)}
-                          title={field.field_type === 'number' ? 'Edit name and format' : 'Edit name'}
-                          aria-label={`Edit ${field.name}`}
-                        >
-                          <Icon icon={EditIcon} size={15} />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className={`${styles.iconBtn} ${styles.danger}`}
-                        onClick={() => void handleDeleteField(field)}
-                        title="Delete"
-                        aria-label={`Delete ${field.name}`}
-                      >
-                        <Icon icon={TrashIcon} size={15} />
-                      </button>
-                    </div>
-                    {isEditing && (
-                      <div className={`${styles.rowNote} ${styles.editLine}`}>
-                        {field.field_type === 'number' && (
-                          <div className={styles.formatEdit}>
-                            <Select
-                              className={styles.format}
-                              label="Format"
-                              value={editDecimals}
-                              options={FORMAT_OPTIONS}
-                              onChange={(e) => setEditDecimals(e.target.value)}
-                              onKeyDown={(e) => handleEditKeyDown(e, field)}
-                              aria-label={`Format of ${field.name}`}
-                            />
-                            <p className={styles.hint} aria-live="polite">
-                              {formatPreview(decimalsFromChoice(editDecimals), true)}
-                            </p>
+                  ) : (
+                    <SlotText className={styles.colProject} srText="Not a dialog field">
+                      —
+                    </SlotText>
+                  )}
+                  <RowSwitch
+                    className={styles.colGantt}
+                    caption="Gantt"
+                    checked={shownRows.includes(key)}
+                    onChange={(shown) => toggleGantt(key, shown)}
+                    aria-label={`Show ${label} in Gantt details`}
+                    describedBy={columnIds.gantt}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={styles.block} aria-labelledby="project-fields-custom">
+            <h3 id="project-fields-custom" className={styles.blockTitle}>
+              Custom fields
+            </h3>
+            {fields.length === 0 ? (
+              <div className={`${styles.list} ${styles.empty}`}>No custom fields yet. Add one below.</div>
+            ) : (
+              <div className={styles.list}>
+                {fields.map((field) => {
+                  const isEditing = editingFieldId === field.id;
+                  const isExpanded = expandedFieldId === field.id;
+                  const dropdown = isDropdownField(field);
+                  return (
+                    <div
+                      key={field.id}
+                      className={`${styles.item} ${fieldDrag.rowClass(field.id)}`}
+                      data-testid={`field-${field.id}`}
+                      {...fieldDrag.rowProps(field.id, !isEditing && !isExpanded)}
+                    >
+                      <div className={styles.fieldRow}>
+                        <div className={styles.lead}>
+                          <span className={styles.dragHandle} aria-hidden="true">
+                            <Icon icon={DragHandleIcon} size={16} />
+                          </span>
+                          <div className={styles.name}>
+                            {isEditing ? (
+                              <Input
+                                className={styles.renameInput}
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                onKeyDown={(e) => handleEditKeyDown(e, field)}
+                                aria-label="Field name"
+                                maxLength={100}
+                                autoFocus
+                              />
+                            ) : (
+                              <span>{field.name}</span>
+                            )}
+                          </div>
+                          <span className={styles.typeBadge}>{typeBadgeText(field)}</span>
+                          {dropdown && (
+                            <span className={styles.meta}>
+                              {field.options.length} item{field.options.length === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </div>
+                        <SlotText className={styles.colProject} title={CUSTOM_ALWAYS_HINT} srText="in the project dialog">
+                          Always
+                        </SlotText>
+                        <RowSwitch
+                          className={styles.colGantt}
+                          caption="Gantt"
+                          checked={shownRows.includes(field.id)}
+                          onChange={(shown) => toggleGantt(field.id, shown)}
+                          aria-label={`Show ${field.name} in Gantt details`}
+                          describedBy={columnIds.gantt}
+                        />
+                        <div className={styles.colActions}>
+                          {!isEditing && dropdown && (
+                            <button
+                              type="button"
+                              className={`${styles.iconBtn} ${isExpanded ? styles.iconBtnActive : ''}`}
+                              onClick={() => toggleItems(field)}
+                              title="Items"
+                              aria-label={`Items of ${field.name}`}
+                              aria-expanded={isExpanded}
+                            >
+                              <Icon icon={ListIcon} size={15} />
+                            </button>
+                          )}
+                          {!isEditing && (
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              onClick={() => startEditing(field)}
+                              title={field.field_type === 'number' ? 'Edit name and format' : 'Edit name'}
+                              aria-label={`Edit ${field.name}`}
+                            >
+                              <Icon icon={EditIcon} size={15} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className={`${styles.iconBtn} ${styles.danger}`}
+                            onClick={() => void handleDeleteField(field)}
+                            title="Delete"
+                            aria-label={`Delete ${field.name}`}
+                          >
+                            <Icon icon={TrashIcon} size={15} />
+                          </button>
+                        </div>
+                        {isEditing && (
+                          <div className={`${styles.rowNote} ${styles.editLine}`}>
+                            {field.field_type === 'number' && (
+                              <div className={styles.formatEdit}>
+                                <Select
+                                  className={styles.format}
+                                  label="Format"
+                                  value={editDecimals}
+                                  options={FORMAT_OPTIONS}
+                                  onChange={(e) => setEditDecimals(e.target.value)}
+                                  onKeyDown={(e) => handleEditKeyDown(e, field)}
+                                  aria-label={`Format of ${field.name}`}
+                                />
+                                <p className={styles.hint} aria-live="polite">
+                                  {formatPreview(decimalsFromChoice(editDecimals), true)}
+                                </p>
+                              </div>
+                            )}
+                            <div className={styles.editActions}>
+                              <Button variant="secondary" onClick={() => setEditingFieldId(null)}>
+                                Cancel
+                              </Button>
+                              <Button
+                                onClick={() => void handleSaveField(field)}
+                                disabled={!editName.trim() || editSave.isSubmitting}
+                              >
+                                Save
+                              </Button>
+                            </div>
                           </div>
                         )}
-                        <div className={styles.editActions}>
-                          <Button variant="secondary" onClick={() => setEditingFieldId(null)}>
-                            Cancel
-                          </Button>
-                          <Button
-                            onClick={() => void handleSaveField(field)}
-                            disabled={!editName.trim() || editSave.isSubmitting}
-                          >
-                            Save
-                          </Button>
-                        </div>
                       </div>
-                    )}
-                  </div>
-                  {isExpanded && dropdown && (
-                    <ItemsEditor
-                      field={field}
-                      sites={sites}
-                      teams={teams}
-                      itemEdit={itemEdit}
-                      onItemEditChange={setItemEdit}
-                      onStartEditing={startEditingItem}
-                      onSave={() => void handleSaveItem()}
-                      saving={editSave.isSubmitting}
-                      onDelete={(item) => void handleDeleteItem(field, item)}
-                      onReorder={(order) => reorderItems(field, order)}
-                      newItemName={newItemName}
-                      onNewItemNameChange={setNewItemName}
-                      newItemColor={newItemColor}
-                      onNewItemColorChange={setNewItemColor}
-                      onAdd={() => void handleAddItem(field)}
-                      adding={itemAdd.isSubmitting}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <form
-          className={styles.addForm}
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleAddField();
-          }}
-        >
-          <div className={styles.addRow}>
-            <Input
-              className={styles.addInput}
-              value={newFieldName}
-              onChange={(e) => setNewFieldName(e.target.value)}
-              placeholder="New field, e.g. Budget"
-              aria-label="New field name"
-              maxLength={100}
-            />
-            <Select
-              className={styles.addType}
-              value={newFieldType}
-              options={TYPE_OPTIONS}
-              onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
-              aria-label="Type"
-            />
-            {newFieldType === 'number' && (
-              <Select
-                className={styles.format}
-                label="Format"
-                value={newFieldDecimals}
-                options={FORMAT_OPTIONS}
-                onChange={(e) => setNewFieldDecimals(e.target.value)}
-              />
+                      {isExpanded && dropdown && (
+                        <ItemsEditor
+                          field={field}
+                          sites={sites}
+                          teams={teams}
+                          itemEdit={itemEdit}
+                          onItemEditChange={setItemEdit}
+                          onStartEditing={startEditingItem}
+                          onSave={() => void handleSaveItem()}
+                          saving={editSave.isSubmitting}
+                          onDelete={(item) => void handleDeleteItem(field, item)}
+                          onReorder={(order) => reorderItems(field, order)}
+                          newItemName={newItemName}
+                          onNewItemNameChange={setNewItemName}
+                          newItemColor={newItemColor}
+                          onNewItemColorChange={setNewItemColor}
+                          onAdd={() => void handleAddItem(field)}
+                          adding={itemAdd.isSubmitting}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            <Button
-              type="submit"
-              icon={<Icon icon={PlusIcon} />}
-              disabled={!newFieldName.trim()}
-              loading={fieldAdd.isSubmitting}
+            <form
+              className={styles.addForm}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleAddField();
+              }}
             >
-              Add field
-            </Button>
-          </div>
-          {newFieldType === 'number' && (
-            <p className={styles.hint} aria-live="polite">
-              {formatPreview(decimalsFromChoice(newFieldDecimals), false)}
-            </p>
-          )}
-        </form>
-      </section>
+              <div className={styles.addRow}>
+                <Input
+                  className={styles.addInput}
+                  value={newFieldName}
+                  onChange={(e) => setNewFieldName(e.target.value)}
+                  placeholder="New field, e.g. Budget"
+                  aria-label="New field name"
+                  maxLength={100}
+                />
+                <Select
+                  className={styles.addType}
+                  value={newFieldType}
+                  options={TYPE_OPTIONS}
+                  onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
+                  aria-label="Type"
+                />
+                {newFieldType === 'number' && (
+                  <Select
+                    className={styles.format}
+                    label="Format"
+                    value={newFieldDecimals}
+                    options={FORMAT_OPTIONS}
+                    onChange={(e) => setNewFieldDecimals(e.target.value)}
+                  />
+                )}
+                <Button
+                  type="submit"
+                  icon={<Icon icon={PlusIcon} />}
+                  disabled={!newFieldName.trim()}
+                  loading={fieldAdd.isSubmitting}
+                >
+                  Add field
+                </Button>
+              </div>
+              {newFieldType === 'number' && (
+                <p className={styles.hint} aria-live="polite">
+                  {formatPreview(decimalsFromChoice(newFieldDecimals), false)}
+                </p>
+              )}
+            </form>
+          </section>
+        </div>
+        <aside className={styles.preview} aria-label="Preview">
+          <ProjectFieldsPreview settings={previewSettings} fields={fields} />
+        </aside>
+      </div>
     </div>
   );
 }
