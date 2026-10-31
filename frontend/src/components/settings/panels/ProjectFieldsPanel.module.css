@@ -462,13 +462,23 @@
   }
 }
 
+/* Phones: the name and label take the whole line, the switches (captioned) and actions go under it */
 @media (max-width: 640px) {
   .container {
-    --pf-cols: minmax(0, 1fr) auto auto auto;
+    --pf-cols: auto auto minmax(0, 1fr);
   }
 
   .columnHeader {
     display: none;
+  }
+
+  .lead {
+    grid-column: 1 / -1;
+  }
+
+  .colProject,
+  .colGantt {
+    justify-self: start;
   }
 
   .builtInRow .cellSwitch,
