@@ -39,7 +39,7 @@ BUILT_IN_PROJECT_FIELDS: tuple[str, ...] = ("customer", "sales_pm", "volume", "c
 HIDEABLE_PROJECT_FIELDS: tuple[str, ...] = ("customer", "sales_pm", "volume")
 
 # The built-in rows of the Gantt's Shift-hover project details
-# (project_tooltip_rows), in display order: PM, then the built-in fields, then
+# (project_tooltip_rows), in display order: the built-in fields and PM, then
 # the fixed rows. The setting is the shown-list: these keys plus custom project
 # field ids, so a new field stays off until an admin ticks it.
 PROJECT_TOOLTIP_ROWS: tuple[str, ...] = (

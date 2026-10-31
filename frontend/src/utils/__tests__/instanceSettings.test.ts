@@ -20,11 +20,13 @@ import {
   parseIdList,
   parseNameList,
   parseTooltipRows,
+  tooltipRowGate,
   tooltipRowLabel,
   tooltipRowsValue,
   volumeDecimals,
   volumeDecimalsValue,
 } from '../instanceSettings';
+import type { TooltipRow } from '../instanceSettings';
 import { INSTANCE_SETTING_DEFAULTS } from '@/api/endpoints/settings';
 
 describe('parseIdList', () => {
@@ -271,5 +273,12 @@ describe('Gantt details rows (project_tooltip_rows)', () => {
     expect(isTooltipRowShown(null, 'customer')).toBe(true);
     expect(isTooltipRowShown(undefined, 'staff')).toBe(true);
     expect(isTooltipRowShown(null, 'volume')).toBe(false);
+  });
+
+  it('builds one gate per settings value, the same answers as isTooltipRowShown', () => {
+    const settings = { project_tooltip_rows: '["customer","pm",4]', project_fields_hidden: '["customer"]' };
+    const shows = tooltipRowGate(settings);
+    expect((['customer', 'pm', 'volume', 4, 5] as TooltipRow[]).map((row) => shows(row))).toEqual([false, true, false, true, false]);
+    expect(tooltipRowGate(null)('staff')).toBe(true);
   });
 });

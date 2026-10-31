@@ -290,14 +290,23 @@ export function tooltipRowsValue(rows: Iterable<TooltipRow>): string {
 }
 
 /**
- * Whether the project details show `row`: listed in `project_tooltip_rows`
- * and, for Customer, Sales PM and Volume, not hidden instance-wide (a hidden
- * field is never shown; Confirmed never is hidden).
+ * The project details' row gate: `row` is shown when listed in
+ * `project_tooltip_rows` and, for Customer, Sales PM and Volume, not hidden
+ * instance-wide (a hidden field is never shown; Confirmed never is hidden).
+ * Parses the settings once; the returned test is cheap per row.
  */
+export function tooltipRowGate(
+  settings: InstanceSettings | null | undefined
+): (row: TooltipRow) => boolean {
+  const listed = new Set<TooltipRow>(parseTooltipRows(settings?.project_tooltip_rows));
+  const hidden = new Set<string>(parseHiddenFields(settings?.project_fields_hidden));
+  return (row) => listed.has(row) && (typeof row === 'number' || !hidden.has(row));
+}
+
+/** Whether the project details show `row` ({@link tooltipRowGate} for one row). */
 export function isTooltipRowShown(
   settings: InstanceSettings | null | undefined,
   row: TooltipRow
 ): boolean {
-  if (!parseTooltipRows(settings?.project_tooltip_rows).includes(row)) return false;
-  return typeof row === 'number' || !isBuiltInKey(row) || !isBuiltInFieldHidden(settings, row);
+  return tooltipRowGate(settings)(row);
 }

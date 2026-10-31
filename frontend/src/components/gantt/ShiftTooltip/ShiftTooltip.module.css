@@ -17,6 +17,14 @@
   animation: tooltipFadeIn 0.15s ease-out;
 }
 
+/* The same card in the page flow (Settings → Project fields preview): no float, no fade, no cap. */
+.static {
+  position: static;
+  pointer-events: auto;
+  animation: none;
+  max-height: none;
+}
+
 @keyframes tooltipFadeIn {
   from {
     opacity: 0;
