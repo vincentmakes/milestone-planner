@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-11-02
+
+### Security
+- The frontend lint toolchain now uses minimatch 11, closing a moderate denial-of-service advisory (GHSA-g3hv-75wg-m249).
+
 ## [2.2.0] - 2026-10-30
 
 ### Changed
