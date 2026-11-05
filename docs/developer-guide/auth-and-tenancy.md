@@ -52,6 +52,24 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 - `SSOConfig.is_configured` requires a client secret, so a row without one hides the sign-in button instead of failing with Entra's misleading "invalid client".
 - Credentials can be tested without a user sign-in at both levels, through one diagnostic (`app/services/sso_test.py`): the organization's saved values (`POST /api/admin/organizations/{id}/sso/test`, admin portal) and a tenant's entered values (`POST /api/auth/sso/test`, `settings.sso`, Settings → SSO). In Settings → SSO, saving a change to live sign-in values (ids, secret, redirect URI, switching off) asks for the typed word CHANGE.
 
+### Audit rows of the sign-in flow
+
+Every sign-in event is an `auth` row of the audit log (`app/routers/auth.py`, `audit_log.record`). Failure rows are **committed before** the 401 / 429 is raised or the SSO redirect returned.
+
+| Event | Action | Outcome | Reason / context |
+|-------|--------|---------|------------------|
+| Throttled `POST /auth/login` (the 429) | `auth.login.locked` | failure | `throttled`; `retry_after` (seconds); `subject_email` |
+| Unknown e-mail | `auth.login.failed` | failure | `unknown_user`; `subject_email` |
+| Wrong password | `auth.login.failed` | failure | `bad_password`; actor = the account |
+| Disabled account | `auth.login.failed` | failure | `inactive`; actor = the account |
+| Successful sign-in | `auth.login.succeeded` | success | — (the users table keeps no last sign-in, so no `first_login`) |
+| `POST /auth/logout` with a live session | `auth.logout` | success | actor resolved from the session before it is deleted; nothing without one |
+| Own password change | `auth.password.changed` | success | `sessions_revoked` |
+| SSO callback, session created | `auth.sso.succeeded` | success | `provider: entra`, `created` (auto-created this call) |
+| SSO callback failure after the tenant session was resolved | `auth.sso.failed` | failure | `config_missing` (disabled, no client secret, organization lookup failed), `exchange_failed` (token endpoint refused or unreachable), `graph_failed` (profile or group lookup failed), `group_denied`, `no_email`, `no_account`, `inactive`; `provider: entra`; committed on `active_db` |
+
+Failures before the tenant is known (bad state, foreign nonce, unknown tenant) have no tenant database and record nothing; the admin portal records nothing either.
+
 ## Multi-Tenancy Internals
 
 - **`TenantMiddleware`** (`app/middleware/tenant.py`) is a **pure ASGI middleware** (not `BaseHTTPMiddleware` — that breaks WebSockets). It matches `/t/{slug}/...`, resolves the tenant through a 60-second in-memory cache (plain dicts, not ORM objects, to avoid session-detachment issues), rewrites `scope["path"]` to strip the prefix, and stores `tenant` / `tenant_slug` / `tenant_engine` in `scope["state"]`. Missing/inactive/unreachable tenants → 404/403/503 (the 503 body is a fixed message; the DB error goes only to the log). **Misses are cached too** (60 s, in a separate `_negative_cache` capped at 1 000 entries, expired/oldest evicted first — hits are never evicted by a miss flood), so a flood of unknown slugs doesn't hit the master DB; `clear_tenant_cache(slug)` drops hits and misses. WebSocket scopes are passed through untouched (the WS handler resolves the tenant itself). Only wraps the app when `MULTI_TENANT=true`.

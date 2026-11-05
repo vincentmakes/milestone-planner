@@ -35,6 +35,8 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/auth/sso/login` | public | Build the Entra authorization URL (HMAC-signed `state` carries the slug + a nonce; sets the one-time `sso_nonce` cookie, 10 min) |
 | GET | `/auth/sso/callback` | public | OAuth callback: verify state **and** that its nonce matches this browser's `sso_nonce` cookie (cleared whatever the outcome), token exchange, Graph `/me`, group validation, find/auto-create user, create session |
 
+Audit rows: the sign-in events (`auth.*`, [Authentication and tenancy](auth-and-tenancy.md#audit-rows-of-the-sign-in-flow)); the three SSO config PUTs `admin.sso.updated` (changed fields; the client secret as `***` / null only), `POST /auth/sso/test` `admin.sso.tested` (outcome per `credentialsOk`, reason the first failed check).
+
 ### Users & staff (`users.py`, `staff.py`)
 
 | Method | Path | Auth | Description |
@@ -49,6 +51,8 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/staff/{id}/assignments` | user (`views.staff`) | All assignments for a staff member at visible sites, with `approval_status` (in `assignments.py`) |
 
 User list/detail responses carry `team_ids` + `team_names` (sorted by id).
+
+Audit rows: `admin.user.created` (context `role`), `admin.user.updated` (`changes` of first/last name, email, job title, role, capacity, `is_resource`, `active`, site / team / skill id lists; `sessions_revoked`; nothing when nothing changed), `admin.user.password_set` (no diff), `admin.user.activated` / `deactivated` (`sessions_revoked`), `admin.user.deleted` — target `("user", id, name)`, `subject_email` the account's.
 
 ### Sites, holidays & events (`sites.py`)
 
@@ -70,6 +74,8 @@ User list/detail responses carry `team_ids` + `team_names` (sorted by id).
 | POST / DELETE | `/sites/{id}/events`, `…/{eid}` | superuser (`company_events.manage`) | Legacy single-site create / unlink (event deleted only when no site is left) |
 
 All holiday/event writes also require every site involved to be visible (`ensure_site_access` from `app/services/site_access.py`; `sites.view_all` holders any site), and the calendar reads 403 on a site outside the visible ones.
+
+Audit rows: `admin.site.created` / `updated` / `deleted`, target `("site", id, name)`, `changes` of name, location, city, country, region, timezone and active (nothing when unchanged). The holiday and event routes are recorded by `BroadcastMiddleware` (`admin.bank_holiday.*`, `admin.company_event.*`, target id = the last numeric path segment).
 
 ### Projects, phases & subphases (`projects.py`)
 
@@ -173,6 +179,8 @@ Reads: any user; writes: `project_fields.manage` (admin-only by default). Coarse
 | PUT | `/teams/{id}` | superuser (`teams.manage`) | Partial update (site cannot change); explicit `null` clears `description` / `color`; `member_ids` replaces the members (same 400 rule) |
 | DELETE | `/teams/{id}` | superuser (`teams.manage`) | Delete; its member, project, tag, field-item, event and equipment links cascade. 409 while a project of the team would keep a tag or field item limited to other teams of the site (`team_rules.count_projects_stranded_by_team_delete`) |
 
+Audit rows: `admin.team.created` / `updated` / `deleted`, target `("team", id, name)`, `changes` of name, description, colour, active and the sorted `member_ids` (nothing when nothing changed); context `site_id` on create and delete.
+
 Writes are What-If-exempt (configuration) and coarse-broadcast as `change:team` (refreshes the `teams`, `staff`, `projects`, `tags`, `projectFields`, `equipment` and `siteCalendar` slices).
 
 ### Kanban (`kanban.py`, prefix `/kanban`)
@@ -215,6 +223,8 @@ Role writes use `require_admin` (the lockout-proof surface: `roles.manage` is lo
 | PUT | `/roles/{id}` | `require_admin` | Partial update; the admin role is 403 (`Administrator permissions cannot be edited`); a different `key` is 422 (the key never changes); `permissions` replaces the matrix (same 422 rules); explicit `null` clears `description` |
 | DELETE | `/roles/{id}` | `require_admin` | 204; a system role 403; a role held by users 409 `N users hold this role. Give them another role first.` |
 
+Audit rows: `admin.role.created` / `updated` (name, description, sort order) / `deleted`, and `admin.role.permissions_updated` with `{key: {old, new}}` per permission whose mode moved (`allow` / `approval` / null = not granted); target `("role", key, name)`.
+
 A matrix edit applies on the holders' next request (`get_current_user` resolves the role live) and, through `change:role`, refreshes `/auth/me` in open clients.
 
 ### Approval policies (`approval_policies.py`, prefix `/approval-policies`)
@@ -223,6 +233,8 @@ A matrix edit applies on the holders' next request (`get_current_user` resolves 
 |--------|------|------|-------------|
 | GET | `/approval-policies` | user | One entry per approvable action, in catalogue order: `{action, label, pm_approves, role_ids}` (a missing row reads as the seeded default: PM approves, no roles) |
 | PUT | `/approval-policies/{action}` | `require_admin` | Full replace `{pm_approves, role_ids}`; unknown action or role id → 404. Admins approve whatever the policy says |
+
+Audit row: `admin.approval_policy.updated`, target `("approval_policy", action, action)`, `changes` of `pm_approves` and the sorted `role_ids` (a missing row reads as PM approves, no roles); nothing when unchanged.
 
 ### Approval requests (`approvals.py`, prefix `/approval-requests`)
 
@@ -291,6 +303,8 @@ Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `tru
 | PUT | `/settings/{key}` | admin (`settings.general`; `project_field_labels` / `project_fields_hidden` / `volume_decimals` / `project_tooltip_rows` also `project_fields.manage`) | Update setting. A known key stores its canonical form (422 `Invalid value for <key>` otherwise) and `value: null` deletes its row (answered with the default); any other key is stored as given |
 | GET / PUT | `/settings/sso` | none / admin (`settings.sso`) | Tenant SSO settings (read / write) |
 
+Audit row of `PUT /settings/{key}`: `admin.settings.updated`, target `("setting", key, key)`, `changes = {key: {old, new}}` (a value over 200 characters — a data-URL logo — as `{changed: true, length}`); nothing when the value did not change. `PUT /settings/sso`: `admin.sso.updated` (see Authentication).
+
 ### Import & export (`mpp_import.py`, `export.py`)
 
 | Method | Path | Auth | Description |
@@ -304,6 +318,8 @@ Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `tru
 | GET | `/export/site/{sid}/excel` | superuser (`sites.export`) | Full site export of a visible site to `.xlsx` (see [Site Export contract](codebase-map.md#site-export-to-excel)) |
 
 All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (`MAX_IMPORT_UPLOAD_BYTES`, else 413) — and parsing runs via `run_in_threadpool` so mpxj/JPype never blocks the event loop.
+
+Audit rows (`access`, after the file is built, committed by `get_db`): `access.export.msproject` and `access.export.csv` (target `("project", id, name)`, `project_id`, context `rows` = task count; the GET CSV route records once), `access.export.site` (target `("site", id, name)`). The project import's `broadcast_change` records `project.created` (tier 2a).
 
 ### Admin portal (`routers/admin/*` → `/api/admin/*`, master DB, `admin_session` cookie)
 
