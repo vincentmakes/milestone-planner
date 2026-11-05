@@ -24,6 +24,7 @@ The filter and CSV logic are module-level functions the tests drive on SQLite;
 the route bodies only wire them together.
 """
 
+import asyncio
 import csv
 import io
 import json
@@ -40,9 +41,10 @@ from app.middleware.auth import require_permission
 from app.models.audit_log import AuditLog
 from app.models.project import Project
 from app.models.user import User
-from app.routers.export import _safe_cell
 from app.schemas.audit_log import AuditLogActions, AuditLogEntryOut, AuditLogPage
+from app.schemas.base import serialize_datetime_js
 from app.services import audit_log
+from app.services.csv_safety import safe_cell
 from app.utils import utcnow_naive
 
 router = APIRouter(prefix="/audit-log")
@@ -187,13 +189,14 @@ async def load_page(
 
 
 def csv_cell(value: Any) -> str:
-    """One CSV cell: ``None`` as empty, a datetime in ISO form, and a
-    formula-looking text prefixed with ``'`` (``export._safe_cell``, the
+    """One CSV cell: ``None`` as empty, a datetime in the API's UTC form
+    (``2026-11-03T08:00:00.000Z``, ``serialize_datetime_js``), and a
+    formula-looking text prefixed with ``'`` (``csv_safety.safe_cell``, the
     triggers ``= + - @ \\t \\r`` -- turbo-ea's ``csv_safe`` set)."""
     if value is None:
         return ""
-    text = value.isoformat() if isinstance(value, datetime) else str(value)
-    return str(_safe_cell(text))
+    text = serialize_datetime_js(value) if isinstance(value, datetime) else str(value)
+    return str(safe_cell(text))
 
 
 def entry_row(entry: AuditLog, project_name: str | None) -> list[str]:
@@ -315,8 +318,10 @@ async def export_audit_log(
         context={"rows": len(rows)},
     )
     await db.commit()
+    # Up to AUDIT_EXPORT_MAX_ROWS rows: built off the event loop.
+    content = await asyncio.to_thread(build_csv, rows)
     return Response(
-        content=build_csv(rows),
+        content=content,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="audit-log.csv"'},
     )

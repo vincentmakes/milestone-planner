@@ -141,10 +141,13 @@ async def test_create_with_a_system_role_needs_no_lookup(authed_client, mock_db_
 
 
 def target_db(mock_db_session, target: User, role_found: str | None) -> None:
-    """The user lookup returns ``target``; the role lookup returns ``role_found``."""
+    """The user lookup returns ``target``; the role lookup returns ``role_found``;
+    a recorded role change then reads the roles' names (none here: the keys)."""
     lookup = MagicMock()
     lookup.unique.return_value.scalar_one_or_none.return_value = target
-    mock_db_session.execute = AsyncMock(side_effect=[lookup, scalar_result(role_found)])
+    names = MagicMock()
+    names.all.return_value = []
+    mock_db_session.execute = AsyncMock(side_effect=[lookup, scalar_result(role_found), names])
 
 
 async def test_update_to_a_custom_role(authed_client, mock_db_session, destroy_sessions):

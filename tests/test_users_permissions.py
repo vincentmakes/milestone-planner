@@ -69,6 +69,13 @@ def lookup(target: User) -> MagicMock:
     return result
 
 
+def role_names() -> MagicMock:
+    """The audit row's lookup of the roles' names after a role change (none: the keys)."""
+    result = MagicMock()
+    result.all.return_value = []
+    return result
+
+
 @pytest.fixture
 def destroy_sessions():
     with patch.object(SessionService, "destroy_user_sessions", new_callable=AsyncMock) as mock:
@@ -134,7 +141,7 @@ async def test_a_role_within_mine_can_be_assigned(
     client, set_user = authed_client
     set_user(FakeUser(3, "hr", HR))
     target = make_user(7, "viewer")
-    mock_db_session.execute = AsyncMock(side_effect=[lookup(target)])
+    mock_db_session.execute = AsyncMock(side_effect=[lookup(target), role_names()])
 
     resp = await client.put("/api/users/7", json={"role": "user"})
 
@@ -151,7 +158,7 @@ async def test_a_role_holding_the_board_can_be_assigned_while_it_is_off(
     hr.permissions = PermissionSet("hr", HR, frozenset({"views.kanban"}))
     set_user(hr)
     target = make_user(7, "viewer")
-    mock_db_session.execute = AsyncMock(side_effect=[lookup(target)])
+    mock_db_session.execute = AsyncMock(side_effect=[lookup(target), role_names()])
 
     resp = await client.put("/api/users/7", json={"role": "user"})
 

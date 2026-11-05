@@ -20,6 +20,9 @@ class SSOTestCheck(BaseModel):
     message: str
     code: str | None = None
     """A Microsoft ``AADSTS…`` code, when Entra supplied one."""
+    kind: str | None = Field(default=None, exclude=True)
+    """The check's fixed code (``sso_test.SSO_CHECK_KINDS``): the audit
+    reason of a failed test. Server-side only, not in the response."""
 
 
 class SSOTestResponse(BaseModel):

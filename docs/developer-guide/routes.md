@@ -21,7 +21,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie. Throttled: 10 failures / 15 min per (tenant, IP, e-mail) → 429 + `Retry-After`; password > 72 bytes → 400 |
+| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie. Throttled: 10 failures / 15 min per (tenant, IP, e-mail) → 429 + `Retry-After`; password > 72 bytes → 400. Audit: `auth.login.failed` per failure, capped per (tenant, IP) at 100 in the window (then one row with `context.suppressed`, then none) |
 | POST | `/auth/logout` | session | Destroy session, clear cookie |
 | GET | `/auth/me` | public | Current user (fresh from DB) with `roleName`, `permissions` (allow keys; admin: every key; feature-disabled keys left out — `effective_permission_set`), `approvalRequired` (keys in approval mode), `canSeeAllSites` and `isResource`, or `{user: null}` (login answers the same shape) |
 | POST | `/auth/change-password` | user | Change own password (verifies current; new ≥ 8 chars) |
@@ -35,7 +35,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/auth/sso/login` | public | Build the Entra authorization URL (HMAC-signed `state` carries the slug + a nonce; sets the one-time `sso_nonce` cookie, 10 min) |
 | GET | `/auth/sso/callback` | public | OAuth callback: verify state **and** that its nonce matches this browser's `sso_nonce` cookie (cleared whatever the outcome), token exchange, Graph `/me`, group validation, find/auto-create user, create session |
 
-Audit rows: the sign-in events (`auth.*`, [Authentication and tenancy](auth-and-tenancy.md#audit-rows-of-the-sign-in-flow)); the three SSO config PUTs `admin.sso.updated` (changed fields; the client secret as `***` / null only), `POST /auth/sso/test` `admin.sso.tested` (outcome per `credentialsOk`, reason the first failed check).
+Audit rows: the sign-in events (`auth.*`, [Authentication and tenancy](auth-and-tenancy.md#audit-rows-of-the-sign-in-flow)); the three SSO config PUTs `admin.sso.updated` (changed fields; the client secret as `***` / null only), `POST /auth/sso/test` `admin.sso.tested` (outcome per `credentialsOk`, reason the first failed check's fixed `kind` — `sso_test.SSO_CHECK_KINDS`, never derived from its label; `kind` is not in the response — or `rejected`).
 
 ### Users & staff (`users.py`, `staff.py`)
 
@@ -52,7 +52,7 @@ Audit rows: the sign-in events (`auth.*`, [Authentication and tenancy](auth-and-
 
 User list/detail responses carry `team_ids` + `team_names` (sorted by id).
 
-Audit rows: `admin.user.created` (context `role`), `admin.user.updated` (`changes` of first/last name, email, job title, role, capacity, `is_resource`, `active`, site / team / skill id lists; `sessions_revoked`; nothing when nothing changed), `admin.user.password_set` (no diff), `admin.user.activated` / `deactivated` (`sessions_revoked`), `admin.user.deleted` — target `("user", id, name)`, `subject_email` the account's.
+Audit rows: `admin.user.created` (context `role`), `admin.user.updated` (`changes` of first/last name, email, job title, role — the roles' **names**, read when recorded —, capacity, `is_resource`, site / team / skill id lists; `sessions_revoked`; nothing when nothing changed), `admin.user.password_set` (no diff), `admin.user.activated` / `deactivated` (`sessions_revoked`) — from toggle-active and from a `PUT` that moves `active`, which records the direction row first and `admin.user.updated` only for the other fields —, `admin.user.deleted` — target `("user", id, name)`, `subject_email` the account's. `sessions_revoked` goes on the first row of a request.
 
 ### Sites, holidays & events (`sites.py`)
 
@@ -266,13 +266,13 @@ Instance-wide; every query is cut to the caller's visible sites, so a shared das
 
 ### Audit log (`audit_log.py`, prefix `/audit-log`)
 
-Every route requires `system.audit_log` (admins by default; never under `/settings`, whose `GET /settings/{key}` is public). Rows are immutable: there is no write route; the rows themselves are written by `audit_log.record` (see [Audit log tiers](conventions-in-depth.md#audit-log-tiers)).
+Every route requires `system.audit_log` (admins by default; never under `/settings`, whose `GET /settings/{key}` is public). Rows are immutable: there is no write route; the rows themselves are written by `audit_log.record` (see [Audit log tiers](conventions-in-depth.md#audit-log-tiers)). The log is **instance-wide**: no visible-sites clause, and `project_name` is shown whatever the reader's visible sites (the key is admin-only by default).
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/audit-log?category=&action=&outcome=&actor_user_id=&q=&ip=&since=&until=&project_id=&page=&page_size=` | `system.audit_log` | Newest first (`created_at DESC, id DESC`) → `{items, total, page, page_size}`. `category` `auth`/`admin`/`access`/`change`, `outcome` `success`/`failure` (422 otherwise); `action` exact, or a **prefix** when it ends with `.` (`auth.login.`); `q` a case-insensitive substring over actor email, actor name, subject email and target label (`%` / `_` escaped); `ip` exact; `since` / `until` inclusive dates (`until` = to the end of that day); `page` ≥ 1, `page_size` 1–200 (default 50). Items: every column, `details` parsed, plus `project_name` (outer join: null once the project is gone). **Purges first** |
 | GET | `/audit-log/actions` | `system.audit_log` | `{actions: [...]}` — every distinct action present, sorted (the filter's options) |
-| GET | `/audit-log/export` | `system.audit_log` | The same filters as CSV (`text/csv; charset=utf-8`, `attachment; filename="audit-log.csv"`), at most `AUDIT_EXPORT_MAX_ROWS` = 50 000 rows newest first; columns `CSV_COLUMNS` (every column + `project_name`, `details` compact JSON, `created_at` ISO); a cell starting with `= + - @ \t \r` gets a `'` prefix (`export._safe_cell`). Records `access.audit_log.exported` (context `rows`) and **commits before the body is built**. **Purges first** |
+| GET | `/audit-log/export` | `system.audit_log` | The same filters as CSV (`text/csv; charset=utf-8`, `attachment; filename="audit-log.csv"`), at most `AUDIT_EXPORT_MAX_ROWS` = 50 000 rows newest first; columns `CSV_COLUMNS` (every column + `project_name`, `details` compact JSON, `created_at` in the API's UTC form `2026-11-03T08:00:00.000Z`); a cell starting with `= + - @ \t \r` gets a `'` prefix (`csv_safety.safe_cell`). Records `access.audit_log.exported` (context `rows`) and **commits before the body is built** (built in a worker thread, `asyncio.to_thread`). **Purges first** |
 
 **Retention (lazy):** the list and the export first delete the rows created on or before now minus `audit_log_retention_days` (`audit_log.purge_old`, then a commit); `0` keeps everything. The only delete of an audit row; `/actions` does not purge.
 
@@ -316,7 +316,7 @@ Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `tru
 | PUT | `/settings/{key}` | admin (`settings.general`; `project_field_labels` / `project_fields_hidden` / `volume_decimals` / `project_tooltip_rows` also `project_fields.manage`) | Update setting. A known key stores its canonical form (422 `Invalid value for <key>` otherwise) and `value: null` deletes its row (answered with the default); any other key is stored as given |
 | GET / PUT | `/settings/sso` | none / admin (`settings.sso`) | Tenant SSO settings (read / write) |
 
-Audit row of `PUT /settings/{key}`: `admin.settings.updated`, target `("setting", key, key)`, `changes = {key: {old, new}}` (a value over 200 characters — a data-URL logo — as `{changed: true, length}`); nothing when the value did not change. `PUT /settings/sso`: `admin.sso.updated` (see Authentication).
+Audit row of `PUT /settings/{key}`: `admin.settings.updated`, target `("setting", key, key)`, `changes = {key: {old, new}}` (a value over 200 characters — a data-URL logo — as `{changed: true, length}`); values are compared as they read: a known key without a row is its default, a stored value counts in its canonical form, so saving the current value or the default (or resetting to it) records nothing, and a first save shows the default as `old`. `PUT /settings/sso`: `admin.sso.updated` (see Authentication).
 
 ### Import & export (`mpp_import.py`, `export.py`)
 

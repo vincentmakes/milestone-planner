@@ -201,6 +201,8 @@ app/
                        #   field_ids) (the two base dashboards + the demo extras: the Overview's two
                        #   field widgets, the Capacity gauge; widgets only in the run that creates
                        #   their dashboard; callable standalone on a seeded tenant)
+    csv_safety.py      # safe_cell / FORMULA_TRIGGERS: the spreadsheet formula-injection guard of
+                       #   every export (site .xlsx, project CSV, audit-log CSV)
     date_range.py      # parse_day / parse_day_range (400 on bad/inverted/>366-day ranges),
                        #   ensure_date_order (422) for partial updates
     encryption.py      # AES-256-GCM credentials + bcrypt/PBKDF2 password hashing

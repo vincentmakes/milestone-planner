@@ -13,7 +13,7 @@ from typing import Any
 import asyncpg
 
 from app.config import get_settings
-from app.models.audit_log import AUDIT_LOG_CATEGORIES, AUDIT_LOG_OUTCOMES
+from app.models.audit_log import AUDIT_LOG_CATEGORIES, AUDIT_LOG_OUTCOMES, in_check
 from app.models.card_comment import COMMENT_ENTITY_TYPES
 from app.models.dashboard import DASHBOARD_WIDGET_KINDS
 from app.scripts.demo_data import build_demo
@@ -1597,10 +1597,7 @@ DASHBOARD_WIDGET_KIND_CHECK_SQL = f"""
 # (app/models/audit_log.py). One statement per constant (asyncpg runs a single
 # statement per call); setup_databases.sql, the template and
 # migrations/add_audit_log.sql carry the same text
-# (tests/test_audit_log_schema.py).
-def _in_check(column: str, values: tuple[str, ...]) -> str:
-    """CHECK text ``column IN ('a', 'b')``, spelled as the ORM spells it."""
-    return f"{column} IN (" + ", ".join(f"'{v}'" for v in values) + ")"
+# (tests/test_audit_log_schema.py). ``in_check`` is the model's own formatter.
 
 
 AUDIT_LOG_TABLE = "audit_log"
@@ -1625,9 +1622,9 @@ AUDIT_LOG_TABLE_SQL = f"""
       origin VARCHAR(20) NOT NULL DEFAULT 'web',
       details TEXT,
       CONSTRAINT audit_log_category_check
-        CHECK ({_in_check("category", AUDIT_LOG_CATEGORIES)}),
+        CHECK ({in_check("category", AUDIT_LOG_CATEGORIES)}),
       CONSTRAINT audit_log_outcome_check
-        CHECK ({_in_check("outcome", AUDIT_LOG_OUTCOMES)})
+        CHECK ({in_check("outcome", AUDIT_LOG_OUTCOMES)})
     )"""
 
 AUDIT_LOG_INDEX_STATEMENTS: tuple[str, ...] = (

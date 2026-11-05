@@ -197,6 +197,20 @@ async def _record_setting(
     )
 
 
+def _effective_value(key: str, stored: str | None) -> str | None:
+    """What ``key`` reads as: a known key's default when it has no row, its
+    canonical form otherwise (a stored value that no longer canonicalises is
+    taken as it is); any other key as stored."""
+    if key not in KNOWN_SETTINGS:
+        return stored
+    if stored is None:
+        return default_for(key)
+    try:
+        return canonicalise(key, stored)
+    except ValueError:
+        return stored
+
+
 @router.put("/settings/{key}", response_model=SettingsResponse)
 async def update_setting(
     key: str,
@@ -240,11 +254,14 @@ async def update_setting(
     result = await db.execute(select(Settings).where(Settings.key == key))
     setting = result.scalar_one_or_none()
 
-    old_value = setting.value if setting else None
+    # The audit row compares effective values: a known key without a row is
+    # its default and a stored value counts in its canonical form, so saving
+    # the default (or resetting to it) records nothing.
+    old_value = _effective_value(key, setting.value if setting else None)
 
     if known and value is None:
         if setting:
-            await _record_setting(db, request, user, key, old_value, None)
+            await _record_setting(db, request, user, key, old_value, default_for(key))
             await db.delete(setting)
             await db.commit()
         return SettingsResponse(key=key, value=default_for(key))

@@ -16,13 +16,12 @@ The section needs the **`system.audit_log`** permission, which only the **Admin*
 | **Category** | **Authentication**, **Administration**, **Data access** or **Changes** |
 | **Action** | What happened, for example *User updated*. The raw key (`admin.user.updated`) is the cell's tooltip and is shown in the [entry detail](#reading-an-entry); see the [action catalogue](#action-catalogue) |
 | **Outcome** | **Success** or **Failure** |
-| **Actor** | The signed-in user who did it, as named when the entry was written, so the entry still names them after the account is deleted. Empty when nobody was signed in, a failed sign-in for instance |
+| **Actor** | The user who did it, as named when the entry was written, so the entry still names them after the account is deleted. A failed sign-in for an existing account names that account; the Actor is empty only when the e-mail matched no account (or for an entry raised by the platform itself) |
 | **Account** | The account the action was about: the e-mail typed into a failed sign-in, or the user whose password was set |
 | **Target** | The object acted on, as *Type · name*, for example *Site · Basel* |
 | **IP address** | The client's address (see [Client IP address](#client-ip-address)) |
-| **Origin** | **Web** for a request from a signed-in browser, **System** for one raised by the platform itself |
 
-An empty value shows "—".
+An empty value shows "—". The **Origin** (**Web** for a request from a browser, **System** for one raised by the platform itself) is shown in the [entry detail](#reading-an-entry) and the export, not in the table.
 
 ## Filters
 
@@ -39,7 +38,7 @@ The toolbar above the table narrows the list by:
 
 ## Reading an entry
 
-Click a row (or focus it and press Enter) to open the **Entry detail** dialog. It shows when, who, the account, the target, the project when there is one, the IP address, the browser (user agent) and, for a failure, the **reason**, written out ("Wrong password (`bad_password`)"). Under **Details**:
+Click a row (or focus it and press Enter) to open the **Entry detail** dialog. It shows when, who, the account, the target, the project when there is one, the IP address, the origin, the browser (user agent) and, for a failure, the **reason**, written out ("Wrong password (`bad_password`)"). Under **Details**:
 
 - **Changes**: a Field / Before / After table, one row per changed field. A credential is never stored: a password, token or client secret is replaced before the entry is written and shown as **Secret value**. A very long value shows as "changed (n characters)".
 - **Context**: facts that frame the action without being part of it, such as how many rows an export held or how many sessions a password change ended.
@@ -61,7 +60,7 @@ Action keys are past tense and built as `category.entity.verb`.
 | Action | Recorded when |
 |--------|---------------|
 | `auth.login.succeeded` | A user signs in with e-mail and password |
-| `auth.login.failed` | A password sign-in is refused. The reason says why (below) |
+| `auth.login.failed` | A password sign-in is refused. The reason says why (below). After 100 failed attempts from one address within 15 minutes, one more entry is written with `suppressed: true` in its details and further failures from that address are not recorded until the oldest ones are 15 minutes old; the sign-in lockout itself is unchanged |
 | `auth.login.locked` | A failure reaches the [login throttle](../developer-guide/auth-and-tenancy.md) limit. Written once, together with that attempt's `auth.login.failed`; the details carry `retry_after` and `locked_until`, and it names the account when it exists. Further refused attempts while locked record nothing |
 | `auth.logout` | A signed-in user signs out |
 | `auth.password.changed` | A user changes their own password; the details carry the number of sessions ended |
@@ -93,19 +92,19 @@ Only our own fixed reason codes are recorded; text from Entra is never stored.
 
 ### Administration
 
-Every update records its **Changes** (old and new value of the fields that moved) and writes nothing when nothing changed.
+Every update records its **Changes** (old and new value of the fields that moved) and writes nothing when nothing changed. A setting saved for the first time shows its default as the old value; saving the value it already has (or its default) records nothing.
 
 | Action | Recorded when |
 |--------|---------------|
-| `admin.user.created`, `.updated`, `.deleted` | A user is created, edited (name, e-mail, job title, role, capacity, resource flag, active flag, sites, teams, skills) or deleted. The details note the sessions ended by a role or activation change |
-| `admin.user.activated`, `.deactivated` | A user is switched on or off |
+| `admin.user.created`, `.updated`, `.deleted` | A user is created, edited (name, e-mail, job title, role, capacity, resource flag, sites, teams, skills) or deleted. A role change shows the roles' names as they were at that moment. The details note the sessions ended by a role change. The **Account** column holds the user's e-mail on every `admin.user` entry |
+| `admin.user.activated`, `.deactivated` | A user is switched on or off, through the switch in the user list or by changing **Active** in the user dialog; a deactivation notes the sessions it ended. An edit that also changes other fields records `admin.user.updated` for those as well |
 | `admin.user.password_set` | An administrator sets a user's password. No password is recorded |
 | `admin.role.created`, `.updated`, `.deleted` | A role is created, renamed or deleted |
 | `admin.role.permissions_updated` | A role's permissions are saved; each moved key shows its old and new mode (allow, approval or not granted) |
 | `admin.approval_policy.updated` | Who approves a kind of own booking changes |
 | `admin.settings.updated` | An instance setting is saved, one entry per setting. A value over 200 characters records only that it changed and its length |
 | `admin.sso.updated` | The tenant SSO configuration is saved; the client secret shows as **Secret value** |
-| `admin.sso.tested` | **Test configuration** runs. The outcome is whether the credentials worked; the reason names the first failed check (`client_secret`, `redirect_uri`, `outbound_network`, `microsoft_directory`, `client_credentials`, `microsoft_sign_in`) or `rejected` |
+| `admin.sso.tested` | **Test configuration** runs. The outcome is whether the credentials worked; the reason names the first failed check by a fixed code (`tenant_id`, `client_id`, `client_secret`, `redirect_uri`, `outbound_network`, `microsoft_directory`, `client_credentials`, `microsoft_sign_in`) or `rejected` |
 | `admin.site.created`, `.updated`, `.deleted` | A site is changed |
 | `admin.team.created`, `.updated`, `.deleted` | A team is changed, members included |
 | `admin.<entity>.created`, `.updated`, `.deleted` | The same three verbs for skills, absence types, equipment (and equipment types), bank holidays (including a calendar import and a refresh), company events (including an import), predefined phases, project fields and tags. The target is the entity and its id when the request path has one; these entries carry no Changes table |
@@ -159,4 +158,4 @@ Shipping the stream to a central log store keeps a copy outside the instance, ou
 
 ## Client IP address
 
-The **IP address** column is `request.client.host`, as resolved by uvicorn. The container starts uvicorn with `--proxy-headers`, so behind a reverse proxy the address is the one in `X-Forwarded-For`, but only when the proxy is listed in **`FORWARDED_ALLOW_IPS`**. Otherwise every row shows the proxy's address, and the login lockout applies to everyone at once. See [Trust the proxy's X-Forwarded-For](installation.md#trust-the-proxys-x-forwarded-for-forwarded_allow_ips).
+The **IP address** column is `request.client.host`, as resolved by uvicorn. The container starts uvicorn with `--proxy-headers`, so behind a reverse proxy the address is the one in `X-Forwarded-For`, but only when the proxy is listed in **`FORWARDED_ALLOW_IPS`**. Otherwise every row shows the proxy's address, and the login lockout applies to everyone at once. The per-address cap on failed sign-in entries and the per-address lock work only when `FORWARDED_ALLOW_IPS` names the proxy: without it, every client shares the proxy's address, so one client's failed attempts can stop the failed sign-ins of all the others from being recorded. See [Trust the proxy's X-Forwarded-For](installation.md#trust-the-proxys-x-forwarded-for-forwarded_allow_ips).

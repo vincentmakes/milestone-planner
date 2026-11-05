@@ -42,8 +42,25 @@ _WEB_PLATFORM_CHECK = (
 )
 
 
-def _check(name: str, status_: str, message: str, code: str | None = None) -> SSOTestCheck:
-    return SSOTestCheck(name=name, status=status_, message=message, code=code)
+# Every check's fixed code: what ``admin.sso.tested`` records as its reason
+# (a renamed label must not change it; the frontend labels the codes).
+SSO_CHECK_KINDS: tuple[str, ...] = (
+    "tenant_id",
+    "client_id",
+    "client_secret",
+    "redirect_uri",
+    "outbound_network",
+    "microsoft_directory",
+    "client_credentials",
+    "microsoft_sign_in",
+)
+
+
+def _check(
+    kind: str, name: str, status_: str, message: str, code: str | None = None
+) -> SSOTestCheck:
+    """One check: ``kind`` is its fixed code (``SSO_CHECK_KINDS``), ``name`` the label shown."""
+    return SSOTestCheck(kind=kind, name=name, status=status_, message=message, code=code)
 
 
 def _encryption_key_name(shared_callback: bool) -> str:
@@ -78,28 +95,29 @@ def local_checks(
     """
     checks = []
 
-    for label, raw in (
-        ("Directory (tenant) ID", tenant_id),
-        ("Application (client) ID", client_id),
+    for kind, label, raw in (
+        ("tenant_id", "Directory (tenant) ID", tenant_id),
+        ("client_id", "Application (client) ID", client_id),
     ):
         # Coerce to the string this is at runtime (the organization model uses
         # legacy Column() attributes) — which also strips a pasted newline
         # before the shape check, as everywhere else here.
         value = str(raw or "").strip()
         if not value:
-            checks.append(_check(label, "fail", "Not set."))
+            checks.append(_check(kind, label, "fail", "Not set."))
         elif not _GUID_RE.match(value):
             checks.append(
-                _check(label, "warn", "This does not look like a GUID. Copy it from Entra.")
+                _check(kind, label, "warn", "This does not look like a GUID. Copy it from Entra.")
             )
         else:
-            checks.append(_check(label, "pass", "Looks like a valid identifier."))
+            checks.append(_check(kind, label, "pass", "Looks like a valid identifier."))
 
     if secret_state == "missing":
-        checks.append(_check("Client secret", "fail", "Not set."))
+        checks.append(_check("client_secret", "Client secret", "fail", "Not set."))
     elif secret_state == "unreadable" or secret is None:
         checks.append(
             _check(
+                "client_secret",
                 "Client secret",
                 "fail",
                 "Stored, but it could not be decrypted. This usually means "
@@ -111,6 +129,7 @@ def local_checks(
         # Azure shows Value and Secret ID side by side and only the Value works.
         checks.append(
             _check(
+                "client_secret",
                 "Client secret",
                 "warn",
                 "This looks like the Secret ID, not the secret Value. Copy the Value column "
@@ -119,16 +138,19 @@ def local_checks(
             )
         )
     elif secret_source == "entered":
-        checks.append(_check("Client secret", "pass", "Looks like a secret value."))
+        checks.append(
+            _check("client_secret", "Client secret", "pass", "Looks like a secret value.")
+        )
     else:
-        checks.append(_check("Client secret", "pass", "Stored and readable."))
+        checks.append(_check("client_secret", "Client secret", "pass", "Stored and readable."))
 
     uri = redirect_uri or ""
     if not uri:
-        checks.append(_check("Redirect URI", "fail", "Not set."))
+        checks.append(_check("redirect_uri", "Redirect URI", "fail", "Not set."))
     elif shared_callback and "/t/" in uri:
         checks.append(
             _check(
+                "redirect_uri",
                 "Redirect URI",
                 "fail",
                 "Organization SSO uses one shared callback for every workspace, so the URI "
@@ -136,11 +158,15 @@ def local_checks(
             )
         )
     elif not uri.startswith("https://"):
-        checks.append(_check("Redirect URI", "warn", "Should be an absolute https:// URL."))
+        checks.append(
+            _check("redirect_uri", "Redirect URI", "warn", "Should be an absolute https:// URL.")
+        )
     elif not uri.endswith("/api/auth/sso/callback"):
-        checks.append(_check("Redirect URI", "warn", "Should end in /api/auth/sso/callback."))
+        checks.append(
+            _check("redirect_uri", "Redirect URI", "warn", "Should end in /api/auth/sso/callback.")
+        )
     else:
-        checks.append(_check("Redirect URI", "pass", uri))
+        checks.append(_check("redirect_uri", "Redirect URI", "pass", uri))
 
     return checks
 
@@ -176,6 +202,7 @@ def outbound_network_check() -> SSOTestCheck:
 
     if not env_proxy and not unused:
         return _check(
+            "outbound_network",
             "Outbound network",
             "pass",
             "No proxy is configured; sign-in requests connect to Microsoft directly.",
@@ -193,7 +220,9 @@ def outbound_network_check() -> SSOTestCheck:
             "reachable through that proxy, sign-in cannot reach it."
         )
 
-    return _check("Outbound network", "warn" if unused else "pass", " ".join(parts))
+    return _check(
+        "outbound_network", "Outbound network", "warn" if unused else "pass", " ".join(parts)
+    )
 
 
 async def run_entra_test(
@@ -229,7 +258,9 @@ async def run_entra_test(
     checks.append(outbound_network_check())
 
     if any(check.status == "fail" for check in checks):
-        checks.append(_check("Microsoft sign-in", "manual", _WEB_PLATFORM_CHECK))
+        checks.append(
+            _check("microsoft_sign_in", "Microsoft sign-in", "manual", _WEB_PLATFORM_CHECK)
+        )
         # Built through the wire alias: mypy (no pydantic plugin) knows only it.
         return SSOTestResponse(
             credentialsOk=False,
@@ -247,13 +278,18 @@ async def run_entra_test(
             if discovery.status_code != 200:
                 checks.append(
                     _check(
+                        "microsoft_directory",
                         "Microsoft directory",
                         "fail",
                         "Microsoft does not recognise this Directory (tenant) ID.",
                     )
                 )
             else:
-                checks.append(_check("Microsoft directory", "pass", "Found and reachable."))
+                checks.append(
+                    _check(
+                        "microsoft_directory", "Microsoft directory", "pass", "Found and reachable."
+                    )
+                )
 
                 token = await client.post(
                     f"{base}/oauth2/v2.0/token",
@@ -268,6 +304,7 @@ async def run_entra_test(
                     credentials_ok = True
                     checks.append(
                         _check(
+                            "client_credentials",
                             "Client credentials",
                             "pass",
                             "Microsoft accepted the client ID and secret.",
@@ -283,6 +320,7 @@ async def run_entra_test(
                     )
                     checks.append(
                         _check(
+                            "client_credentials",
                             "Client credentials",
                             "fail",
                             error.admin_remedy,
@@ -296,6 +334,7 @@ async def run_entra_test(
         logger.warning("SSO test: could not reach Microsoft for %s", log_label, exc_info=True)
         checks.append(
             _check(
+                "microsoft_directory",
                 "Microsoft directory",
                 "warn",
                 "Could not reach login.microsoftonline.com from the server. Check outbound "
@@ -303,7 +342,7 @@ async def run_entra_test(
             )
         )
 
-    checks.append(_check("Microsoft sign-in", "manual", _WEB_PLATFORM_CHECK))
+    checks.append(_check("microsoft_sign_in", "Microsoft sign-in", "manual", _WEB_PLATFORM_CHECK))
 
     if credentials_ok:
         summary = (

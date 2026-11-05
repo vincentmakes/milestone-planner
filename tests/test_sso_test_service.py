@@ -12,7 +12,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.services.sso_test import local_checks, outbound_network_check, run_entra_test
+from app.services.sso_test import (
+    SSO_CHECK_KINDS,
+    local_checks,
+    outbound_network_check,
+    run_entra_test,
+)
 
 TENANT = "d9c7995d-4c06-40b7-829c-3921bdc751ed"
 CLIENT = "1e03c280-f98d-4cc4-a673-837bb7b4fd47"
@@ -56,6 +61,20 @@ def settings(multi_tenant: bool):
 # ---------------------------------------------------------------------------
 # local_checks
 # ---------------------------------------------------------------------------
+
+
+def test_every_check_carries_a_fixed_kind():
+    """The kind is the audit reason of a failed test: fixed, whatever the label."""
+    checks = local_checks(**values(tenant_id="", client_id=""))
+
+    assert [(c.kind, c.status) for c in checks] == [
+        ("tenant_id", "fail"),
+        ("client_id", "fail"),
+        ("client_secret", "pass"),
+        ("redirect_uri", "pass"),
+    ]
+    assert {c.kind for c in checks} <= set(SSO_CHECK_KINDS)
+    assert "kind" not in checks[0].model_dump()  # not part of the response
 
 
 def test_valid_entered_values_all_pass():

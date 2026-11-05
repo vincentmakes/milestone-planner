@@ -631,39 +631,59 @@ async def _record_user_update(
     revoked: int | None,
     password_set: bool,
 ) -> None:
-    """``admin.user.updated`` with the changed fields (nothing when none
-    changed) and ``admin.user.password_set`` when the body set a password
-    (never a diff of it). ``sessions_revoked`` goes on the first row
-    recorded."""
+    """
+    The rows of one ``PUT /users/{id}``, in this order:
+
+    - ``admin.user.activated`` / ``.deactivated`` when ``active`` moved, as
+      the toggle route records it (a filter on the direction finds both);
+    - ``admin.user.updated`` with the other changed fields, when any moved;
+    - ``admin.user.password_set`` when the body set a password (never a diff
+      of it).
+
+    Nothing when nothing moved. ``sessions_revoked`` goes on the first row
+    recorded. A role change shows the roles' names, not their keys
+    (snapshotted now: a later rename does not rewrite the entry).
+    """
     sites, teams, skills = links
-    changes = audit_log.diff(
-        before, _user_audit_snapshot(user, sites, teams, skills), keys=USER_AUDIT_FIELDS
+    changes = dict(
+        audit_log.diff(
+            before, _user_audit_snapshot(user, sites, teams, skills), keys=USER_AUDIT_FIELDS
+        )
     )
+    if "role" in changes:
+        changes["role"] = await _role_names_change(db, changes["role"])
+    active_moved = changes.pop("active", None)
     context = {"sessions_revoked": revoked} if revoked is not None else None
+    rows: list[tuple[str, dict | None]] = []
+    if active_moved is not None:
+        rows.append(("admin.user.activated" if user.active else "admin.user.deactivated", None))
     if changes:
+        rows.append(("admin.user.updated", changes))
+    if password_set:
+        rows.append(("admin.user.password_set", None))
+    for action, row_changes in rows:
+        extra = {"changes": row_changes} if row_changes else {}
         await audit_log.record(
             db,
             request,
-            action="admin.user.updated",
+            action=action,
             category="admin",
             actor=actor,
             subject_email=user.email,
             target=_user_target(user),
-            changes=changes,
             context=context,
+            **extra,
         )
         context = None
-    if password_set:
-        await audit_log.record(
-            db,
-            request,
-            action="admin.user.password_set",
-            category="admin",
-            actor=actor,
-            subject_email=user.email,
-            target=_user_target(user),
-            context=context,
-        )
+
+
+async def _role_names_change(db: AsyncSession, change: dict) -> dict:
+    """``{old, new}`` of a role change with each key replaced by the role's
+    name (the key itself when the role is gone)."""
+    keys = [k for k in (change.get("old"), change.get("new")) if k]
+    result = await db.execute(select(Role.key, Role.name).where(Role.key.in_(keys)))
+    names = {key: name for key, name in result.all()}
+    return {side: names.get(value, value) for side, value in change.items()}
 
 
 @router.delete("/users/{user_id}")

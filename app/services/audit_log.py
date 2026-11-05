@@ -238,7 +238,10 @@ def diff(
     and is not reported, which makes a partial body
     (``model_dump(exclude_unset=True)``) a valid ``new``. A field missing
     from ``old`` reads as ``None``. ``keys`` restricts the comparison
-    (default: every key of a mapping ``new``). Values are compared in full;
+    (default: every key of a mapping ``new``). Values are compared in full,
+    with Python's ``==``: ``1`` and ``True`` (or ``1`` and ``1.0``) are equal,
+    so a flag re-sent as an int is not a change -- convert a value to its
+    stored type before diffing when that equality is not what you mean;
     a string longer than ``LONG_VALUE`` is then reported as ``{"changed":
     true, "length": n}`` on the side that holds it, and a credential key
     (``is_masked_key``) is masked on both sides.
@@ -447,6 +450,8 @@ def build_entry(
         }
     )
     ip, agent, origin = request_context(request)
+    if origin not in ORIGINS:
+        raise ValueError(f"Unknown audit origin {origin!r}; expected one of {ORIGINS}")
     target_type, target_id, target_label = (tuple(target or ()) + (None, None, None))[:3]
     return AuditLog(
         created_at=utcnow_naive(),

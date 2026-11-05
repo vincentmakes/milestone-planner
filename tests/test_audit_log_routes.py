@@ -9,6 +9,7 @@ own query builders (``build_filters`` / ``load_page`` / ``filtered_query``).
 
 import csv
 import io
+import threading
 from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -260,9 +261,11 @@ async def test_the_export_is_recorded_and_committed_before_the_body(
         side_effect=lambda: order.append(f"commit after {len(audit_calls)} row(s)")
     )
     real_build = audit_routes.build_csv
+    threads: list[int] = []
 
     def build(rows):
         order.append(f"build after {len(audit_calls)} row(s)")
+        threads.append(threading.get_ident())
         return real_build(rows)
 
     with patch.object(audit_routes, "build_csv", side_effect=build):
@@ -277,6 +280,7 @@ async def test_the_export_is_recorded_and_committed_before_the_body(
     assert row["target"] == ("audit_log", None, "Audit log")
     # The purge's commit, then the export row's, then the body.
     assert order == ["commit after 0 row(s)", "commit after 1 row(s)", "build after 1 row(s)"]
+    assert threads != [threading.get_ident()]  # built off the event loop
     lines = list(csv.reader(io.StringIO(resp.text)))
     assert tuple(lines[0]) == CSV_COLUMNS
     assert len(lines) == 3
@@ -339,6 +343,12 @@ async def test_since_and_until_are_inclusive_days(db):
     assert await _ids(db, since=date(2026, 11, 2), until=date(2026, 11, 4)) == [6, 5, 4, 3]
 
 
+async def test_since_includes_a_row_at_exactly_midnight_of_that_day(db):
+    # Row 1 is at 2026-11-01 00:00:00 sharp, row 2 at 23:59 the same day.
+    assert await _ids(db, since=date(2026, 11, 1)) == [8, 7, 6, 5, 4, 3, 2, 1]
+    assert await _ids(db, since=date(2026, 11, 2)) == [8, 7, 6, 5, 4, 3]
+
+
 async def test_paging_and_total(db):
     first = await load_page(db, build_filters(), 1, 3)
     third = await load_page(db, build_filters(), 3, 3)
@@ -369,7 +379,8 @@ async def test_the_csv_of_real_rows(db):
     assert by_id["5"]["target_label"] == "'=HYPERLINK(evil)"
     assert by_id["5"]["project_name"] == "Apollo"
     assert by_id["4"]["details"] == '{"changes":{"role":{"new":"superuser","old":"user"}}}'
-    assert by_id["4"]["created_at"] == "2026-11-03T08:00:00"
+    # The API's form: UTC with milliseconds and a Z (a reader can tell the zone).
+    assert by_id["4"]["created_at"] == "2026-11-03T08:00:00.000Z"
     assert by_id["7"]["details"] == "" and by_id["7"]["project_id"] == ""
 
 
@@ -385,7 +396,7 @@ async def test_the_csv_of_real_rows(db):
         ("\tx", "'\tx"),
         ("\rx", "'\rx"),
         (12, "12"),
-        (datetime(2026, 1, 2, 3, 4, 5), "2026-01-02T03:04:05"),
+        (datetime(2026, 1, 2, 3, 4, 5), "2026-01-02T03:04:05.000Z"),
     ],
 )
 def test_csv_cell(value, cell):

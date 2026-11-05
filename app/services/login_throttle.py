@@ -17,6 +17,15 @@ Two sliding windows of failed attempts are kept:
   of many users, and a per-ip limit there would let anyone lock out every
   login with a burst of bad passwords.
 
+A third bucket caps the **audit rows** failed sign-ins write, not the
+attempts: per ``(scope, client ip)`` and regardless of whether the address may
+be shared, every failure is counted, and once ``MAX_FAILURES_PER_IP`` of them
+fall inside the window the tenant login writes one ``auth.login.failed`` row
+marked ``suppressed`` and then nothing more for that address until the window
+slides (``audit_failure_mode``). Without it a client behind a private address
+could grow the audit log by one row per request with a fresh e-mail each time
+-- the per-ip lock never applies there and the per-e-mail one never fills.
+
 The client ip is ``request.client.host``. Behind a reverse proxy that is the
 proxy's address unless uvicorn is told to trust its ``X-Forwarded-For``
 (``FORWARDED_ALLOW_IPS``, see the installation guide) -- without it every
@@ -32,7 +41,7 @@ tries per quarter hour"; it is not a distributed rate limiter.
 import ipaddress
 import time
 from collections import deque
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from fastapi import HTTPException, Request, status
 
@@ -45,8 +54,15 @@ MAX_TRACKED_KEYS = 10_000
 
 K = TypeVar("K")
 
+AuditFailureMode = Literal["record", "suppressed", "silent"]
+
 _failures: dict[tuple[str, str, str], deque[float]] = {}
 _ip_failures: dict[str, deque[float]] = {}
+# Failures per (scope, ip) for the audit-row cap. A deque never needs more
+# than one entry past the cap ("suppressed" written, now "silent"), so it is
+# bounded: a flood keeps the newest entries and the window slides from them.
+_audit_failures: dict[tuple[str, str], deque[float]] = {}
+_AUDIT_TRACKED = MAX_FAILURES_PER_IP + 2
 
 
 def _client_ip(request: Request) -> str:
@@ -143,7 +159,37 @@ def record_login_failure(scope: str, request: Request, email: str) -> int | None
         _record(_ip_failures, key[1], now)
         if locked is None and _recent(_ip_failures, key[1], now) == MAX_FAILURES_PER_IP:
             locked = _retry_after(_ip_failures[key[1]][0], now)
+    _record_audit_failure((scope, key[1]), now)
     return locked
+
+
+def _record_audit_failure(key: tuple[str, str], now: float) -> None:
+    entries = _audit_failures.get(key)
+    if entries is None:
+        if len(_audit_failures) >= MAX_TRACKED_KEYS:
+            _audit_failures.pop(next(iter(_audit_failures)))
+        entries = deque(maxlen=_AUDIT_TRACKED)
+        _audit_failures[key] = entries
+    _prune(entries, now)
+    entries.append(now)
+
+
+def audit_failure_mode(scope: str, request: Request) -> AuditFailureMode:
+    """
+    How the failure just counted by ``record_login_failure`` is audited.
+
+    ``"record"`` while this (scope, ip) is within ``MAX_FAILURES_PER_IP``
+    failures in the window; ``"suppressed"`` for the one failure past it (the
+    caller writes a single row saying further ones are not recorded);
+    ``"silent"`` after that, until older failures age out of the window. The
+    throttle itself is unaffected: this only caps the rows.
+    """
+    count = _recent(_audit_failures, (scope, _client_ip(request)), time.monotonic())
+    if count <= MAX_FAILURES_PER_IP:
+        return "record"
+    if count == MAX_FAILURES_PER_IP + 1:
+        return "suppressed"
+    return "silent"
 
 
 def record_login_success(scope: str, request: Request, email: str) -> None:
@@ -158,3 +204,4 @@ def reset_login_throttle() -> None:
     """Clear all counters (tests)."""
     _failures.clear()
     _ip_failures.clear()
+    _audit_failures.clear()

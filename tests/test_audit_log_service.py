@@ -339,6 +339,18 @@ async def test_record_rejects_invalid_input_before_adding(kwargs):
     db.flush.assert_not_called()
 
 
+async def test_record_rejects_an_origin_outside_origins():
+    db = _db()
+
+    with (
+        patch.object(audit_log, "request_context", return_value=(None, None, "cron")),
+        pytest.raises(ValueError, match="origin"),
+    ):
+        await REAL_RECORD(db, None, action="project.created", category="change")
+
+    db.add.assert_not_called()
+
+
 def test_validate_accepts_every_category_and_outcome():
     for category in CATEGORIES:
         for outcome in OUTCOMES:
@@ -607,5 +619,8 @@ def test_the_module_names_no_local_after_a_credential():
     tree = ast.parse(inspect.getsource(audit_log))
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     names |= {node.arg for node in ast.walk(tree) if isinstance(node, ast.arg)}
+    # Attribute reads (``x.password``) and call keywords (``f(token=...)``) too.
+    names |= {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    names |= {node.arg for node in ast.walk(tree) if isinstance(node, ast.keyword) and node.arg}
     for name in names:
         assert not any(word in name.lower() for word in ("password", "secret", "token")), name

@@ -48,6 +48,7 @@ from app.services.encryption import (
     verify_user_password,
 )
 from app.services.login_throttle import (
+    audit_failure_mode,
     check_login_allowed,
     record_login_failure,
     record_login_success,
@@ -175,17 +176,22 @@ async def login(
         dummy_verify_user_password(data.password)
     if not user or not verify_user_password(data.password, user.password):
         locked_for = record_login_failure(throttle_scope, request, data.email)
-        await audit_log.record(
-            db,
-            request,
-            action="auth.login.failed",
-            category="auth",
-            outcome="failure",
-            actor=user,
-            subject_email=data.email,
-            reason="unknown_user" if user is None else "bad_password",
-        )
-        if locked_for is not None:
+        # Rows are capped per client address: past the cap one row says so,
+        # then nothing more is written until the window slides.
+        audit_mode = audit_failure_mode(throttle_scope, request)
+        if audit_mode != "silent":
+            await audit_log.record(
+                db,
+                request,
+                action="auth.login.failed",
+                category="auth",
+                outcome="failure",
+                actor=user,
+                subject_email=data.email,
+                reason="unknown_user" if user is None else "bad_password",
+                context={"suppressed": True} if audit_mode == "suppressed" else None,
+            )
+        if locked_for is not None and audit_mode == "record":
             # This failure locked the (ip, e-mail) key or the ip: once.
             locked_until = utcnow_naive() + timedelta(seconds=locked_for)
             await audit_log.record(
@@ -1179,12 +1185,13 @@ async def run_tenant_sso_test(
         value_origin,
         response.credentials_ok,
     )
-    # The checks' names are our own fixed labels ("Client secret", "Microsoft
-    # sign-in", ...); the reason is the first failed one as a snake_case kind.
-    failed = [check.name for check in response.checks if check.status == "fail"]
+    # The reason is the first failed check's fixed kind (sso_test.SSO_CHECK_KINDS:
+    # stable whatever its label says), or "rejected" when none failed.
+    failed_checks = [check for check in response.checks if check.status == "fail"]
+    failed = [check.name for check in failed_checks]
     reason = None
     if not response.credentials_ok:
-        reason = failed[0].lower().replace(" ", "_").replace("-", "_") if failed else "rejected"
+        reason = (failed_checks[0].kind if failed_checks else None) or "rejected"
     await audit_log.record(
         db,
         request,

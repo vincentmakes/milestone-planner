@@ -43,8 +43,9 @@ AUDIT_LOG_CATEGORIES: tuple[str, ...] = ("auth", "admin", "access", "change")
 AUDIT_LOG_OUTCOMES: tuple[str, ...] = ("success", "failure")
 
 
-def _in(column: str, values: tuple[str, ...]) -> str:
-    """CHECK text ``column IN ('a', 'b')``, spelled exactly as in the DDL."""
+def in_check(column: str, values: tuple[str, ...]) -> str:
+    """CHECK text ``column IN ('a', 'b')``: the one spelling of the ORM and of
+    the DDL (``tenant_provisioner`` imports it)."""
     return f"{column} IN (" + ", ".join(f"'{v}'" for v in values) + ")"
 
 
@@ -53,8 +54,10 @@ class AuditLog(Base):
 
     __tablename__ = "audit_log"
     __table_args__ = (
-        CheckConstraint(_in("category", AUDIT_LOG_CATEGORIES), name="audit_log_category_check"),
-        CheckConstraint(_in("outcome", AUDIT_LOG_OUTCOMES), name="audit_log_outcome_check"),
+        CheckConstraint(
+            in_check("category", AUDIT_LOG_CATEGORIES), name="audit_log_category_check"
+        ),
+        CheckConstraint(in_check("outcome", AUDIT_LOG_OUTCOMES), name="audit_log_outcome_check"),
         Index("ix_audit_log_created_at", "created_at"),
         Index("ix_audit_log_category_created_at", "category", "created_at"),
         Index("ix_audit_log_action", "action"),

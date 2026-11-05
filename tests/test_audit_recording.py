@@ -12,6 +12,7 @@ organization-SSO session never commits by itself).
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,6 +32,8 @@ from tests.support import scalar_result
 from tests.test_auth_routes_more import orm_user
 from tests.test_sso_callback import ORG_CONFIG, browser_state
 from tests.test_users_routes import make_user, route_db
+
+STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
 # The real record_detached, captured before the autouse stub replaces it.
 REAL_RECORD_DETACHED = audit_log.record_detached
@@ -171,6 +174,61 @@ async def test_the_failure_that_locks_records_failed_then_locked(
     audit_calls.clear()
     assert (await app_client.post("/api/auth/login", json=body)).status_code == 429
     assert audit_calls == []
+
+
+async def test_failed_sign_in_rows_are_capped_per_client_address(
+    app_client, mock_db_session, audit_calls, monkeypatch
+):
+    """A private address is never locked by the per-ip bucket: past the cap one
+    row says the rest is suppressed, then nothing more is written."""
+    from app.services import login_throttle as lt
+
+    monkeypatch.setattr(lt, "MAX_FAILURES_PER_IP", 3)
+    monkeypatch.setattr(lt, "_AUDIT_TRACKED", 5)
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    async def attempt(i):
+        body = {"email": f"ghost{i}@example.com", "password": "whatever1"}
+        return (await app_client.post("/api/auth/login", json=body)).status_code
+
+    for i in range(3):  # N attempts: one row each
+        assert await attempt(i) == 401
+    assert [r.get("context") for r in rows(audit_calls)] == [None, None, None]
+    audit_calls.clear()
+
+    assert await attempt(3) == 401  # N+1: the one suppressed row
+    (row,) = rows(audit_calls)
+    assert (row["action"], row["reason"]) == ("auth.login.failed", "unknown_user")
+    assert row["context"] == {"suppressed": True}
+    audit_calls.clear()
+
+    assert await attempt(4) == 401  # N+2: nothing (the throttle answers as before)
+    assert audit_calls == []
+
+    # Another address still records.
+    with patch.object(lt, "_client_ip", return_value="10.9.9.9"):
+        assert await attempt(5) == 401
+    (row,) = rows(audit_calls)
+    assert row.get("context") is None
+
+
+async def test_a_wrong_password_below_the_cap_is_recorded_as_before(
+    app_client, mock_db_session, audit_calls, monkeypatch
+):
+    from app.services import login_throttle as lt
+
+    monkeypatch.setattr(lt, "MAX_FAILURES_PER_IP", 3)
+    user = orm_user(hash_user_password("correct-horse"))
+    mock_db_session.execute.return_value = scalar_result(user)
+
+    for _ in range(3):
+        resp = await app_client.post(
+            "/api/auth/login", json={"email": "ada@example.com", "password": "wrong-horse"}
+        )
+        assert resp.status_code == 401
+    assert [(r["reason"], r.get("context")) for r in rows(audit_calls)] == [
+        ("bad_password", None)
+    ] * 3
 
 
 async def test_a_successful_login_records_the_sign_in(app_client, mock_db_session, audit_calls):
@@ -420,6 +478,11 @@ async def test_a_user_update_records_only_the_changed_fields(
     set_user(admin)
     target = make_user(7)
     route_db(mock_db_session, target)
+    # The roles' names, looked up when the change is recorded.
+    mock_db_session.execute.return_value.all.return_value = [
+        ("user", "User"),
+        ("superuser", "Superuser"),
+    ]
 
     resp = await client.put(
         "/api/users/7", json={"first_name": "Grace", "last_name": "Last7", "role": "superuser"}
@@ -428,9 +491,10 @@ async def test_a_user_update_records_only_the_changed_fields(
     assert resp.status_code == 200
     (row,) = rows(audit_calls)
     assert row["action"] == "admin.user.updated"
+    # Labels, not keys.
     assert row["changes"] == {
         "first_name": {"old": "First", "new": "Grace"},
-        "role": {"old": "user", "new": "superuser"},
+        "role": {"old": "User", "new": "Superuser"},
     }
     assert row["context"] == {"sessions_revoked": 3}
     assert row["subject_email"] == "u7@example.com"
@@ -489,6 +553,155 @@ async def test_toggle_active_records_the_direction(
     assert (second["action"], second["context"]) == ("admin.user.activated", None)
 
 
+async def test_a_role_change_to_a_role_without_a_row_keeps_its_key(
+    authed_client, mock_db_session, audit_calls, revoked
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    route_db(mock_db_session, make_user(7))
+    mock_db_session.execute.return_value.all.return_value = [("user", "User")]
+
+    await client.put("/api/users/7", json={"role": "superuser"})
+
+    (row,) = rows(audit_calls)
+    assert row["changes"] == {"role": {"old": "User", "new": "superuser"}}
+
+
+async def test_a_put_that_only_deactivates_records_the_direction(
+    authed_client, mock_db_session, audit_calls, revoked
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    route_db(mock_db_session, make_user(7))
+
+    with patch("app.services.approvals.expire_for_requester", AsyncMock(return_value=None)):
+        resp = await client.put("/api/users/7", json={"active": 0})
+
+    assert resp.status_code == 200
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.user.deactivated"
+    assert row["context"] == {"sessions_revoked": 3}
+    assert row["subject_email"] == "u7@example.com"
+    assert "changes" not in row
+
+
+async def test_a_put_that_activates_and_edits_records_both(
+    authed_client, mock_db_session, audit_calls, revoked
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    route_db(mock_db_session, make_user(7, active=0))
+
+    resp = await client.put("/api/users/7", json={"active": 1, "first_name": "Grace"})
+
+    assert resp.status_code == 200
+    activated, updated = rows(audit_calls)
+    assert (activated["action"], activated["context"]) == ("admin.user.activated", None)
+    assert "changes" not in activated
+    assert updated["action"] == "admin.user.updated"
+    # The flag is the direction row's; the update carries the other fields only.
+    assert updated["changes"] == {"first_name": {"old": "First", "new": "Grace"}}
+    assert updated["subject_email"] == "u7@example.com"
+
+
+# ---------------------------------------------------------------------------
+# Admin: creates are recorded inside the create's own transaction
+# ---------------------------------------------------------------------------
+
+
+async def test_a_user_create_is_recorded_before_its_commit(
+    authed_client, mock_db_session, audit_calls
+):
+    from app.models.user import User
+
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [scalar_result(None)]  # the e-mail is free
+
+    async def flush():
+        for call in mock_db_session.add.call_args_list:
+            if isinstance(call.args[0], User):
+                call.args[0].id = 55
+
+    async def refresh(obj):
+        obj.created_at = STAMP
+
+    mock_db_session.flush.side_effect = flush
+    mock_db_session.refresh.side_effect = refresh
+    seen = commits_after_rows(mock_db_session, audit_calls)
+
+    resp = await client.post(
+        "/api/users",
+        json={
+            "email": "new@example.com",
+            "password": "s3cret-pass",
+            "first_name": "New",
+            "last_name": "Person",
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.user.created"
+    assert row["subject_email"] == "new@example.com"
+    assert row["target"] == ("user", 55, "New Person")
+    assert seen == [1]
+
+
+async def test_a_role_create_is_recorded_before_its_commit(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [scalar_result(None)] * 3  # key, name, max order
+
+    async def refresh(obj, attribute_names=None):
+        if getattr(obj, "id", None) is None:
+            obj.id = 42
+        obj.created_at = obj.created_at or STAMP
+        obj.updated_at = STAMP
+
+    mock_db_session.refresh.side_effect = refresh
+    seen = commits_after_rows(mock_db_session, audit_calls)
+
+    resp = await client.post("/api/roles", json={"key": "lead", "name": "Lead"})
+
+    assert resp.status_code == 201, resp.text
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.role.created"
+    assert row["target"] == ("role", "lead", "Lead")
+    assert seen == [1]
+
+
+async def test_a_team_create_is_recorded_before_its_commit(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result(1), scalar_result(None)]  # site, name
+
+    async def flush():
+        for call in mock_db_session.add.call_args_list:
+            if getattr(call.args[0], "id", None) is None:
+                call.args[0].id = 42
+
+    async def refresh(obj, attribute_names=None):
+        obj.created_at = obj.created_at or STAMP
+        obj.updated_at = STAMP
+
+    mock_db_session.flush.side_effect = flush
+    mock_db_session.refresh.side_effect = refresh
+    seen = commits_after_rows(mock_db_session, audit_calls)
+
+    resp = await client.post("/api/teams", json={"site_id": 1, "name": "Analytics"})
+
+    assert resp.status_code == 201, resp.text
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.team.created"
+    assert row["target"] == ("team", 42, "Analytics")
+    assert seen == [1]
+
+
 # ---------------------------------------------------------------------------
 # Admin: settings and SSO configuration
 # ---------------------------------------------------------------------------
@@ -520,6 +733,63 @@ async def test_an_unchanged_setting_records_nothing(authed_client, mock_db_sessi
     await client.put("/api/settings/instance_title", json={"value": "Milestone"})
 
     assert audit_calls == []
+
+
+async def test_saving_the_default_of_a_key_without_a_row_records_nothing(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(None)  # no row: the default applies
+
+    resp = await client.put("/api/settings/audit_log_retention_days", json={"value": "365"})
+
+    assert resp.status_code == 200
+    assert audit_calls == []
+
+
+async def test_a_value_equal_to_the_stored_one_once_canonical_records_nothing(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(
+        SettingRow(key="audit_log_retention_days", value="030")
+    )
+
+    await client.put("/api/settings/audit_log_retention_days", json={"value": " 30"})
+
+    assert audit_calls == []
+
+
+async def test_a_first_save_reports_the_default_as_before(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    await client.put("/api/settings/audit_log_retention_days", json={"value": "30"})
+
+    (row,) = rows(audit_calls)
+    assert row["changes"] == {"audit_log_retention_days": {"old": "365", "new": "30"}}
+
+
+async def test_resetting_a_key_to_its_default_reports_the_default(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(
+        SettingRow(key="audit_log_retention_days", value="30")
+    )
+    mock_db_session.delete = AsyncMock()
+
+    resp = await client.put("/api/settings/audit_log_retention_days", json={"value": None})
+
+    assert resp.json()["value"] == "365"
+    (row,) = rows(audit_calls)
+    assert row["changes"] == {"audit_log_retention_days": {"old": "30", "new": "365"}}
 
 
 async def test_a_logo_setting_is_recorded_by_its_length(
@@ -604,8 +874,13 @@ async def test_an_sso_test_records_its_outcome(authed_client, mock_db_session, a
         credentials_ok=False,
         summary="no",
         checks=[
-            SSOTestCheck(name="Tenant ID", status="pass", message="ok"),
-            SSOTestCheck(name="Microsoft sign-in", status="fail", message="AADSTS7000215"),
+            SSOTestCheck(kind="tenant_id", name="Tenant ID", status="pass", message="ok"),
+            SSOTestCheck(
+                kind="client_credentials",
+                name="Client credentials (renamed)",
+                status="fail",
+                message="AADSTS7000215",
+            ),
         ],
     )
     with (
@@ -627,9 +902,13 @@ async def test_an_sso_test_records_its_outcome(authed_client, mock_db_session, a
     assert (row["action"], row["outcome"], row["reason"]) == (
         "admin.sso.tested",
         "failure",
-        "microsoft_sign_in",
+        "client_credentials",  # the check's fixed kind, not its label
     )
-    assert row["context"] == {"stored_value": False, "failed_checks": ["Microsoft sign-in"]}
+    assert row["context"] == {
+        "stored_value": False,
+        "failed_checks": ["Client credentials (renamed)"],
+    }
+    assert "kind" not in resp.json()["checks"][1]  # server-side only
     assert "typed-value" not in repr(row)
 
 
@@ -813,3 +1092,112 @@ def test_the_public_ip_bucket_reports_its_lock_too():
 
     assert results[:-1] == [None] * (lt.MAX_FAILURES_PER_IP - 1)
     assert isinstance(results[-1], int)
+
+
+def test_the_audit_bucket_counts_shared_addresses_and_reports_one_suppression():
+    from app.services import login_throttle as lt
+
+    request = MagicMock()
+    request.client.host = "10.0.0.5"  # private: never locked by the per-ip bucket
+    modes = []
+    for i in range(lt.MAX_FAILURES_PER_IP + 3):
+        lt.record_login_failure("tenant:a", request, f"u{i}@y")
+        modes.append(lt.audit_failure_mode("tenant:a", request))
+
+    assert modes[: lt.MAX_FAILURES_PER_IP] == ["record"] * lt.MAX_FAILURES_PER_IP
+    assert modes[lt.MAX_FAILURES_PER_IP :] == ["suppressed", "silent", "silent"]
+    # Bounded: a flood keeps at most one entry past the cap and a suppressed one.
+    assert len(lt._audit_failures[("tenant:a", "10.0.0.5")]) == lt.MAX_FAILURES_PER_IP + 2
+    # Per tenant: another scope from the same address still records.
+    lt.record_login_failure("tenant:b", request, "x@y")
+    assert lt.audit_failure_mode("tenant:b", request) == "record"
+
+
+def test_the_audit_bucket_slides_with_the_window():
+    from app.services import login_throttle as lt
+
+    request = MagicMock()
+    request.client.host = "10.0.0.6"
+    clock = [1000.0]
+    with patch.object(lt.time, "monotonic", side_effect=lambda: clock[0]):
+        for i in range(lt.MAX_FAILURES_PER_IP + 2):
+            lt.record_login_failure("tenant:a", request, f"u{i}@y")
+        assert lt.audit_failure_mode("tenant:a", request) == "silent"
+        clock[0] += lt.WINDOW_SECONDS
+        lt.record_login_failure("tenant:a", request, "later@y")
+        assert lt.audit_failure_mode("tenant:a", request) == "record"
+
+
+# ---------------------------------------------------------------------------
+# The route table: explicit recorders vs the middleware's tier 2b
+# ---------------------------------------------------------------------------
+
+# What an explicitly recorded route's source may call to write its row: the
+# service itself or one of the routers' recorder helpers.
+EXPLICIT_RECORDERS: tuple[str, ...] = (
+    "audit_log.record(",
+    "_record_user_update(",
+    "record_sso_update(",
+    "_record_setting(",
+)
+# (method, path) pairs exempt from the two checks below, each with its reason.
+# Empty today.
+ROUTE_GUARD_EXCEPTIONS: dict[tuple[str, str], str] = {}
+
+
+def _write_routes(test_settings):
+    import inspect
+    import re
+
+    from fastapi.routing import iter_route_contexts
+
+    from app.middleware.broadcast import WRITE_METHODS
+
+    with patch("app.config.get_settings", return_value=test_settings):
+        from app.main import create_app
+
+        app = create_app()
+    for route in iter_route_contexts(app.routes):
+        if route.path is None or not route.methods or route.endpoint is None:
+            continue
+        # A sample concrete path: every {param} as a number.
+        path = re.sub(r"\{[^}]+\}", "1", route.path)
+        source = inspect.getsource(route.endpoint)
+        for method in sorted(route.methods & WRITE_METHODS):
+            if (method, route.path) not in ROUTE_GUARD_EXCEPTIONS:
+                yield method, route.path, path, source
+
+
+def test_every_explicitly_audited_write_route_records_its_row(test_settings):
+    """The middleware skips AUDIT_EXPLICIT_PATTERNS: a route there that records
+    nothing itself would leave no row at all."""
+    from app.middleware.broadcast import AUDIT_EXPLICIT_PATTERNS
+
+    checked = []
+    for method, template, path, source in _write_routes(test_settings):
+        if any(pattern.match(path) for pattern in AUDIT_EXPLICIT_PATTERNS):
+            checked.append((method, template))
+            assert any(call in source for call in EXPLICIT_RECORDERS), (
+                f"{method} {template} matches AUDIT_EXPLICIT_PATTERNS but records no row"
+            )
+    assert ("PUT", "/api/users/{user_id}") in checked
+    assert ("PUT", "/api/settings/{key}") in checked
+    assert len(checked) >= 19
+
+
+def test_no_middleware_audited_write_route_records_its_own_row(test_settings):
+    """A write the middleware records (ENTITY_PATTERNS, not explicit, not
+    skipped) must not also call audit_log.record: it would write two rows."""
+    from app.middleware.broadcast import AUDIT_EXPLICIT_PATTERNS, _resolve_entity_type
+
+    checked = 0
+    for method, template, path, source in _write_routes(test_settings):
+        if any(pattern.match(path) for pattern in AUDIT_EXPLICIT_PATTERNS):
+            continue
+        if _resolve_entity_type(path) is None:  # SKIP_PATTERNS or no entity
+            continue
+        checked += 1
+        assert "audit_log.record(" not in source, (
+            f"{method} {template} is recorded by the middleware and records its own row too"
+        )
+    assert checked > 20
