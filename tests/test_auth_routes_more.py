@@ -226,7 +226,11 @@ async def test_me_without_tenant_context_in_multi_tenant_mode(app_client, mock_d
 
 @pytest.mark.asyncio
 async def test_logout_destroys_the_session_and_clears_the_cookie(app_client):
-    with patch.object(SessionService, "delete_session", AsyncMock(return_value=True)) as delete:
+    with (
+        # The user is resolved first (the audit row); none here.
+        patch.object(SessionService, "get_user_from_session", AsyncMock(return_value=None)),
+        patch.object(SessionService, "delete_session", AsyncMock(return_value=True)) as delete,
+    ):
         resp = await app_client.post("/api/auth/logout", cookies={"connect.sid": "s%3Amy-sid."})
 
     assert resp.status_code == 200

@@ -8,6 +8,7 @@ Matches the Node.js API at /api/auth exactly.
 import logging
 import re
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from urllib.parse import quote_plus, urlparse
 
 import httpx
@@ -37,6 +38,7 @@ from app.schemas.auth import (
     UserSiteInfo,
 )
 from app.schemas.sso import SSOTestRequest, SSOTestResponse
+from app.services import audit_log
 from app.services.encryption import (
     PasswordTooLongError,
     dummy_verify_user_password,
@@ -119,6 +121,16 @@ def build_user_session_info(user: User, permissions: PermissionSet) -> UserSessi
 # ---------------------------------------------------------
 
 
+def _session_actor(user_data: dict) -> SimpleNamespace:
+    """The audit actor of a session's user snapshot (id, email, name)."""
+    return SimpleNamespace(
+        id=user_data.get("id"),
+        email=user_data.get("email"),
+        first_name=user_data.get("first_name") or user_data.get("firstName"),
+        last_name=user_data.get("last_name") or user_data.get("lastName"),
+    )
+
+
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(
     data: LoginRequest,
@@ -144,7 +156,22 @@ async def login(
 
     # Failed-attempt throttle per (tenant, client ip, e-mail); 429 once exceeded.
     throttle_scope = f"tenant:{getattr(request.state, 'tenant_slug', None) or ''}"
-    check_login_allowed(throttle_scope, request, data.email)
+    try:
+        check_login_allowed(throttle_scope, request, data.email)
+    except HTTPException as exc:
+        retry_after = (exc.headers or {}).get("Retry-After")
+        await audit_log.record(
+            db,
+            request,
+            action="auth.login.locked",
+            category="auth",
+            outcome="failure",
+            subject_email=data.email,
+            reason="throttled",
+            context={"retry_after": int(retry_after)} if retry_after else None,
+        )
+        await db.commit()  # get_db rolls back on the raise
+        raise
 
     # Find user by email
     result = await db.execute(
@@ -158,6 +185,17 @@ async def login(
         dummy_verify_user_password(data.password)
     if not user or not verify_user_password(data.password, user.password):
         record_login_failure(throttle_scope, request, data.email)
+        await audit_log.record(
+            db,
+            request,
+            action="auth.login.failed",
+            category="auth",
+            outcome="failure",
+            actor=user,
+            subject_email=data.email,
+            reason="unknown_user" if user is None else "bad_password",
+        )
+        await db.commit()  # get_db rolls back on the raise
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -175,6 +213,17 @@ async def login(
             logger.warning("Legacy password for user %s too long for bcrypt upgrade", user.id)
 
     if not user.is_active:
+        await audit_log.record(
+            db,
+            request,
+            action="auth.login.failed",
+            category="auth",
+            outcome="failure",
+            actor=user,
+            subject_email=data.email,
+            reason="inactive",
+        )
+        await db.commit()  # get_db rolls back on the raise
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is disabled",
@@ -183,6 +232,15 @@ async def login(
     # Create session
     session_service = SessionService(db)
     session_id = await session_service.create_session(user)
+    # The users table keeps no last sign-in, so no ``first_login`` context.
+    await audit_log.record(
+        db,
+        request,
+        action="auth.login.succeeded",
+        category="auth",
+        actor=user,
+        subject_email=user.email,
+    )
 
     # Set cookie (matching express-session format)
     response.set_cookie(
@@ -224,7 +282,19 @@ async def logout(
 
     if session_id:
         session_service = SessionService(db)
+        # Who signs out, resolved before the session goes; nothing is
+        # recorded when no user resolves (an expired or unknown cookie).
+        user_data = await session_service.get_user_from_session(session_id)
         await session_service.delete_session(session_id)
+        if user_data and user_data.get("id"):
+            await audit_log.record(
+                db,
+                request,
+                action="auth.logout",
+                category="auth",
+                actor=_session_actor(user_data),
+                subject_email=user_data.get("email"),
+            )
 
     # Clear cookie
     response.delete_cookie(
@@ -332,8 +402,17 @@ async def change_password(
     except PasswordTooLongError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
 
-    await SessionService(db).destroy_user_sessions(
+    revoked = await SessionService(db).destroy_user_sessions(
         user.id, except_session_id=session_id, commit=False
+    )
+    await audit_log.record(
+        db,
+        request,
+        action="auth.password.changed",
+        category="auth",
+        actor=current_user,
+        subject_email=user.email,
+        context={"sessions_revoked": revoked},
     )
     await db.commit()
 
@@ -1140,6 +1219,34 @@ async def sso_callback(
     return result
 
 
+async def _sso_failed(
+    db: AsyncSession,
+    request: Request,
+    reason: str,
+    *,
+    email: str | None = None,
+    actor: User | None = None,
+) -> None:
+    """Record ``auth.sso.failed`` on the tenant session and commit it there.
+
+    The failure branches return a redirect rather than raise, and the
+    organization-SSO session is a bare ``factory()`` session that never
+    commits by itself: without this commit the row would be lost.
+    """
+    await audit_log.record(
+        db,
+        request,
+        action="auth.sso.failed",
+        category="auth",
+        outcome="failure",
+        actor=actor,
+        subject_email=email,
+        reason=reason,
+        context={"provider": "entra"},
+    )
+    await db.commit()
+
+
 async def _sso_callback(
     request: Request,
     code: str | None,
@@ -1204,11 +1311,13 @@ async def _sso_callback(
         try:
             config, source = await sso_service.get_effective_sso_config(tenant_ctx)
         except OrgSSOLookupError:
+            await _sso_failed(active_db, request, "config_missing")
             return _sso_error_redirect(
                 tenant_slug, "Single sign-on is temporarily unavailable. Please try again."
             )
 
         if not config or not config.get("enabled"):
+            await _sso_failed(active_db, request, "config_missing")
             return _sso_error_redirect(tenant_slug, "SSO not configured")
 
         fingerprint = _config_fingerprint(config, source)
@@ -1230,6 +1339,7 @@ async def _sso_callback(
         # a wrong secret rather than a missing one. Say what is actually wrong.
         if not (config.get("client_secret") or "").strip():
             logger.error("SSO: no client secret in the effective config (%s)", fingerprint)
+            await _sso_failed(active_db, request, "config_missing")
             return _sso_error_redirect(
                 tenant_slug, "SSO client secret is not configured. Contact administrator."
             )
@@ -1269,6 +1379,7 @@ async def _sso_callback(
                         fingerprint,
                         token_error.admin_remedy,
                     )
+                    await _sso_failed(active_db, request, "exchange_failed")
                     return _sso_error_redirect(tenant_slug, token_error.user_message)
 
                 tokens = token_response.json()
@@ -1294,12 +1405,15 @@ async def _sso_callback(
                             fingerprint,
                             graph_error.admin_remedy,
                         )
+                        await _sso_failed(active_db, request, "graph_failed")
                         return _sso_error_redirect(tenant_slug, graph_error.user_message)
+                    await _sso_failed(active_db, request, "graph_failed")
                     return _sso_error_redirect(tenant_slug, "Failed to fetch user info")
 
                 user_info = graph_response.json()
         except httpx.HTTPError:
             logger.exception("SSO: could not reach the identity provider [%s]", fingerprint)
+            await _sso_failed(active_db, request, "exchange_failed")
             return _sso_error_redirect(
                 tenant_slug, "Could not reach the identity provider. Contact administrator."
             )
@@ -1317,6 +1431,7 @@ async def _sso_callback(
                     "check that the app registration has GroupMember.Read.All consented",
                     tenant_slug,
                 )
+                await _sso_failed(active_db, request, "graph_failed")
                 return _sso_error_redirect(
                     tenant_slug,
                     "Could not verify group membership. Contact administrator.",
@@ -1329,6 +1444,12 @@ async def _sso_callback(
             )
 
             if not is_allowed:
+                await _sso_failed(
+                    active_db,
+                    request,
+                    "group_denied",
+                    email=user_info.get("mail") or user_info.get("userPrincipalName"),
+                )
                 return _sso_error_redirect(
                     tenant_slug, "You do not have access to this tenant. Contact administrator."
                 )
@@ -1337,6 +1458,7 @@ async def _sso_callback(
         email = user_info.get("mail") or user_info.get("userPrincipalName")
 
         if not email:
+            await _sso_failed(active_db, request, "no_email")
             return _sso_error_redirect(tenant_slug, "No email found in Microsoft account")
 
         # Look up existing user
@@ -1344,10 +1466,12 @@ async def _sso_callback(
             select(User).where(User.email == email).options(selectinload(User.sites))
         )
         user = user_result.scalar_one_or_none()
+        created = user is None
 
         if not user:
             # Check if auto-create is enabled
             if not config.get("auto_create_users"):
+                await _sso_failed(active_db, request, "no_account", email=email)
                 return _sso_error_redirect(tenant_slug, "No account found. Contact administrator.")
 
             # Create new user
@@ -1378,11 +1502,22 @@ async def _sso_callback(
                 await active_db.commit()
 
         if not user.is_active:
+            await _sso_failed(active_db, request, "inactive", email=email, actor=user)
             return _sso_error_redirect(tenant_slug, "User account is disabled")
 
         # Create session
         session_service = SessionService(active_db)
         session_id = await session_service.create_session(user)
+        await audit_log.record(
+            active_db,
+            request,
+            action="auth.sso.succeeded",
+            category="auth",
+            actor=user,
+            subject_email=user.email,
+            context={"provider": "entra", "created": created},
+        )
+        await active_db.commit()
 
         # Determine redirect URL - land back inside the tenant workspace.
         if tenant_slug:
