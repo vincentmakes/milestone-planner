@@ -84,12 +84,14 @@ export default defineConfig({
       // 93.1, functions 94.4, branches 86.19) of 2.3.0, which the rebase
       // onto 2.2.0 measured again unchanged; lines, statements and functions
       // up 0.1 with the Project fields one-list round (94.13 / 93.17 / 94.48,
-      // branches 86.27 unchanged).
+      // branches 86.27 unchanged); raised 0.1 under the 2.4.0 totals of the
+      // audit log's fix wave (lines 94.25, statements 93.3, functions 94.57,
+      // branches 86.56).
       thresholds: {
-        lines: 93.9,
-        statements: 92.9,
-        functions: 94.3,
-        branches: 85.9,
+        lines: 94.15,
+        statements: 93.2,
+        functions: 94.47,
+        branches: 86.46,
       },
     },
   },

@@ -775,6 +775,21 @@ async def test_a_first_save_reports_the_default_as_before(
     assert row["changes"] == {"audit_log_retention_days": {"old": "365", "new": "30"}}
 
 
+async def test_a_stored_value_that_no_longer_fits_is_reported_as_stored(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(
+        SettingRow(key="audit_log_retention_days", value="forever")
+    )
+
+    await client.put("/api/settings/audit_log_retention_days", json={"value": "30"})
+
+    (row,) = rows(audit_calls)
+    assert row["changes"] == {"audit_log_retention_days": {"old": "forever", "new": "30"}}
+
+
 async def test_resetting_a_key_to_its_default_reports_the_default(
     authed_client, mock_db_session, audit_calls
 ):
