@@ -98,6 +98,27 @@ def _choice(*options: str) -> Callable[[str], str]:
     return canonical
 
 
+def _int_range(low: int, high: int) -> Callable[[str], str]:
+    """A whole number from ``low`` to ``high`` (an int or a numeric string),
+    stored as its canonical decimal string (``" 030"`` -> ``"30"``)."""
+
+    def canonical(value: str | int) -> str:
+        if isinstance(value, bool):
+            raise ValueError(f"expected a whole number from {low} to {high}")
+        if isinstance(value, int):
+            number = value
+        else:
+            text = str(value).strip()
+            if not text.isdigit():
+                raise ValueError(f"expected a whole number from {low} to {high}")
+            number = int(text)
+        if not low <= number <= high:
+            raise ValueError(f"expected a whole number from {low} to {high}")
+        return str(number)
+
+    return canonical
+
+
 def _json_list(value: str) -> list[Any]:
     try:
         items = json.loads(value)
@@ -213,6 +234,9 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "project_tooltip_rows": SettingSpec(
         _tooltip_rows, _compact(list(DEFAULT_PROJECT_TOOLTIP_ROWS))
     ),
+    # 2.4.0: how long audit-log rows are kept, in days (0 = forever);
+    # app/services/audit_log.purge_old applies it.
+    "audit_log_retention_days": SettingSpec(_int_range(0, 3650), "365"),
 }
 
 # The settings Settings -> Project fields saves: writable with

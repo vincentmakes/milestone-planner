@@ -17,6 +17,9 @@ Every route requires ``system.audit_log`` (admins by default). Not under
   the body is built in memory and returned as a plain ``Response`` (a
   streaming response would hold the request's session while the client reads).
 
+Both the list and the export first purge the rows past the retention
+setting (``audit_log.purge_old``, committed): lazy retention, no scheduler.
+
 The filter and CSV logic are module-level functions the tests drive on SQLite;
 the route bodies only wire them together.
 """
@@ -40,6 +43,7 @@ from app.models.user import User
 from app.routers.export import _safe_cell
 from app.schemas.audit_log import AuditLogActions, AuditLogEntryOut, AuditLogPage
 from app.services import audit_log
+from app.utils import utcnow_naive
 
 router = APIRouter(prefix="/audit-log")
 
@@ -214,6 +218,13 @@ def build_csv(rows: list[tuple[AuditLog, str | None]]) -> str:
     return output.getvalue()
 
 
+async def _purge(db: AsyncSession) -> None:
+    """Lazy retention: delete the rows past ``audit_log_retention_days`` and
+    commit, before anything is read."""
+    await audit_log.purge_old(db, utcnow_naive())
+    await db.commit()
+
+
 @router.get("", response_model=AuditLogPage)
 async def list_audit_log(
     db: AsyncSession = Depends(get_db),
@@ -230,7 +241,10 @@ async def list_audit_log(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> AuditLogPage:
-    """The audit log, newest first, in a ``{items, total, page, page_size}`` envelope."""
+    """The audit log, newest first, in a ``{items, total, page, page_size}`` envelope.
+
+    The rows past retention are purged (and committed) first."""
+    await _purge(db)
     filters = build_filters(
         category=category,
         action=action,
@@ -275,7 +289,9 @@ async def export_audit_log(
 
     Records ``access.audit_log.exported`` and commits it before the body is
     built, so the export is on the record even if the client never reads it.
+    The rows past retention are purged (and committed) first.
     """
+    await _purge(db)
     filters = build_filters(
         category=category,
         action=action,

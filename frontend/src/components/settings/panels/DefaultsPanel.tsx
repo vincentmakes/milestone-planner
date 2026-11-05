@@ -38,10 +38,17 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import styles from './DefaultsPanel.module.css';
 
-/** The settings of this panel (the built-in project field settings live in Settings → Project fields) */
+/**
+ * The settings of this panel (the built-in project field settings live in
+ * Settings → Project fields, the audit log retention beside the audit log)
+ */
 type DefaultsKey = Exclude<
   DefaultedSettingKey,
-  'project_field_labels' | 'project_fields_hidden' | 'volume_decimals' | 'project_tooltip_rows'
+  | 'project_field_labels'
+  | 'project_fields_hidden'
+  | 'volume_decimals'
+  | 'project_tooltip_rows'
+  | 'audit_log_retention_days'
 >;
 
 /** The seven settings as the backend stores them */

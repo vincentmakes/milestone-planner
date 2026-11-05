@@ -33,6 +33,13 @@ from tests.sqlite_support import AsyncSessionFacade, sqlite_session
 ROUTES = ["/api/audit-log", "/api/audit-log/actions", "/api/audit-log/export"]
 
 
+@pytest.fixture(autouse=True)
+def purge():
+    """The lazy purge, stubbed for the route tests (its SQL is tested on SQLite)."""
+    with patch("app.services.audit_log.purge_old", AsyncMock(return_value=0)) as mock:
+        yield mock
+
+
 def _row(**fields) -> AuditLog:
     base = {
         "category": "auth",
@@ -249,7 +256,9 @@ async def test_the_export_is_recorded_and_committed_before_the_body(
     result.all.return_value = [(rows[4], "Apollo"), (rows[0], None)]
     mock_db_session.execute = AsyncMock(return_value=result)
     order: list[str] = []
-    mock_db_session.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+    mock_db_session.commit = AsyncMock(
+        side_effect=lambda: order.append(f"commit after {len(audit_calls)} row(s)")
+    )
     real_build = audit_routes.build_csv
 
     def build(rows):
@@ -266,7 +275,8 @@ async def test_the_export_is_recorded_and_committed_before_the_body(
     assert row["action"] == "access.audit_log.exported"
     assert (row["category"], row["actor"], row["context"]) == ("access", admin, {"rows": 2})
     assert row["target"] == ("audit_log", None, "Audit log")
-    assert order == ["commit", "build after 1 row(s)"]
+    # The purge's commit, then the export row's, then the body.
+    assert order == ["commit after 0 row(s)", "commit after 1 row(s)", "build after 1 row(s)"]
     lines = list(csv.reader(io.StringIO(resp.text)))
     assert tuple(lines[0]) == CSV_COLUMNS
     assert len(lines) == 3
@@ -380,3 +390,56 @@ async def test_the_csv_of_real_rows(db):
 )
 def test_csv_cell(value, cell):
     assert csv_cell(value) == cell
+
+
+# ---------------------------------------------------------------------------
+# Retention: the purge before the list and the export
+# ---------------------------------------------------------------------------
+
+
+async def test_the_list_purges_and_commits_before_it_reads(authed_client, mock_db_session, purge):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    order: list[str] = []
+    purge.side_effect = lambda *_: order.append("purge") or 0
+    mock_db_session.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+    count = MagicMock()
+    count.scalar_one.return_value = 0
+    empty = MagicMock()
+    empty.all.return_value = []
+
+    async def execute(*_args, **_kwargs):
+        order.append("read")
+        return count if order.count("read") == 1 else empty
+
+    mock_db_session.execute = AsyncMock(side_effect=execute)
+
+    await client.get("/api/audit-log")
+
+    assert order == ["purge", "commit", "read", "read"]
+    (db, now), _ = purge.call_args
+    assert db is mock_db_session and now.tzinfo is None
+
+
+async def test_the_export_purges_first(authed_client, mock_db_session, purge):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    result = MagicMock()
+    result.all.return_value = []
+    mock_db_session.execute = AsyncMock(return_value=result)
+
+    await client.get("/api/audit-log/export")
+
+    purge.assert_awaited_once()
+
+
+async def test_the_actions_never_purge(authed_client, mock_db_session, purge):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    mock_db_session.execute = AsyncMock(return_value=result)
+
+    await client.get("/api/audit-log/actions")
+
+    purge.assert_not_awaited()

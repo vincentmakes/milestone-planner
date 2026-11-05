@@ -622,6 +622,8 @@ export interface InstanceSettings {
    * custom project field ids
    */
   project_tooltip_rows?: string;
+  /** Days the audit log keeps its rows, `"0"` – `"3650"` (`"0"` = indefinitely; 2.4.0) */
+  audit_log_retention_days?: string;
   [key: string]: string | undefined;
 }
 

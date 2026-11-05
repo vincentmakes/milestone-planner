@@ -79,7 +79,7 @@ import json
 import logging
 import re
 from collections.abc import Iterable, Mapping
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import Request
@@ -125,6 +125,14 @@ _WIDTHS = {
     "user_agent": 255,
     "origin": 20,
 }
+
+# Retention of the ``audit_log`` table, in days, stored in the instance
+# setting RETENTION_SETTING_KEY (app/services/instance_settings.py, written
+# by PUT /settings/{key}). ``0`` keeps rows forever. Applied lazily by
+# ``purge_old`` when the log is read or exported.
+RETENTION_SETTING_KEY = "audit_log_retention_days"
+DEFAULT_RETENTION_DAYS = 365
+MAX_RETENTION_DAYS = 3650
 
 # Broadcast verbs -> past-tense action verbs (the derived tiers).
 VERBS: dict[str, str] = {
@@ -583,3 +591,47 @@ async def record_detached(
             await session.commit()
     except Exception as e:  # never fail the change because its audit row failed
         _logger.warning("Audit row %s could not be written: %s", action, e)
+
+
+# ---------------------------------------------------------------------------
+# Retention
+# ---------------------------------------------------------------------------
+
+
+async def retention_days(db: AsyncSession) -> int:
+    """The configured retention in days; the default for a missing or
+    malformed row (written before validation) or one outside 0..MAX."""
+    from app.services.instance_settings import get_value
+
+    raw = await get_value(db, RETENTION_SETTING_KEY)
+    if raw is None or not raw.strip().isdigit():
+        return DEFAULT_RETENTION_DAYS
+    days = int(raw.strip())
+    return days if days <= MAX_RETENTION_DAYS else DEFAULT_RETENTION_DAYS
+
+
+def retention_cutoff(days: int, now: datetime) -> datetime | None:
+    """Rows created on or before the returned instant are past retention;
+    ``None`` (for ``0``) means keep everything."""
+    if days <= 0:
+        return None
+    return now - timedelta(days=days)
+
+
+async def purge_old(db: AsyncSession, now: datetime) -> int:
+    """
+    Delete the rows past retention (``created_at <= now - days``); nothing
+    when the retention is 0. Staged on ``db``: the caller commits. Returns the
+    row count.
+
+    The only delete of an audit row. Run lazily at the start of the list and
+    the export (the ``purge_read_notifications`` precedent: no scheduler on
+    this branch), so a log nobody reads keeps its old rows until it is read.
+    """
+    from sqlalchemy import delete
+
+    cutoff = retention_cutoff(await retention_days(db), now)
+    if cutoff is None:
+        return 0
+    result = await db.execute(delete(AuditLog).where(AuditLog.created_at <= cutoff))
+    return int(getattr(result, "rowcount", 0) or 0)
