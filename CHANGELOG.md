@@ -5,6 +5,12 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-11-05
+
+### Added
+- Settings → Audit log: sign-ins and sign-outs, failed and locked attempts, user and settings changes, project and booking changes and exports, with the account, IP address and origin of each; filters, an entry detail view and a CSV export.
+- Settings → General → Audit log retention: how long audit entries are kept (default 365 days, 0 keeps them indefinitely).
+
 ## [2.3.0] - 2026-10-30
 
 ### Added
