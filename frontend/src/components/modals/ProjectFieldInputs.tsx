@@ -8,7 +8,9 @@
  * Dropdowns offer only the items that apply to the project's site and teams
  * (`optionsByField`, computed by the dialog). Holders of
  * project_fields.manage get a "Manage fields…" shortcut to Settings →
- * Project fields, also when no field exists yet.
+ * Project fields, also when no field exists yet (`manageLink={false}` leaves
+ * it out: the preview in Settings → Project fields). `columns={1}` puts one
+ * field per line (two by default, one on phones).
  */
 
 import { useMemo } from 'react';
@@ -38,18 +40,30 @@ interface ProjectFieldInputsProps {
   drafts: Readonly<Record<number, FieldDraft>>;
   onChange: (fieldId: number, draft: FieldDraft) => void;
   disabled?: boolean;
+  /** The "Manage fields…" row (and its "No project fields yet."); default true */
+  manageLink?: boolean;
+  /** Fields per line; default 2 (1 on phones) */
+  columns?: 1 | 2;
 }
 
 const NO_OPTIONS: ProjectFieldOption[] = [];
 
-export function ProjectFieldInputs({ fields, optionsByField, drafts, onChange, disabled = false }: ProjectFieldInputsProps) {
+export function ProjectFieldInputs({
+  fields,
+  optionsByField,
+  drafts,
+  onChange,
+  disabled = false,
+  manageLink = true,
+  columns = 2,
+}: ProjectFieldInputsProps) {
   const canManage = useAppStore((s) => can(s.currentUser, 'project_fields.manage'));
-  if (fields.length === 0 && !canManage) return null;
+  if (fields.length === 0 && (!canManage || !manageLink)) return null;
 
   return (
     <div className={styles.formGroup}>
       {fields.length > 0 && (
-        <div className={styles.fieldsGrid}>
+        <div className={`${styles.fieldsGrid} ${columns === 1 ? styles.fieldsGridOne : ''}`.trim()}>
           {fields.map((field) => (
             <FieldInput
               key={field.id}
@@ -62,18 +76,20 @@ export function ProjectFieldInputs({ fields, optionsByField, drafts, onChange, d
           ))}
         </div>
       )}
-      <div className={styles.manageRow}>
-        {fields.length === 0 && <span className={styles.hint}>No project fields yet.</span>}
-        <ManageSettingsLink
-          section="project-fields"
-          label="Manage fields…"
-          confirmTitle="Manage project fields"
-          confirmMessage={MANAGE_FIELDS_CONFIRM}
-          blockedAction="Managing project fields"
-          permission="project_fields.manage"
-          disabled={disabled}
-        />
-      </div>
+      {manageLink && (
+        <div className={styles.manageRow}>
+          {fields.length === 0 && <span className={styles.hint}>No project fields yet.</span>}
+          <ManageSettingsLink
+            section="project-fields"
+            label="Manage fields…"
+            confirmTitle="Manage project fields"
+            confirmMessage={MANAGE_FIELDS_CONFIRM}
+            blockedAction="Managing project fields"
+            permission="project_fields.manage"
+            disabled={disabled}
+          />
+        </div>
+      )}
     </div>
   );
 }

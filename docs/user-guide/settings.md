@@ -24,14 +24,14 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | Resources | Equipment | Lab equipment on one or more sites — see [Equipment Booking](equipment-booking.md#managing-equipment) | Admin, Superuser |
 | | [Equipment types](#equipment-types) | Equipment categories | Admin, Superuser |
 | Projects | [Predefined phases](#predefined-phases) | Phase templates for new projects | Admin, Superuser |
-| | [Project fields](#project-fields) | The built-in project fields' labels, and your own dropdown, text, number and switch fields | Admin |
+| | [Project fields](#project-fields) | The built-in project fields' labels, your own dropdown, text, number and switch fields, and the rows of the Gantt's Shift-hover details | Admin |
 | | [Tags](#tags) | Project tags and the sites they apply to | Admin |
 | Integrations | SSO | Microsoft Entra single sign-on for this workspace, with a Test configuration button for the entered values and a typed confirmation before a change to live sign-in settings — see [Organization & SSO](../admin-guide/organizations-sso.md#configuring-sso-in-milestone) | Admin |
 
 Each person only sees the sections their role's [permissions](#roles-permissions) let them change — with the default roles, **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Someone whose role grants none of these sections has no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
 
 !!! note "Unsaved changes"
-    If you switch section or close the window while a form holds unsaved input — in **General**, **Features & defaults**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types**, **Project fields** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
+    If you switch section or close the window while a form holds unsaved input — in **General**, **Features & defaults**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types**, **Project fields** (an unfinished add or edit only: its labels and switches apply as you change them) or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
 
 Saving is protected against double submission: pressing Enter twice or double-clicking a Save, Add or Delete button runs the action only once.
 
@@ -106,7 +106,7 @@ The **Roles** tab lists every role with its description and how many users hold 
 | Role | What it can do by default |
 |------|---------------------------|
 | **Administrator** | Everything, at every site. Its permissions cannot be edited and it cannot be deleted, so there is always someone who can manage roles |
-| **Superuser** | Plans projects, people and equipment at the sites they belong to: creates, edits, archives, deletes, imports and exports projects, assigns anyone, books equipment, manages colleagues' absences, staff notes, equipment, bank holidays, company events, teams, skills and phase templates, views and edits non-admin users, exports the site, uses What-If |
+| **Superuser** | Plans projects, people and equipment at the sites they belong to: creates, edits, archives, deletes, imports and exports projects, assigns anyone, books equipment, manages colleagues' absences, staff notes, equipment, bank holidays, company events, teams, skills and phase templates, views and edits non-admin users, exports the site, uses What-If, builds and shares dashboards |
 | **User** | Sees the plan at their sites, books their own time, manages their own absences, comments on Kanban cards and bookings and moves the cards they are assigned to |
 
 Both the Superuser and the User role can **act as project manager**: on a project where they are the *Project Manager*, they edit the project, archive it, assign people, book equipment, move cards and set column values — but never delete, create, import or export projects.
@@ -124,7 +124,7 @@ Click the **edit icon** to change a role, then **Save Changes**. Custom roles ca
 
 ### The Permission Matrix
 
-Permissions are grouped by topic: *Projects*, *Staff assignments*, *Equipment bookings*, *Kanban*, *Custom columns*, *Absences*, *Staff notes*, *Equipment*, *Calendar*, *Sites*, *Teams*, *Users*, *Skills*, *Project configuration*, *Instance settings*, *Roles and approvals* and *Views and tools*. Each row shows what the permission allows and three choices:
+Permissions are grouped by topic: *Projects*, *Staff assignments*, *Equipment bookings*, *Kanban*, *Custom columns*, *Absences*, *Staff notes*, *Equipment*, *Calendar*, *Sites*, *Teams*, *Users*, *Skills*, *Project configuration*, *Instance settings*, *Roles and approvals*, *Views and tools* and *Dashboards*. Each row shows what the permission allows and three choices:
 
 - **Allow** — the role may do it
 - **Needs approval** — only on the three own-booking permissions (*Book myself*, *Change my allocation / dates*, *Remove my booking*): people with the role can ask, and the booking waits for an approver (see [Approvals](#approvals))
@@ -143,7 +143,8 @@ Some permissions worth knowing:
 | **Assign and manage anyone** | Book, change and remove anyone's assignments. People with it (and project managers on their projects) never need approval for their own bookings |
 | **See colleagues' absences** | See the absences of people at your sites; without it, only your own |
 | **Change user roles** | Give people a role — but only a role whose permissions you hold yourself |
-| **Kanban board**, **Staff overview**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden |
+| **Kanban board**, **Dashboards**, **Staff & Calendar**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden. **Dashboards** (Superuser and User by default) opens the [Dashboards](dashboards.md) view with the dashboards shared with the role or with everyone |
+| **Manage dashboards** | Create, edit, share and delete your own [dashboards](dashboards.md#building-a-dashboard). Superuser by default; administrators may change or delete any dashboard |
 | **What-If mode** | Show the What-If toggle on the Gantt chart |
 
 ### Who Sees Which Sites
@@ -224,7 +225,7 @@ Click **Save Changes** to save, or **Back** to return to the list. Emptying **Ci
 The **site selector** dropdown in the header filters everything to the selected site:
 
 - Projects visible on the Gantt chart
-- Staff in the Staff Overview
+- Staff in the Staff & Calendar view
 - Equipment in the Equipment View
 - Bank holidays and company events on the timeline
 - Custom columns
@@ -300,7 +301,7 @@ The filter narrows:
 - in the [Cross-Site view](cross-site-view.md), the current site's lane only
 - the options of the [project filter](gantt-charts.md#filtering-projects): a tag or dropdown-field item limited to teams at this site is offered only while one of them is ticked
 
-Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked. A [company event](#company-events) limited to teams follows the same rule: it shows on the timelines and in the Staff Overview's Company Events row only while one of its teams is ticked (or under **Whole site**), while a whole-site event always shows.
+Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked. A [company event](#company-events) limited to teams follows the same rule: it shows on the timelines and in the Staff & Calendar view's Company Events row only while one of its teams is ticked (or under **Whole site**), while a whole-site event always shows.
 
 A project created while the filter is active starts with the filter's teams ticked, so it appears in the view you are looking at.
 
@@ -384,13 +385,13 @@ Calendar files are limited to **5 MB** (for holidays, company events and absence
 
 ### Exporting Holidays to Calendar
 
-Click **Export .ics** to download the holidays currently listed (selected site and year) as an `.ics` calendar file. The **Export to Outlook** button on the Bank Holidays row of the Staff Overview does the same for the current site. Import the file into Outlook, Google Calendar, or any calendar app.
+Click **Export .ics** to download the holidays currently listed (selected site and year) as an `.ics` calendar file. The **Export to Outlook** button on the Bank Holidays row of the Staff & Calendar view does the same for the current site. Import the file into Outlook, Google Calendar, or any calendar app.
 
-### Holidays in the Staff Overview
+### Holidays in the Staff & Calendar view
 
-Expand the **Bank Holidays** row in the Staff Overview to see all holidays for the current site. Each entry is labelled **Holiday** (from the holiday service) or **Custom**. Admins and superusers can click an entry to edit it in Settings, delete it with the × button, or click **+ Add custom holiday** to open Settings → Bank holidays with the add form ready.
+Expand the **Bank Holidays** row in the Staff & Calendar view to see all holidays for the current site. Each entry is labelled **Holiday** (from the holiday service) or **Custom**. Admins and superusers can click an entry to edit it in Settings, delete it with the × button, or click **+ Add custom holiday** to open Settings → Bank holidays with the add form ready.
 
-![Staff Overview with the Bank Holidays row expanded, listing the site's holidays](../assets/screenshots/bank-holidays.png){ loading=lazy }
+![Staff & Calendar view with the Bank Holidays row expanded, listing the site's holidays](../assets/screenshots/bank-holidays.png){ loading=lazy }
 
 ### How Holidays Affect the Timeline
 
@@ -427,7 +428,7 @@ Editing an event changes it on every site it is linked to.
 
 - In **Settings → Company events**, the delete icon removes the event from **all** of its sites (the confirmation lists them).
 - Superusers can't edit or delete an event that is also **shared with sites they don't manage** (the edit and delete icons are disabled). Instead, **Remove from my sites** (the broken-link icon) unlinks it from their own sites; the other sites keep it.
-- In the Staff Overview, the × on a Company Events entry deletes a single-site event. For an event **shared with other sites**, it only removes the event from the current site; the other sites keep it.
+- In the Staff & Calendar view, the × on a Company Events entry deletes a single-site event. For an event **shared with other sites**, it only removes the event from the current site; the other sites keep it.
 
 ### Importing and Exporting Events
 
@@ -435,10 +436,11 @@ Editing an event changes it on every site it is linked to.
 
 ### How Events Appear
 
-- Company events display as **colored markers** on the Staff Overview timeline
+- Company events display as **colored bands** in the strip under the day labels of every timeline header (Gantt, Staff, Equipment, Cross-site and Archived), at every zoom — see [Holidays and events on the timeline](gantt-charts.md#holidays-and-events-on-the-timeline)
+- **Several events on the same day** are stacked on up to three lanes (below a bank holiday's orange line), with **+N** for any that do not fit; at quarter and year zoom a week or month shows one band and the number of its events. Hover or click the strip to list them all, with their dates, and **Site closure**, **Closure for &lt;teams&gt;** or **Teams: &lt;teams&gt;** on the events limited to teams
 - A plain event is informational only — it **does not affect working day calculations** or staff availability
 - Events are visible to all users on the sites they are linked to
-- In the Staff Overview, admins and superusers can click an event to edit it in Settings, or click **+** on the Company Events row to add one
+- In the Staff & Calendar view, admins and superusers can click an event to edit it in Settings, or click **+** on the Company Events row to add one; in the timeline strip's panel, a click on an event's name opens it the same way
 - An event limited to teams follows the header [team filter](#team-filter), and the Company Events row names its teams after the event's name
 
 ### Site Closures
@@ -446,13 +448,13 @@ Editing an event changes it on every site it is linked to.
 Tick **Site closure — staff on these sites are unavailable** (it reads *staff of the selected teams on these sites* once teams are ticked) on an event for a shutdown, a company holiday or anything else that closes a site. For every day of the event, everyone who belongs to one of the event's sites is treated as away, like an [absence that counts as unavailable](vacations.md#absence-types):
 
 - In the [Staff workload view](staff-management.md#site-closures-in-the-workload) their cells show **0% available** in the event's color, with the tooltip *Site closed: &lt;event name&gt;*. Work assigned on those days is flagged as a **conflict**
-- Today's availability in the Staff Overview and on the resource cards shows them as unavailable during a closure
+- Today's availability in the Staff & Calendar view and on the resource cards shows them as unavailable during a closure
 - Their assignment bars in the Gantt chart are marked on the closed days
-- The timeline columns of the event get a stronger, hatched tint, and the Staff Overview's Company Events row labels the entry **Closure** instead of **Event**
+- The timeline columns of the event get a stronger, hatched tint, the timeline strip's panel tags it **Site closure**, and the Staff & Calendar view's Company Events row labels the entry **Closure** instead of **Event**
 
 A person on several sites is unavailable when **any** of their sites is closed. Plain events and bank holidays do not reduce anyone's availability — only events marked as closures do.
 
-**A closure limited to teams takes out only their members.** The **Closure** badge in the event list says so in its hover text. At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
+**A closure limited to teams takes out only their members.** The **Closure** badge in the event list says so in its hover text. At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff & Calendar view's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
 
 The site export's **Company events** sheet has a **Staff unavailable** column showing which events are closures.
 
@@ -504,6 +506,8 @@ What each role may do is set in [Settings → Roles](#roles-permissions). With t
 | Manage staff assignments | Yes | Yes | Project manager of that project; anyone for their own time ("Assign me…"), with [approval](#approvals) where the role needs it |
 | Manage equipment assignments | Yes | Yes | Project manager of that project |
 | Enter What-If mode (from the Gantt chart) | Yes | Yes | No |
+| Open the [Dashboards](dashboards.md) shared with them | Yes | Yes | Yes |
+| Build, share and delete their own dashboards | Yes (any dashboard) | Yes | No |
 | Manage bank holidays & company events (own sites) | Yes | Yes | No |
 | Manage teams (own sites) | Yes | Yes | No |
 | Edit users, skills, equipment, equipment types, predefined phases | Yes | Yes | No |
@@ -596,7 +600,7 @@ Click the **trash icon** on a skill. A confirmation dialog warns: *"This will re
 
 ### Filtering Staff by Skills
 
-In the **Staff Overview**, open the **Filter** panel:
+In the **Staff & Calendar** view, open the **Filter** panel:
 
 1. Under the **Skills** section, check one or more skills
 2. Each skill shows its assigned **color dot** next to the name
@@ -629,7 +633,7 @@ Absences that existed before absence types were introduced are filed under **Hol
 Each type has:
 
 - **Name** — must be unique
-- **Color** — used for the absence bars and badges in the Staff Overview and on the timeline
+- **Color** — used for the absence bars and badges in the Staff & Calendar view and on the timeline
 - **Counts as unavailable** — when ticked (Holidays, Illness…), the absence removes the person's capacity in the workload views. When unticked (Home Office), the absence is shown on the timeline but the person stays available for planning
 - **Active** — inactive types are hidden when booking a new absence, but existing absences keep their label and color
 
@@ -678,21 +682,28 @@ In the **Equipment View**, use the type filter dropdown to show/hide equipment b
 
 ## Project Fields
 
-Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog.
+Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog. The same list chooses which of them, and which other rows, the Gantt chart shows when you hold Shift over a project bar, and a [preview](#preview) beside it shows both.
 
 ![Settings → Project fields: the built-in fields with their labels and Shown switches, the Project type dropdown open on its items, the Area multi-select field and the add-field row under the list](../assets/screenshots/project-fields-settings.png){ loading=lazy }
 
 ### Built-in Fields
 
-**Customer**, **Sales PM**, **Volume** and **Confirmed** are part of every project. For each:
+**Customer**, **Sales PM**, **Volume** and **Confirmed** are part of every project. The list has six aligned columns — **Field**, **Label**, **Format**, **In project dialog**, **In Gantt details** and the row's actions — and the two switch columns decide **In project dialog** and **In Gantt details** (the details shown when you hold Shift over a project bar in the Gantt chart). For each field:
 
-- **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name replaces the default everywhere the field is named, for the whole workspace: in the project dialog, the Gantt chart's Shift-hover tooltip and the Archived view (*No Client*). The defaults shown here are the names used everywhere else too.
-- **Shown** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again.
+- **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name applies when you leave the box or press Enter; Escape puts back the stored name. It replaces the default everywhere the field is named, for the whole workspace: in the project dialog, the Gantt chart's Shift-hover details and the Archived view (*No Client*). The defaults shown here are the names used everywhere else too.
+- **In project dialog** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again. Hiding a field also switches its **In Gantt details** off, and that switch stays off and locked while the field is hidden, with the note *Hidden fields are never shown*. Show the field again and switch **In Gantt details** on again if you want it there.
+- **In Gantt details** — Whether the Shift-hover details show the field. Volume is shown in its format.
 - **Format** (Volume only) — Volume is a number and has a **Format** like a [number field](#custom-fields), **1.0** (one decimal) by default, with the same choices and preview line. The project dialog shows Volume in that format and refuses a decimal beyond it; new values are rounded half up when saved, and the site export writes Volume in that format (12.0 stays 12.0 in Excel). Volumes saved before are not changed.
 
-**Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts.
+**Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts. Its **In project dialog** column reads *Always*.
 
-Click **Save Changes** to apply the labels, switches and Volume's format; **Reset** discards the edits.
+Under **Also in the Gantt details** follow the rows of the details that are not fields: **PM**, **Tags**, **Period**, **Completion**, **Work days**, **Total** and **Assigned staff**, each with its **In Gantt details** switch. PM and Tags are in every project dialog (*Always*); the others are not dialog fields (*—*).
+
+By default the details show what they always did: Customer, PM, Confirmed, Tags, Period, Completion, Work days, Total and Assigned staff. Sales PM, Volume and custom fields are off until you switch them on. The order of the details is fixed; you choose what is shown, not where. A row with no value for a project is left out of that project's details.
+
+Changes apply right away, for everyone — there is no Save button. *Saving…* and then *Saved* show at the top of the page while a change is written; if a change is refused, the message shows there and the page goes back to what is stored.
+
+On a phone the column headings are hidden and each switch, and the *Always* / — of the dialog column, is captioned *Dialog* or *Gantt*.
 
 ### Custom Fields
 
@@ -708,10 +719,10 @@ In the add row under the **Custom fields** list, type the new field's name, pick
 
 - **Order** — Drag fields to change the order of the project dialog, the [Filter](gantt-charts.md#filtering-projects) and the **Group by** / **Colour by** lists.
 - **Edit** — Click the pencil to rename the field (and, on a number field, change its **Format**), then **Save**; **Cancel** or Escape discards the edit. A field's type cannot be changed after it is created.
-- **Format** — A number field's **Format** is picked in the add row while **Number** is chosen, or in its edit form. It is shown as the pattern of the number 1: **As typed** keeps every decimal entered, **1**, **1.0**, **1.00** and **1.000** keep none to three. A line under the picker previews the choice: "Values are saved as typed.", or for **1.0** "12.345 is saved and shown as 12.3." — in the edit form followed by "Existing values are not changed, only shown rounded." New values are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at **1.00**), and the project dialog shows the field in that format: it does not let you type more decimals than the format keeps (12.34 cannot be entered at **1.0**) and completes the missing ones when you leave the box (12 → 12.0). Its figures are drawn in a medium weight with the digits aligned, at the size of the other fields, so the decimal separator stands out. Values saved before are not changed; they are shown — and exported — rounded. The site export writes the values in the field's format, so Excel shows 12.0 at **1.0** rather than 12. The field's type pill in the list names its format, e.g. **Number · 1.0** (plain **Number** for As typed).
+- **Format** — A number field's **Format** is picked in the add row while **Number** is chosen, or in its edit form. It is shown as the pattern of the number 1: **As typed** keeps every decimal entered, **1**, **1.0**, **1.00** and **1.000** keep none to three. A line under the picker previews the choice: "Values are saved as typed.", or for **1.0** "12.345 is saved and shown as 12.3." — in the edit form followed by "Existing values are not changed, only shown rounded." New values are rounded half up when saved (2.5 → 3, 0.125 → 0.13 at **1.00**), and the project dialog shows the field in that format: it does not let you type more decimals than the format keeps (12.34 cannot be entered at **1.0**) and completes the missing ones when you leave the box (12 → 12.0). Its figures are drawn in a medium weight with the digits aligned, at the size of the other fields, so the decimal separator stands out. Values saved before are not changed; they are shown — and exported — rounded. The site export writes the values in the field's format, so Excel shows 12.0 at **1.0** rather than 12. In the **Custom fields** list the field's **Format** column shows it (**1.0**, or **As typed**), under Volume's, and the type pill reads just **Number**.
 - **Delete** — Click the bin; the confirmation says how many projects hold a value, and every value of the field is removed.
 
-No field is required, and custom fields cannot be hidden — delete one you no longer need.
+No field is required, and custom fields cannot be hidden — they are always in the project dialog (*Always*); delete one you no longer need. Each custom field has an **In Gantt details** switch, off for a new field: switched on, the Shift-hover details show the field after the assigned staff, in the order of the list. A dropdown field shows its items as coloured pills there, a switch *Yes* or *No*, a number in the field's format.
 
 ### Dropdown Items
 
@@ -723,6 +734,15 @@ Click the list icon (**Items**) of a dropdown or multi-select dropdown field (a 
 - **Delete** — Removes the item from every project; you are asked to confirm.
 
 The item colours are the dots in the project dialog's multi-select dropdowns, the Filter dots, the section headers of **Group by** and the bar colours of **Colour by**.
+
+### Preview
+
+A **Preview** card beside the list (under it on a narrow window) shows a sample project with every field filled. Its two buttons switch between:
+
+- **Gantt details** (the default) — the Shift-hover details, built the way the Gantt chart builds them, with the rows switched on.
+- **Project dialog** — the dialog's fields with their labels, only the ones shown in the dialog.
+
+The preview follows every switch at once and a label while you type it. It uses sample values — *Sample project*, *Example Ltd*, today's date and the next 90 days, the first two tags — and its controls are dimmed: it is a picture of the result, not a form. What you switch here is what everyone sees, right away.
 
 !!! note "Former tag groups"
     Version 2.0.0 turned tag groups into project fields. On upgrade, each tag group became a dropdown field — a single-select group a **Dropdown**, any other group a **Multi-select dropdown** — with its tags as the items, keeping their colours, order and site and team limits; projects keep what they had selected. Tags that were in no group stay tags.

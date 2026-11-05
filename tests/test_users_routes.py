@@ -170,6 +170,41 @@ async def test_superuser_can_change_own_email(authed_client, mock_db_session, de
 
 
 @pytest.mark.asyncio
+async def test_an_email_on_a_reserved_local_domain_is_saved(
+    authed_client, mock_db_session, destroy_sessions
+):
+    """The demo accounts and the quick-start admin live on ``.local``."""
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    me = make_user(5, "superuser")
+    route_db(mock_db_session, me)
+
+    resp = await client.put("/api/users/5", json={"email": "diana@Demo.Local"})
+
+    assert resp.status_code == 200
+    assert me.email == "diana@demo.local"
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_email_is_422_in_plain_words(
+    authed_client, mock_db_session, destroy_sessions
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    me = make_user(5, "superuser")
+    route_db(mock_db_session, me)
+
+    resp = await client.put("/api/users/5", json={"email": "not-an-email"})
+
+    assert resp.status_code == 422
+    (error,) = resp.json()["detail"]
+    assert error["loc"][-1] == "email"
+    assert error["msg"] == "Enter a valid e-mail address"
+    assert me.email == "u5@example.com"
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_superuser_cannot_elevate_role(authed_client, mock_db_session, destroy_sessions):
     client, set_user = authed_client
     set_user(FakeUser(5, "superuser"))
@@ -329,6 +364,44 @@ async def test_delete_user_destroys_sessions(authed_client, mock_db_session, des
     assert resp.status_code == 200
     destroy_sessions.assert_awaited_once_with(7, commit=False)
     mock_db_session.delete.assert_awaited_once_with(target)
+
+
+@pytest.mark.asyncio
+async def test_delete_user_drops_private_dashboards_and_frees_shared_ones(
+    authed_client, mock_db_session, destroy_sessions
+):
+    """Before the user row goes: their private dashboards are deleted, the
+    owner of their shared ones is cleared (administrators manage them)."""
+    from sqlalchemy.sql.dml import Delete, Update
+
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    target = make_user(7, "user")
+    lookup_db(mock_db_session, target)
+    order: list[str] = []
+    execute = mock_db_session.execute
+
+    async def record(statement, *args, **kwargs):
+        table = getattr(getattr(statement, "table", None), "name", None)
+        if table == "dashboards":
+            order.append(type(statement).__name__)
+            sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
+            if isinstance(statement, Delete):
+                assert "owner_id = 7" in sql and "visibility = 'private'" in sql
+            else:
+                assert isinstance(statement, Update) and "owner_id=NULL" in sql.replace(" ", "")
+        return await execute(statement, *args, **kwargs)
+
+    async def delete(obj):
+        order.append("delete user")
+
+    mock_db_session.execute = AsyncMock(side_effect=record)
+    mock_db_session.delete = AsyncMock(side_effect=delete)
+
+    resp = await client.delete("/api/users/7")
+
+    assert resp.status_code == 200
+    assert order == ["Delete", "Update", "delete user"]
 
 
 # ---------------------------------------------------------------------------

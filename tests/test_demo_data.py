@@ -14,6 +14,7 @@ shares one of its teams.
 
 import re
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -37,6 +38,9 @@ from app.services.permissions import (
 )
 
 TODAY = date(2026, 10, 17)
+EVENT_SWATCHES_TS = (
+    Path(__file__).resolve().parent.parent / "frontend" / "src" / "utils" / "colorSwatches.ts"
+)
 
 
 @pytest.fixture(scope="module")
@@ -343,7 +347,8 @@ def test_every_range_is_ordered_and_relative_to_today(demo: DemoData):
 
 def test_holidays_carry_their_year_and_both_sites(demo: DemoData):
     assert {h["site"] for h in demo.bank_holidays} == {"Winterthur", "Frankfurt"}
-    assert {h["year"] for h in demo.bank_holidays} == {TODAY.year, TODAY.year + 1}
+    # Last year too: the dashboards count its working days.
+    assert {h["year"] for h in demo.bank_holidays} == {TODAY.year - 1, TODAY.year, TODAY.year + 1}
     for h in demo.bank_holidays:
         assert h["date"].year == h["year"]
     keys = [(h["site"], h["date"], h["name"]) for h in demo.bank_holidays]
@@ -456,6 +461,38 @@ def test_tag_equipment_and_event_teams_sit_at_their_sites(demo: DemoData):
     assert any(e["teams"] for e in demo.company_events)
     shared = [e for e in demo.equipment if e["teams"] and len(e["sites"]) == 2]
     assert shared and {site for site, _ in shared[0]["teams"]} < set(shared[0]["sites"])
+
+
+def test_three_events_share_the_iso_audits_first_day(demo: DemoData):
+    """The timelines' event strip has a day with three stacked events, one of
+    them limited to a team (the docs and the screenshots name them)."""
+    events = {e["name"]: e for e in demo.company_events}
+    audit = events["ISO 9001 audit"]
+    walk = events["Lab safety walk-through"]
+    calibration = events["Instrument calibration day"]
+    for ev in (walk, calibration):
+        assert ev["date"] == audit["date"] == TODAY + timedelta(days=12)
+        assert ev["end_date"] is None
+        assert ev["sites"] == ["Winterthur"]
+        assert ev["counts_as_unavailable"] is False
+    assert (walk["color"], walk["teams"]) == ("#06b6d4", [])
+    assert (calibration["color"], calibration["teams"]) == (
+        "#8b5cf6",
+        [("Winterthur", "Analytical Lab")],
+    )
+    # Three distinct colours, each a swatch of the Settings event form
+    # (EVENT_COLOR_SWATCHES in frontend/src/utils/colorSwatches.ts), none of
+    # them the colour of a team at their site
+    event_swatches = set(
+        re.findall(
+            r"value: '(#[0-9a-f]{6})'",
+            EVENT_SWATCHES_TS.read_text().split("EVENT_COLOR_SWATCHES", 1)[1].split("];", 1)[0],
+        )
+    )
+    assert len(event_swatches) == 7
+    team_colors = {t["color"] for t in demo.teams if t.get("color") and t["site"] == "Winterthur"}
+    colors = {audit["color"], walk["color"], calibration["color"]}
+    assert len(colors) == 3 and colors <= event_swatches and not colors & team_colors
 
 
 def test_projects_with_a_team_limited_tag_share_one_of_its_teams(demo: DemoData):

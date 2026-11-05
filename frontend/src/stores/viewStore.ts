@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { KanbanGrouping } from '@/utils/kanbanCards';
-import { SITE_KEY_PATTERN, siteKey } from '@/utils/tags';
+import { SITE_KEY_PATTERN, siteKey, tenantKey } from '@/utils/tags';
 import type { ColorByChoice, ProjectFilter } from '@/utils/projectFilters';
 import type { TeamFilter } from '@/utils/teams';
 import { navigateDate } from '@/utils/date';
@@ -140,6 +140,24 @@ function sanitizeTeamFilters(value: unknown): Record<string, TeamFilter> | null 
     const entry = raw as Record<string, unknown>;
     const filter = { teamIds: numberArray(entry.teamIds), noTeam: entry.noTeam === true };
     if (filter.teamIds.length > 0 || filter.noTeam) out[key] = filter;
+  }
+  return out;
+}
+
+/** Shape of a {@link tenantKey}: a tenant slug, or empty in single-tenant mode. */
+const TENANT_KEY_PATTERN = /^(?:[a-z0-9][a-z0-9-]*)?$/;
+
+/**
+ * Rebuild persisted last-opened dashboards (tenant key → dashboard id or
+ * null): keys must be a tenant slug or `''` (single-tenant), values a
+ * positive integer or null; null if absent/invalid.
+ */
+function sanitizeLastDashboardIds(value: unknown): Record<string, number | null> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, number | null> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!TENANT_KEY_PATTERN.test(key)) continue;
+    if (raw === null || (Number.isInteger(raw) && (raw as number) > 0)) out[key] = raw as number | null;
   }
   return out;
 }
@@ -281,6 +299,17 @@ interface ViewState {
   ganttColorBy: Record<string, ColorByChoice>;
 
   // ---------------------------------------------
+  // DASHBOARDS
+  // ---------------------------------------------
+  /**
+   * The dashboard last opened, per tenant (`tenantKey()`: the slug, `''` in
+   * single-tenant mode); null = none. A stale id falls back to the default
+   * dashboard (dashboardStore.pickInitial). Per-browser, like the per-site
+   * preferences.
+   */
+  lastDashboardId: Record<string, number | null>;
+
+  // ---------------------------------------------
   // EXPANDED STATES (for tree views)
   // Projects, phases and subphases are persisted; the rest are session-only
   // (left out of `partialize` and `merge` on purpose): expandedStaff,
@@ -305,6 +334,8 @@ interface ViewState {
   // ---------------------------------------------
   sidebarCollapsed: boolean;
   resourcePanelCollapsed: boolean;
+  /** The sidebar's Dashboards entry lists the user's dashboards below it (2.3.0). Default open. */
+  sidebarDashboardsExpanded: boolean;
 
   // ---------------------------------------------
   // ACTIONS - View State
@@ -340,6 +371,8 @@ interface ViewState {
   setGanttSectionsCollapsed: (siteId: number, keys: string[]) => void;
   /** Colour a site's Gantt project bars by a project field or the tags; null = default colours. */
   setGanttColorBy: (siteId: number, choice: ColorByChoice | null) => void;
+  /** Remember the dashboard opened in the current tenant (null = none). */
+  setLastDashboardId: (id: number | null) => void;
   setShowStaffOverview: (show: boolean) => void;
   toggleShowStaffOverview: () => void;
   setShowEquipmentOverview: (show: boolean) => void;
@@ -372,6 +405,8 @@ interface ViewState {
   toggleResourcePanel: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setResourcePanelCollapsed: (collapsed: boolean) => void;
+  /** Show / hide the dashboards listed under the sidebar's Dashboards entry. */
+  toggleSidebarDashboards: () => void;
 
   // ---------------------------------------------
   // ACTIONS - Reset
@@ -414,6 +449,9 @@ const initialViewState = {
   // Gantt colour by
   ganttColorBy: {} as Record<string, ColorByChoice>,
 
+  // Dashboards
+  lastDashboardId: {} as Record<string, number | null>,
+
   // Expanded states
   expandedProjects: new Set<number>(),
   expandedPhases: new Set<number>(),
@@ -426,6 +464,7 @@ const initialViewState = {
   // UI layout
   sidebarCollapsed: false,
   resourcePanelCollapsed: false,
+  sidebarDashboardsExpanded: true,
 };
 
 // =============================================================================
@@ -478,6 +517,9 @@ export const useViewStore = create<ViewState>()(
       }),
 
       setKanbanMyTodoOnly: (only) => set({ kanbanMyTodoOnly: only }),
+
+      setLastDashboardId: (id) =>
+        set((state) => ({ lastDashboardId: { ...state.lastDashboardId, [tenantKey()]: id } })),
 
       toggleKanbanMyTodoOnly: () => set((state) => ({
         kanbanMyTodoOnly: !state.kanbanMyTodoOnly,
@@ -582,7 +624,7 @@ export const useViewStore = create<ViewState>()(
         return { ganttColorBy: colorBy };
       }),
 
-      // Staff overview - closes equipment if opening staff
+      // Staff & Calendar - closes equipment if opening staff
       setShowStaffOverview: (show) => set({
         showStaffOverview: show,
         showEquipmentOverview: show ? false : get().showEquipmentOverview,
@@ -789,6 +831,10 @@ export const useViewStore = create<ViewState>()(
 
       setResourcePanelCollapsed: (collapsed) => set({ resourcePanelCollapsed: collapsed }),
 
+      toggleSidebarDashboards: () => set((state) => ({
+        sidebarDashboardsExpanded: !state.sidebarDashboardsExpanded,
+      })),
+
       // -----------------------------------------
       // RESET
       // -----------------------------------------
@@ -815,6 +861,7 @@ export const useViewStore = create<ViewState>()(
         currentResourceTab: state.currentResourceTab,
         sidebarCollapsed: state.sidebarCollapsed,
         resourcePanelCollapsed: state.resourcePanelCollapsed,
+        sidebarDashboardsExpanded: state.sidebarDashboardsExpanded,
         showStaffOverview: state.showStaffOverview,
         showEquipmentOverview: state.showEquipmentOverview,
         kanbanProjectId: state.kanbanProjectId,
@@ -826,6 +873,7 @@ export const useViewStore = create<ViewState>()(
         ganttGrouping: state.ganttGrouping,
         collapsedGanttSections: state.collapsedGanttSections,
         ganttColorBy: state.ganttColorBy,
+        lastDashboardId: state.lastDashboardId,
         // Convert Sets to Arrays for JSON serialization
         expandedProjects: Array.from(state.expandedProjects),
         expandedPhases: Array.from(state.expandedPhases),
@@ -851,6 +899,10 @@ export const useViewStore = create<ViewState>()(
           currentResourceTab: (persisted?.currentResourceTab as ResourceTab) ?? currentState.currentResourceTab,
           sidebarCollapsed: (persisted?.sidebarCollapsed as boolean) ?? currentState.sidebarCollapsed,
           resourcePanelCollapsed: (persisted?.resourcePanelCollapsed as boolean) ?? currentState.resourcePanelCollapsed,
+          sidebarDashboardsExpanded:
+            typeof persisted?.sidebarDashboardsExpanded === 'boolean'
+              ? persisted.sidebarDashboardsExpanded
+              : currentState.sidebarDashboardsExpanded,
           showStaffOverview: (persisted?.showStaffOverview as boolean) ?? currentState.showStaffOverview,
           showEquipmentOverview: (persisted?.showEquipmentOverview as boolean) ?? currentState.showEquipmentOverview,
           // Every field added to partialize above MUST also be listed here
@@ -871,6 +923,7 @@ export const useViewStore = create<ViewState>()(
           collapsedGanttSections:
             sanitizeCollapsedGanttSections(persisted?.collapsedGanttSections) ?? currentState.collapsedGanttSections,
           ganttColorBy: sanitizeSiteColorBy(persisted?.ganttColorBy) ?? currentState.ganttColorBy,
+          lastDashboardId: sanitizeLastDashboardIds(persisted?.lastDashboardId) ?? currentState.lastDashboardId,
           // Convert Arrays back to Sets
           expandedProjects: Array.isArray(persisted?.expandedProjects)
             ? new Set(persisted.expandedProjects as number[])

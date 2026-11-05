@@ -14,6 +14,7 @@ from app.services.instance_settings import (
     FLAG_DISABLES,
     KNOWN_SETTINGS,
     PROJECT_FIELD_SETTING_KEYS,
+    PROJECT_TOOLTIP_ROWS,
     canonicalise,
     default_for,
     disabled_permission_keys,
@@ -38,6 +39,9 @@ DEFAULTS = {
     "project_field_labels": "{}",
     "project_fields_hidden": "[]",
     "volume_decimals": "1",
+    "project_tooltip_rows": (
+        '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]'
+    ),
 }
 
 BOOLEAN_KEYS = [
@@ -257,6 +261,79 @@ def test_hidden_fields_reject_confirmed_and_unknown_keys(raw):
         canonicalise("project_fields_hidden", raw)
 
 
+# ---------------------------------------------------------------------------
+# Gantt Shift-hover project details
+# ---------------------------------------------------------------------------
+
+
+def test_tooltip_rows_are_the_built_in_keys_in_display_order():
+    assert PROJECT_TOOLTIP_ROWS == (
+        "customer",
+        "pm",
+        "sales_pm",
+        "volume",
+        "confirmed",
+        "tags",
+        "period",
+        "completion",
+        "work_days",
+        "total_days",
+        "staff",
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("[]", "[]"),
+        (" [ ] ", "[]"),
+        ('["staff", 7, "customer", 3, "volume"]', '["customer","volume","staff",3,7]'),
+        ('["pm", "pm", 4, 4, 2]', '["pm",2,4]'),  # duplicates dropped
+        ("[12, 5]", "[5,12]"),
+        (
+            '["staff","total_days","work_days","completion","period","tags",'
+            '"confirmed","volume","sales_pm","pm","customer"]',
+            '["customer","pm","sales_pm","volume","confirmed","tags","period",'
+            '"completion","work_days","total_days","staff"]',
+        ),
+    ],
+)
+def test_tooltip_rows_are_canonical(raw, canonical):
+    assert canonicalise("project_tooltip_rows", raw) == canonical
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "not json",
+        "{}",
+        '"customer"',
+        "1",
+        "[true]",
+        "[false]",
+        "[0]",
+        "[-1]",
+        "[1.5]",
+        "[null]",
+        '["name"]',
+        '["Customer"]',
+        "[[1]]",
+    ],
+)
+def test_tooltip_rows_reject_anything_else(raw):
+    with pytest.raises(ValueError):
+        canonicalise("project_tooltip_rows", raw)
+
+
+def test_tooltip_rows_cap_the_field_ids_at_500():
+    keys = list(PROJECT_TOOLTIP_ROWS)
+    assert canonicalise("project_tooltip_rows", json.dumps(keys + list(range(1, 501))))
+    assert canonicalise("project_tooltip_rows", json.dumps([1] * 600)) == "[1]"
+    with pytest.raises(ValueError):
+        canonicalise("project_tooltip_rows", json.dumps(list(range(1, 502))))
+
+
 @pytest.mark.parametrize(
     ("raw", "canonical"),
     [("any", "any"), (" ANY ", "any"), ("0", "0"), ("1", "1"), (" 2", "2"), ("3", "3")],
@@ -376,11 +453,12 @@ async def test_is_enabled_defaults_to_on(stored, enabled):
     assert await is_enabled(db, "nager_enabled") is enabled
 
 
-def test_project_field_setting_keys_are_the_three_known_field_settings():
+def test_project_field_setting_keys_are_the_four_known_field_settings():
     """The keys PUT /settings/{key} also opens to project_fields.manage."""
     assert PROJECT_FIELD_SETTING_KEYS == {
         "project_field_labels",
         "project_fields_hidden",
         "volume_decimals",
+        "project_tooltip_rows",
     }
     assert PROJECT_FIELD_SETTING_KEYS <= KNOWN_SETTINGS.keys()

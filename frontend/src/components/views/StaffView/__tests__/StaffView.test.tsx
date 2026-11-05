@@ -1,5 +1,5 @@
 /**
- * Staff overview: the left panel lists the site's active staff with today's
+ * Staff & Calendar: the left panel lists the site's active staff with today's
  * availability, a role/skill filter, expandable rows (absences + assignments
  * collected from every level of the project tree) and a confirmed delete
  * for absences.
@@ -117,7 +117,7 @@ function seed(role: 'admin' | 'superuser' | 'user' = 'admin', userId = 1) {
 
 const rowFor = (name: string) => screen.getByText(name).closest('[draggable]') as HTMLElement;
 const panelOf = () =>
-  screen.getByText('Staff Overview').parentElement!.parentElement!.parentElement as HTMLElement;
+  screen.getByText('Staff & Calendar').parentElement!.parentElement!.parentElement as HTMLElement;
 
 beforeEach(() => {
   resetAllStores();
@@ -130,7 +130,7 @@ describe('StaffView panel', () => {
     seed();
     render(<StaffView />);
 
-    expect(screen.getByText('Staff Overview')).toBeInTheDocument();
+    expect(screen.getByText('Staff & Calendar')).toBeInTheDocument();
     const names = screen
       .getAllByText(/^(Alice Ames|Bob Brown|Carl Cole|Dora Diaz)$/)
       .map((n) => n.childNodes[0].textContent);
@@ -573,5 +573,31 @@ describe('StaffView layout', () => {
     expect(screen.getByText('National Day')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Company Events'));
     expect(screen.getByText('No company events')).toBeInTheDocument();
+  });
+});
+
+describe('StaffView event strip', () => {
+  const stripEvents: CompanyEvent[] = [
+    { id: 91, site_id: 1, site_ids: [1], date: isoOffset(2), end_date: null, name: 'ISO audit', team_ids: [] },
+  ];
+
+  it.each(['month', 'quarter'] as const)('draws the strip exactly once, in the timeline header, at %s zoom', (viewMode) => {
+    seed();
+    useAppStore.setState({ companyEvents: stripEvents, companyEventDates: buildEventDateSet(stripEvents) });
+    useViewStore.setState({ viewMode, currentDate: new Date() });
+    const { container } = render(<StaffView />);
+    const layers = container.querySelectorAll('[class*="markerLayer"]');
+    expect(layers).toHaveLength(1);
+    expect(layers[0].closest('[class*="eventsRow"]')).not.toBeNull();
+    const hits = layers[0].querySelectorAll('button[class*="markerBadge"]');
+    expect(hits).toHaveLength(1);
+    expect(hits[0].getAttribute('aria-label')).toMatch(/— 1 event: ISO audit$/);
+  });
+
+  it('draws no strip when embedded below the Gantt (no header: the Gantt header has it)', () => {
+    seed();
+    useAppStore.setState({ companyEvents: stripEvents, companyEventDates: buildEventDateSet(stripEvents) });
+    const { container } = render(<StaffView embedded />);
+    expect(container.querySelector('[class*="markerLayer"]')).toBeNull();
   });
 });

@@ -110,7 +110,9 @@ FROM new_roles r JOIN (VALUES
   ('superuser', 'views.equipment', 'allow'),
   ('superuser', 'views.crosssite', 'allow'),
   ('superuser', 'views.archived', 'allow'),
+  ('superuser', 'views.dashboards', 'allow'),
   ('superuser', 'whatif.use', 'allow'),
+  ('superuser', 'dashboards.manage', 'allow'),
   ('user', 'projects.view', 'allow'),
   ('user', 'projects.manage_as_pm', 'allow'),
   ('user', 'assignments.self_create', 'allow'),
@@ -125,7 +127,8 @@ FROM new_roles r JOIN (VALUES
   ('user', 'views.staff', 'allow'),
   ('user', 'views.equipment', 'allow'),
   ('user', 'views.crosssite', 'allow'),
-  ('user', 'views.archived', 'allow')
+  ('user', 'views.archived', 'allow'),
+  ('user', 'views.dashboards', 'allow')
 ) AS d(role_key, permission, mode) ON d.role_key = r.key
 ON CONFLICT (role_id, permission) DO NOTHING;
 
@@ -662,6 +665,67 @@ CREATE TABLE project_field_selections (
     PRIMARY KEY (project_id, option_id)
 );
 
+-- Dashboards (2.3.0): KPI and chart dashboards over the planning data. Owner
+-- (NULL = admin-owned, e.g. the seeded "Overview"), visibility private /
+-- shared / everyone, at most one default. Same DDL as
+-- tenant_provisioner.DASHBOARDS_SCHEMA_STATEMENTS and
+-- migrations/add_dashboards.sql.
+CREATE TABLE dashboards (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    visibility VARCHAR(10) NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT dashboards_visibility_check
+        CHECK (visibility IN ('private', 'shared', 'everyone'))
+);
+
+-- Roles a 'shared' dashboard is shared with (many-to-many)
+CREATE TABLE dashboard_roles (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, role_id)
+);
+
+-- Widgets of a dashboard: query / options / layout are JSON texts
+CREATE TABLE dashboard_widgets (
+    id SERIAL PRIMARY KEY,
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    kind VARCHAR(12) NOT NULL,
+    title VARCHAR(120) NOT NULL,
+    query TEXT NOT NULL,
+    options TEXT NOT NULL DEFAULT '{}',
+    layout TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT dashboard_widgets_kind_check
+        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table', 'gauge', 'heatmap', 'treemap', 'sankey'))
+);
+
+-- Sites, teams and people a 'shared' dashboard is shared with (many-to-many;
+-- a site or team stands for its members). Same DDL as
+-- tenant_provisioner.DASHBOARD_SHARING_SCHEMA_STATEMENTS and
+-- migrations/add_dashboard_sharing.sql.
+CREATE TABLE dashboard_sites (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, site_id)
+);
+
+CREATE TABLE dashboard_teams (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, team_id)
+);
+
+CREATE TABLE dashboard_users (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, user_id)
+);
+
 -- ============================================================================
 -- APPROVALS (approval policies per approvable action, approval requests
 -- for own bookings) and the RBAC upgrades of the tables
@@ -969,6 +1033,12 @@ CREATE INDEX idx_project_field_option_sites_site ON project_field_option_sites(s
 CREATE INDEX idx_project_field_option_teams_team ON project_field_option_teams(team_id);
 CREATE INDEX idx_project_field_values_project ON project_field_values(project_id);
 CREATE INDEX idx_project_field_selections_option ON project_field_selections(option_id);
+CREATE UNIQUE INDEX dashboards_one_default ON dashboards(is_default) WHERE is_default;
+CREATE INDEX idx_dashboard_roles_role ON dashboard_roles(role_id);
+CREATE INDEX idx_dashboard_widgets_dashboard ON dashboard_widgets(dashboard_id);
+CREATE INDEX idx_dashboard_sites_site ON dashboard_sites(site_id);
+CREATE INDEX idx_dashboard_teams_team ON dashboard_teams(team_id);
+CREATE INDEX idx_dashboard_users_user ON dashboard_users(user_id);
 CREATE INDEX idx_approval_policy_roles_role ON approval_policy_roles(role_id);
 CREATE INDEX idx_approval_requests_project_status ON approval_requests(project_id, status);
 CREATE INDEX idx_approval_requests_requester_status ON approval_requests(requester_id, status);

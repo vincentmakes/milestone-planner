@@ -1,7 +1,10 @@
+/* `min-width: 0`: the title (user data) truncates with the site name when
+   the bar runs short, rather than pushing the left past its box. */
 .container {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .separator {

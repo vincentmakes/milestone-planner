@@ -82,55 +82,6 @@
   );
 }
 
-/* Tooltip overlay - sits above all content */
-.holidayTooltipOverlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1000;
-  pointer-events: none;
-}
-
-/* Common tooltip zone styles */
-.holidayTooltipZone,
-.eventTooltipZone {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  pointer-events: auto;
-  cursor: default;
-}
-
-/* CSS-based fast tooltip */
-.holidayTooltipZone[data-tooltip]::after,
-.eventTooltipZone[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  white-space: nowrap;
-  z-index: 10000;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.05s, visibility 0.05s;
-  pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(100% + 4px);
-}
-
-.holidayTooltipZone:hover[data-tooltip]::after,
-.eventTooltipZone:hover[data-tooltip]::after {
-  opacity: 1;
-  visibility: visible;
-}
-
 .gridCell.today {
   background: rgba(59, 130, 246, 0.08);
   border-left: 2px solid var(--accent-blue);

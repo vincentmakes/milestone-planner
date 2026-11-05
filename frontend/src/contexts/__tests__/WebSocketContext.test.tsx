@@ -93,7 +93,7 @@ describe('slicesForEntity', () => {
   it('maps settings, notes and users explicitly instead of refreshing everything', () => {
     expect(slicesForEntity('settings')).toEqual(['settings', 'currentUser']);
     expect(slicesForEntity('note')).toEqual([]);
-    expect(slicesForEntity('user')).toEqual(['staff', 'currentUser', 'projects', 'teams', 'roles']);
+    expect(slicesForEntity('user')).toEqual(['staff', 'currentUser', 'projects', 'teams', 'roles', 'dashboards']);
     expect(slicesForEntity('staff')).toEqual(['staff', 'projects']);
   });
 });

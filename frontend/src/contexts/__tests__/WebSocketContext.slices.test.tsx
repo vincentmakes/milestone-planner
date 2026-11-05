@@ -77,6 +77,8 @@ import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
+import { useDashboardStore } from '@/stores/dashboardStore';
+import { useViewStore } from '@/stores/viewStore';
 import { mentionableUsersFor } from '@/api/endpoints/mentionableCache';
 import {
   makeCustomColumn,
@@ -381,6 +383,101 @@ describe('WebSocketProvider slice refresh', () => {
     expect(getCompanyEvents).toHaveBeenCalledWith(1);
     expect(getVacations).not.toHaveBeenCalled();
     expect(skillsApi.getAll).not.toHaveBeenCalled();
+  });
+
+  describe('dashboards', () => {
+    const refreshList = vi.fn(async () => {});
+    const refreshCurrent = vi.fn();
+    const reloadData = vi.fn(async () => {});
+    const real = {
+      refreshList: useDashboardStore.getState().refreshList,
+      refreshCurrent: useDashboardStore.getState().refreshCurrent,
+      reloadData: useDashboardStore.getState().reloadData,
+    };
+
+    beforeEach(() => {
+      refreshList.mockReset().mockResolvedValue(undefined);
+      refreshCurrent.mockReset();
+      reloadData.mockReset().mockResolvedValue(undefined);
+      useDashboardStore.setState({ refreshList, refreshCurrent, reloadData });
+    });
+
+    afterEach(() => {
+      useDashboardStore.setState(real);
+    });
+
+    it('leaves the dashboards alone on change:dashboard until the view loaded them', async () => {
+      render(<WebSocketProvider><div /></WebSocketProvider>);
+      await receive('dashboard');
+      expect(refreshList).not.toHaveBeenCalled();
+      expect(refreshCurrent).not.toHaveBeenCalled();
+      expect(loadAllProjects).not.toHaveBeenCalled();
+    });
+
+    it('reloads the list and, while the view is shown, the open dashboard on change:dashboard', async () => {
+      useDashboardStore.setState({ listLoaded: true });
+      useViewStore.setState({ currentView: 'dashboards' });
+      render(<WebSocketProvider><div /></WebSocketProvider>);
+      await receive('dashboard');
+      expect(refreshList).toHaveBeenCalledTimes(1);
+      expect(refreshCurrent).toHaveBeenCalledTimes(1);
+      // A dashboard change is not a plan change
+      expect(reloadData).not.toHaveBeenCalled();
+    });
+
+    it('reloads the list only, on change:dashboard, while another view is shown', async () => {
+      useDashboardStore.setState({ listLoaded: true });
+      useViewStore.setState({ currentView: 'gantt' });
+      render(<WebSocketProvider><div /></WebSocketProvider>);
+      await receive('dashboard');
+      expect(refreshList).toHaveBeenCalledTimes(1);
+      expect(refreshCurrent).not.toHaveBeenCalled();
+    });
+
+    it('logs a failed dashboards list refresh', async () => {
+      refreshList.mockRejectedValue(new Error('boom'));
+      useDashboardStore.setState({ listLoaded: true });
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      render(<WebSocketProvider><div /></WebSocketProvider>);
+      await receive('dashboard');
+      expect(error).toHaveBeenCalledWith('[WS] dashboards refresh failed', expect.any(Error));
+    });
+
+    it.each([
+      'project',
+      'staff',
+      'team',
+      'project_field',
+      'vacation',
+      'bank_holiday',
+      'company_event',
+      'equipment',
+      'equipment_block',
+    ])(
+      'asks the store for a debounced data reload on change:%s while the view is shown',
+      async (entity) => {
+        useViewStore.setState({ currentView: 'dashboards' });
+        render(<WebSocketProvider><div /></WebSocketProvider>);
+        await receive(entity);
+        expect(reloadData).toHaveBeenCalledTimes(1);
+        // No argument: the store's 2 s debounce, never an immediate load
+        expect(reloadData).toHaveBeenCalledWith();
+      }
+    );
+
+    it('does not reload dashboard data for a plan change while another view is shown', async () => {
+      useViewStore.setState({ currentView: 'gantt' });
+      render(<WebSocketProvider><div /></WebSocketProvider>);
+      await receive('project');
+      expect(reloadData).not.toHaveBeenCalled();
+    });
+
+    it('does not reload dashboard data for a change outside the plan, capacity and equipment', async () => {
+      useViewStore.setState({ currentView: 'dashboards' });
+      render(<WebSocketProvider><div /></WebSocketProvider>);
+      await receive('settings');
+      expect(reloadData).not.toHaveBeenCalled();
+    });
   });
 
   it('drops calendar and custom-column results for a site the user has left', async () => {

@@ -146,6 +146,11 @@ describe('apiRequest', () => {
       '/api/approval-requests/5/approve',
       '/api/approval-requests/5/reject',
       '/api/approval-requests/5/cancel',
+      // Dashboards: reports and their configuration, never plan data
+      '/api/dashboards',
+      '/api/dashboards/3',
+      '/api/dashboards/query',
+      '/api/dashboards/3/data',
     ];
     const WRITE_CASES = ['POST', 'PUT', 'DELETE'] as const;
 
@@ -213,6 +218,8 @@ describe('apiRequest', () => {
       expect(isWhatIfExempt('/t/acme/api/sites/3/events')).toBe(false);
       expect(isWhatIfExempt('/api/equipmentx')).toBe(false);
       expect(isWhatIfExempt('/api/rolesx')).toBe(false);
+      expect(isWhatIfExempt('/api/dashboardsx')).toBe(false);
+      expect(isWhatIfExempt('/t/acme/api/dashboards/query')).toBe(true);
       // Personal todos are gone: nothing exempts them any more.
       expect(isWhatIfExempt('/api/todos')).toBe(false);
       expect(isWhatIfExempt('/api/kanban/cards/card/3/comments')).toBe(false);

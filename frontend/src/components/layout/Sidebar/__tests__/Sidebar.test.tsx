@@ -36,7 +36,7 @@ describe('Sidebar', () => {
       sites: [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })],
     });
     render(<Sidebar />);
-    for (const label of ['Gantt Chart', 'Kanban Board', 'Staff Overview', 'Equipment', 'Cross-Site', 'Archived']) {
+    for (const label of ['Gantt Chart', 'Kanban Board', 'Staff & Calendar', 'Equipment', 'Cross-Site', 'Archived']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
     fireEvent.click(screen.getByRole('button', { name: 'Archived' }));
@@ -83,7 +83,7 @@ describe('Sidebar', () => {
     const { rerender } = render(<Sidebar />);
 
     const switchHint = whatIfUnavailableMessage('Switching views');
-    for (const label of ['Kanban Board', 'Staff Overview', 'Equipment', 'Cross-Site', 'Archived']) {
+    for (const label of ['Kanban Board', 'Staff & Calendar', 'Equipment', 'Cross-Site', 'Archived']) {
       const button = screen.getByRole('button', { name: label });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute('title', switchHint);

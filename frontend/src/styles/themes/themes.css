@@ -168,6 +168,10 @@
   --scrollbar-track: #111827;
   --scrollbar-thumb: #364064;
   --scrollbar-thumb-hover: #4a5a7a;
+
+  /* Timeline header: period 23 + labels 28 + events row 14 + 1 px border.
+     The left panes' headers read it, so their rows line up with the bars. */
+  --timeline-header-total: 66px;
 }
 
 
@@ -328,6 +332,10 @@
   --scrollbar-track: #f0f6ff;     /* Fog */
   --scrollbar-thumb: #c9d1d8;     /* Smoke */
   --scrollbar-thumb-hover: #abbfd5; /* Rain */
+
+  /* Timeline header: period 23 + labels 28 + events row 14 + 1 px border.
+     The left panes' headers read it, so their rows line up with the bars. */
+  --timeline-header-total: 66px;
 }
 
 /* Print-specific overrides for S-Theme Light */

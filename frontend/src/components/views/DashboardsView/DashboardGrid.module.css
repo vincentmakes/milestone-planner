@@ -1,0 +1,63 @@
+.container {
+  width: 100%;
+  min-width: 0;
+}
+
+.item {
+  min-width: 0;
+}
+
+/* The library's items and drop placeholder, restyled with app tokens. */
+.container :global(.react-grid-item) {
+  border-radius: var(--radius-md);
+}
+
+.container :global(.react-grid-item.react-draggable-dragging) {
+  box-shadow: var(--shadow-md);
+}
+
+.container :global(.react-grid-item.react-grid-placeholder) {
+  background: color-mix(in srgb, var(--accent-blue) 25%, transparent);
+  border: 1px dashed var(--accent-blue);
+  border-radius: var(--radius-md);
+  opacity: 1;
+}
+
+.editing :global(.react-grid-item) {
+  box-shadow: var(--shadow-sm);
+}
+
+/* While a widget is dragged or resized (`data-gesture`, set by DashboardGrid):
+   no text selection as the pointer sweeps over the widgets. */
+.editing[data-gesture] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The resize corner (edit mode only: the library does not render it in view
+   mode): clearly visible but quiet, its mark inside the card's rounded corner. */
+.editing :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-se) {
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background-image: none;
+  cursor: se-resize;
+  opacity: 0.7;
+}
+
+.editing :global(.react-grid-item:hover > .react-resizable-handle.react-resizable-handle-se) {
+  opacity: 1;
+}
+
+.editing :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-se::after) {
+  content: '';
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text-secondary);
+  border-bottom: 2px solid var(--text-secondary);
+}

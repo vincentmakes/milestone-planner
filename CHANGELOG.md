@@ -5,6 +5,25 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-10-30
+
+### Added
+- Dashboards: build KPI and chart dashboards over projects, phases and bookings, keep them private or share them with roles, sites, teams or individual people; two built-in dashboards, *Overview* and *Capacity and flows* (a heatmap, a treemap and a sankey diagram), ship for everyone, and tenants seeded with the demo data add a utilisation gauge and two project-field charts to them.
+- Dashboard numbers count approved bookings as allocation-weighted working days of the project's site, bank holidays excluded; pending bookings are left out.
+- Dashboard measures beyond bookings: capacity, available days, utilisation and people over capacity per person, team or site (absences, closures and bank holidays taken off); equipment booked days, bookings and utilisation, where double bookings show over 100 %; phases due and overdue by month, by Kanban status or milestones only — over this, last or next year, quarter or month, or the last or next 12 months.
+- A Dashboards view shows the dashboards shared with you — KPI tiles, gauges, bar, line and pie charts, heatmaps, treemaps, sankey diagrams and tables that resize with the window and follow the theme; a Dashboards entry in the sidebar, below Equipment, lists the dashboards you can open (click one to open it, or fold the list away with its arrow).
+- Dashboard builders create, duplicate and share dashboards with roles, sites, teams and people (view only; each dashboard shows whom it is shared with), rename them and edit their description inline in edit mode, with undo and redo while editing, resize a widget and its row neighbours follow, and add KPI, gauge, bar, line, pie, heatmap, treemap, sankey and table widgets with a live preview beside the form — a gauge against a target of your choice, green up to it, amber just above, red beyond — any measure by site, team, person, project, manager, customer, confirmed, tag, phase, status, equipment, equipment type, project field or period.
+- Timelines show every company event of a day as stacked colour bands at any zoom, with a panel listing them (teams and closures named) and a click to edit.
+- Admins choose what the project dialog and the Gantt's Shift-hover details show from one list in Settings → Project fields — a switch per row for the dialog and one for the details, built-in fields, Volume, tags, dates, completion, staff and any custom project field — with a preview of either; labels, Format and switches apply as you change them.
+
+### Changed
+- The Staff Overview view is now called Staff & Calendar.
+
+### Fixed
+- E-mail addresses on reserved domains such as `.local` are accepted again when creating or editing users and administrators (the demo accounts and the quick-start admin could not be saved).
+- On phone-sized screens the header's date controls no longer overlap the icons on the right.
+- The Shift-hover details use the renamed labels of Confirmed, Sales PM and Volume (the Confirmed row reads *Confirmed: Yes / No*).
+
 ## [2.2.1] - 2026-11-02
 
 ### Security

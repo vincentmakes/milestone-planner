@@ -1,6 +1,6 @@
 /**
  * The Bank Holidays and Company Events rows also render in the Gantt's embedded
- * staff overview. Their Settings-hub shortcuts (Add, click-to-edit) are out of
+ * Staff & Calendar panel. Their Settings-hub shortcuts (Add, click-to-edit) are out of
  * reach during What-If — the hub cannot open then — and so is deleting an
  * entry: holidays and events are not in the What-If snapshot, so a queued
  * DELETE would leave the row on screen and could not be undone by Discard.

@@ -23,7 +23,7 @@ const DEFAULT_LEVEL_COLORS: Record<number, string> = {
 /**
  * Get the computed value of a CSS variable
  */
-function getCSSVariable(name: string): string | null {
+export function getCSSVariable(name: string): string | null {
   if (typeof window === 'undefined') return null;
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || null;

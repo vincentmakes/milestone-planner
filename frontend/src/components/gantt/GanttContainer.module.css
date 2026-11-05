@@ -25,7 +25,7 @@
   background: var(--accent-blue);
 }
 
-/* Horizontal resizer between Gantt and Staff Overview */
+/* Horizontal resizer between Gantt and the Staff & Calendar panel */
 .horizontalResizer {
   height: 4px;
   background: var(--accent-purple);

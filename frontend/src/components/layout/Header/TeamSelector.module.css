@@ -65,6 +65,12 @@
   display: none;
 }
 
+/* Without its label the trigger has nothing left to give: the site name
+   truncates instead, never the icon and chevron. */
+[data-density]:not([data-density='full']) .wrapper {
+  flex-shrink: 0;
+}
+
 [data-density='minimal'] .trigger {
   gap: 0.25rem;
   padding: 0 0.375rem;

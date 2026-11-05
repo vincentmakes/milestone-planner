@@ -1,7 +1,6 @@
 .header {
   flex-shrink: 0;
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
 }
 
 .headerContent {
@@ -86,9 +85,9 @@
   background: rgba(249, 115, 22, 0.25);
 }
 
-/* Company events - red */
+/* Company events - the first event's colour (`--event-color`, set inline), red without one */
 .bgCell.eventBg {
-  background: rgba(239, 68, 68, 0.25);
+  background: color-mix(in srgb, var(--event-color, var(--accent-red)) 25%, transparent);
 }
 
 /* Today - blue */
@@ -130,8 +129,10 @@
   color: var(--accent-orange);
 }
 
+/* The event colour pulled towards the text colour, so a pale event (a yellow)
+   still reads on the header background in both themes */
 .secondaryCell.eventText {
-  color: var(--accent-red);
+  color: color-mix(in srgb, var(--event-color, var(--accent-red)) 70%, var(--text-primary));
 }
 
 .dayLabel {
@@ -166,6 +167,38 @@
   position: absolute;
   bottom: 1px;
   opacity: 0.7;
+}
+
+/* Events row: the strip (TimelineMarkers) — 12 px + 1 px below, between a
+   top and a bottom border (15 px). The bottom border is the header's own
+   bottom line: drawn by the row, it sits right under the strip even when the
+   custom-column spacer follows (that spacer ends with its own border, so
+   the header never ends on a double line). Its layer's z-index stays inside
+   the row (isolation). With the period and label rows it makes
+   --timeline-header-total. */
+.eventsRow {
+  position: relative;
+  height: 15px;
+  padding-bottom: 1px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  isolation: isolate;
+}
+
+/* The same vertical grid lines as the label row, under the strip */
+.eventsRow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
 }
 
 /* Spacer to align with custom column headers in ProjectPanel (28px height) */

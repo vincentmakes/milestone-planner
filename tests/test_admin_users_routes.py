@@ -124,6 +124,21 @@ async def test_create_admin_user_hashes_password(portal_client, db_assigns_ids):
 
 
 @pytest.mark.asyncio
+async def test_create_admin_user_on_a_local_domain(portal_client, db_assigns_ids):
+    """``admin@milestone.local`` is the quick-start admin's own address."""
+    client, _ = portal_client
+    db_assigns_ids.execute.return_value = scalar_result(None)
+
+    response = await client.post(
+        "/api/admin/users",
+        json={"email": "ops@Milestone.Local", "password": "s3cret-pass"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["email"] == "ops@milestone.local"
+
+
+@pytest.mark.asyncio
 async def test_create_admin_user_duplicate_email_is_409(portal_client, mock_db_session):
     client, _ = portal_client
     mock_db_session.execute.return_value = scalar_result(make_admin(2, "admin"))

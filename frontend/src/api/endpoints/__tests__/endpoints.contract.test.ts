@@ -1,7 +1,7 @@
 /**
  * Wire contract of the thin endpoint modules: each function hits the right
  * HTTP method + URL with the right body. The client itself is mocked, so these
- * pin the routes the backend exposes (see the API reference in CLAUDE.md).
+ * pin the routes the backend exposes (see docs/developer-guide/routes.md).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as client from '@/api/client';
@@ -259,6 +259,7 @@ describe('settings endpoints', () => {
       project_field_labels: '{"customer":"Client"}',
       project_fields_hidden: '["volume"]',
       volume_decimals: 'any',
+      project_tooltip_rows: settings.INSTANCE_SETTING_DEFAULTS.project_tooltip_rows,
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
   });
@@ -278,8 +279,10 @@ describe('settings endpoints', () => {
       project_field_labels: '{}',
       project_fields_hidden: '[]',
       volume_decimals: '1',
+      project_tooltip_rows:
+        '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]',
     });
-    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(13);
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(14);
   });
 });
 

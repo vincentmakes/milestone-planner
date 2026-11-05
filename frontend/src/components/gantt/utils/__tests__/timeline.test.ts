@@ -47,13 +47,14 @@ describe('calculateTodayScrollLeft', () => {
  */
 describe('generateTimelineCells company events', () => {
   const closure = {
+    id: 1,
     date: '2026-03-10',
     end_date: '2026-03-11',
     name: 'Site shutdown',
     color: '#f97316',
     counts_as_unavailable: true,
   };
-  const audit = { date: '2026-03-12', end_date: null, name: 'ISO Audit', color: '#3b82f6' };
+  const audit = { id: 2, date: '2026-03-12', end_date: null, name: 'ISO Audit', color: '#3b82f6' };
   const eventDates = new Set(['2026-03-10', '2026-03-11', '2026-03-12']);
   const cells = generateTimelineCells(new Date(2026, 2, 10), 'month', new Set(), [], eventDates, [closure, audit]);
   const byDate = (d: string) => cells.find((c) => c.dateStr === d)!;
@@ -85,7 +86,7 @@ describe('generateTimelineCells company events', () => {
   });
 
   it('keeps a team-limited closure as a plain event (the header cell is whole-site)', () => {
-    const teamClosure = { ...closure, name: 'Lab A shutdown', team_ids: [7] };
+    const teamClosure = { ...closure, id: 3, name: 'Lab A shutdown', team_ids: [7] };
     const teamCells = generateTimelineCells(new Date(2026, 2, 10), 'month', new Set(), [], eventDates, [teamClosure]);
     expect(teamCells.find((c) => c.dateStr === '2026-03-10')).toMatchObject({
       isCompanyEvent: true,
@@ -95,7 +96,7 @@ describe('generateTimelineCells company events', () => {
   });
 
   it('shades a whole-site closure even when a team-limited closure shares the day', () => {
-    const teamClosure = { ...closure, name: 'Lab A shutdown', team_ids: [7] };
+    const teamClosure = { ...closure, id: 3, name: 'Lab A shutdown', team_ids: [7] };
     const mixed = generateTimelineCells(
       new Date(2026, 2, 10), 'month', new Set(), [], eventDates,
       [teamClosure, { ...closure, team_ids: [] }]
@@ -104,6 +105,121 @@ describe('generateTimelineCells company events', () => {
       isSiteClosure: true,
       companyEventName: 'Site shutdown',
     });
+  });
+});
+
+/**
+ * Every cell lists all the events overlapping it (`companyEvents`) for the
+ * timeline strip: whole-site closures first, then team-limited closures, then
+ * plain events, each group by start, then name (plain string order), then id.
+ */
+describe('generateTimelineCells companyEvents', () => {
+  const day = '2026-03-10';
+  const at = (cells: ReturnType<typeof generateTimelineCells>, dateStr: string) =>
+    cells.find((c) => c.dateStr === dateStr)!;
+
+  it('lists every event of a day in closure-first, start, name, id order', () => {
+    const events = [
+      { id: 21, date: '2026-03-10', name: 'Alpha', color: '#111111' },
+      { id: 20, date: '2026-03-10', name: 'Alpha', color: '#222222' },
+      { id: 5, date: '2026-03-10', name: 'alpha' },
+      { id: 30, date: '2026-03-08', end_date: '2026-03-12', name: 'Zulu fair' },
+      { id: 40, date: '2026-03-09', end_date: '2026-03-10', name: 'Lab A shutdown', counts_as_unavailable: true, team_ids: [7] },
+      { id: 50, date: '2026-03-10', name: 'Site shutdown', counts_as_unavailable: true, team_ids: [] },
+      { id: 60, date: '2026-03-11', name: 'Tomorrow' },
+    ];
+    const cells = generateTimelineCells(new Date(2026, 2, 10), 'month', new Set(), [], new Set([day]), events);
+    const cell = at(cells, day);
+    // 'Alpha' < 'alpha' in plain string order (upper case first), whatever the locale
+    expect(cell.companyEvents.map((e) => e.id)).toEqual([50, 40, 30, 20, 21, 5]);
+    expect(cell).toMatchObject({ isCompanyEvent: true, isSiteClosure: true, companyEventName: 'Site shutdown' });
+    expect(at(cells, '2026-03-11').companyEvents.map((e) => e.id)).toEqual([30, 60]);
+    expect(at(cells, '2026-03-13').companyEvents).toEqual([]);
+  });
+
+  it('normalises an event into the cell shape', () => {
+    const cells = generateTimelineCells(new Date(2026, 2, 10), 'month', new Set(), [], new Set([day]), [
+      { id: 9, date: '2026-03-10T00:00:00.000Z', end_date: '2026-03-11T00:00:00.000Z', name: 'Audit' },
+      { id: 8, date: '2026-03-10', end_date: null, name: 'Review', color: '#3b82f6', counts_as_unavailable: false, team_ids: [2, 3] },
+    ]);
+    expect(at(cells, day).companyEvents).toEqual([
+      { id: 9, name: 'Audit', color: null, start: '2026-03-10', end: '2026-03-11', isClosure: false, teamIds: [] },
+      { id: 8, name: 'Review', color: '#3b82f6', start: '2026-03-10', end: '2026-03-10', isClosure: false, teamIds: [2, 3] },
+    ]);
+  });
+
+  it('marks a team-limited closure isClosure without making the day a site closure', () => {
+    const cells = generateTimelineCells(new Date(2026, 2, 10), 'month', new Set(), [], new Set([day]), [
+      { id: 1, date: day, name: 'Lab A shutdown', color: '#f97316', counts_as_unavailable: true, team_ids: [7] },
+    ]);
+    const cell = at(cells, day);
+    expect(cell.companyEvents[0]).toMatchObject({ isClosure: true, teamIds: [7] });
+    expect(cell).toMatchObject({ isSiteClosure: false, isCompanyEvent: true, companyEventColor: '#f97316' });
+  });
+
+  it('keeps a holiday and the events of the same day', () => {
+    const cells = generateTimelineCells(
+      new Date(2026, 3, 6), 'month', new Set(['2026-04-06']), [{ date: '2026-04-06', name: 'Easter Monday' }],
+      new Set(['2026-04-06']),
+      [{ id: 1, date: '2026-04-06', name: 'ISO 9001 audit' }, { id: 2, date: '2026-04-06', name: 'Lab safety walk-through' }]
+    );
+    expect(at(cells, '2026-04-06')).toMatchObject({
+      isBankHoliday: true,
+      bankHolidayName: 'Easter Monday',
+      isCompanyEvent: true,
+      companyEventName: 'ISO 9001 audit',
+    });
+    expect(at(cells, '2026-04-06').companyEvents.map((e) => e.name)).toEqual(['ISO 9001 audit', 'Lab safety walk-through']);
+  });
+
+  it('lists in a quarter week an event on its Wednesday', () => {
+    // Week of Monday 9 March 2026; the event is on Wednesday 11 March only
+    const cells = generateTimelineCells(new Date(2026, 2, 9), 'quarter', new Set(), [], new Set(['2026-03-11']), [
+      { id: 1, date: '2026-03-11', name: 'ISO 9001 audit', color: '#f59e0b', counts_as_unavailable: true },
+    ]);
+    const week = at(cells, '2026-03-09');
+    expect(week.dateEnd).toBeDefined();
+    expect(week).toMatchObject({
+      isCompanyEvent: true,
+      companyEventName: 'ISO 9001 audit',
+      companyEventColor: '#f59e0b',
+      // span cells never shade as closed
+      isSiteClosure: false,
+    });
+    expect(week.companyEvents.map((e) => e.id)).toEqual([1]);
+    // The weeks before and after
+    expect(at(cells, '2026-03-02')).toMatchObject({ isCompanyEvent: false, companyEvents: [] });
+    expect(at(cells, '2026-03-16')).toMatchObject({ isCompanyEvent: false, companyEvents: [] });
+  });
+
+  it('lists in a quarter week an event that ends on its Sunday or starts before its Monday', () => {
+    const cells = generateTimelineCells(new Date(2026, 2, 9), 'quarter', new Set(), [], new Set(), [
+      { id: 1, date: '2026-03-15', name: 'Sunday' },
+      { id: 2, date: '2026-03-01', end_date: '2026-03-09', name: 'Long' },
+    ]);
+    expect(at(cells, '2026-03-09').companyEvents.map((e) => e.id)).toEqual([2, 1]);
+  });
+
+  it('lists in a year month an event on its 20th, and none in a month without', () => {
+    const cells = generateTimelineCells(new Date(2026, 2, 1), 'year', new Set(), [], new Set(['2026-03-20']), [
+      { id: 1, date: '2026-03-20', name: 'Trade fair', color: '#14b8a6' },
+      { id: 2, date: '2026-04-30', end_date: '2026-05-01', name: 'Turn of the month' },
+    ]);
+    const march = at(cells, '2026-03-01');
+    expect(march.dateEnd).toBeUndefined();
+    expect(march).toMatchObject({ isCompanyEvent: true, companyEventName: 'Trade fair', companyEventColor: '#14b8a6', isSiteClosure: false });
+    expect(march.companyEvents.map((e) => e.id)).toEqual([1]);
+    expect(at(cells, '2026-02-01')).toMatchObject({ isCompanyEvent: false, companyEvents: [], companyEventName: undefined });
+    expect(at(cells, '2026-04-01').companyEvents.map((e) => e.id)).toEqual([2]);
+    expect(at(cells, '2026-05-01').companyEvents.map((e) => e.id)).toEqual([2]);
+  });
+
+  it('gives a year month its last day (February in a leap year)', () => {
+    const cells = generateTimelineCells(new Date(2028, 1, 1), 'year', new Set(), [], new Set(), [
+      { id: 1, date: '2028-02-29', name: 'Leap day' },
+    ]);
+    expect(at(cells, '2028-02-01').companyEvents.map((e) => e.id)).toEqual([1]);
+    expect(at(cells, '2028-03-01').companyEvents).toEqual([]);
   });
 });
 

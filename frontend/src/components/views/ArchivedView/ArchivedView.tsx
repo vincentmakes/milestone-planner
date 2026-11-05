@@ -62,7 +62,8 @@ export function ArchivedView() {
   
   const totalWidth = cells.length * cellWidth;
   
-  // Only show weekend/holiday highlighting for week and month views
+  // Weekend/holiday/event tints for week and month views only; the event
+  // strip sits in the header's events row (TimelineHeader)
   const showHighlighting = viewMode === 'week' || viewMode === 'month';
   
   return (

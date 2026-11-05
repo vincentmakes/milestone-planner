@@ -2,7 +2,7 @@
  * TimelineScrollContext
  * 
  * Provides synchronized horizontal scrolling between multiple timeline components
- * (e.g., Gantt chart and Staff Overview).
+ * (e.g., Gantt chart and Staff & Calendar).
  * 
  * Uses direct DOM manipulation for smooth, lag-free synchronization.
  */

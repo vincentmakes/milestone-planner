@@ -10,3 +10,4 @@ export { PhantomArrow } from './PhantomArrow';
 export { PhantomIndicator } from './PhantomIndicator';
 export { PhantomOverlay } from './PhantomOverlay';
 export { ResourceDropOverlay } from './ResourceDropOverlay';
+export { TimelineMarkers } from './TimelineMarkers';

@@ -166,3 +166,42 @@ describe('ArchivedView team filter', () => {
     expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
   });
 });
+
+describe('ArchivedView event strip', () => {
+  afterEach(() => {
+    useAppStore.setState({ companyEvents: [], companyEventDates: new Set() });
+    useViewStore.setState({ viewMode: 'month' });
+  });
+
+  it.each(['month', 'quarter'] as const)(
+    'draws one strip, in the header, above every project row at %s zoom, the tints left plain',
+    (viewMode) => {
+      const isoOffset = (days: number) => {
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        return formatDateISO(d);
+      };
+      const events: CompanyEvent[] = [
+        { id: 91, site_id: 1, site_ids: [1], date: isoOffset(2), end_date: null, name: 'ISO audit', team_ids: [] },
+      ];
+      seed({ id: 1, role: 'admin' });
+      useAppStore.setState({
+        projects: [archived, { ...archived, id: 6, name: 'Old Pilot' }],
+        companyEvents: events,
+        companyEventDates: buildEventDateSet(events),
+      });
+      useViewStore.setState({ viewMode, currentDate: new Date(), teamFilters: {} });
+      const { container } = render(<ArchivedView />);
+
+      const layers = container.querySelectorAll('[class*="markerLayer"]');
+      expect(layers).toHaveLength(1);
+      expect(layers[0].closest('[class*="eventsRow"]')).not.toBeNull();
+      expect(container.querySelector('[class*="timelineBody"] [class*="markerLayer"]')).toBeNull();
+      const hits = container.querySelectorAll('button[class*="markerBadge"]');
+      expect(hits).toHaveLength(1);
+      expect(hits[0].getAttribute('aria-label')).toMatch(/— 1 event: ISO audit$/);
+      // the per-row tints carry no tooltip any more
+      expect(container.querySelector('[data-tooltip]')).toBeNull();
+    }
+  );
+});

@@ -28,6 +28,17 @@ from app.services.tenant_provisioner import (
     COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     COMPANY_EVENTS_SITE_FK_SQL,
     COMPANY_EVENTS_SITE_NULLABLE_SQL,
+    DASHBOARD_PERMISSION_BACKFILL,
+    DASHBOARD_PERMISSION_BACKFILL_SQL,
+    DASHBOARD_SHARING_PROBE_SQL,
+    DASHBOARD_SHARING_SCHEMA_STATEMENTS,
+    DASHBOARD_SHARING_TABLES,
+    DASHBOARD_TABLES,
+    DASHBOARD_VISIBILITY_CHECK_SQL,
+    DASHBOARD_WIDGET_KIND_CHECK_SQL,
+    DASHBOARD_WIDGET_SEED_SQL,
+    DASHBOARDS_PROBE_SQL,
+    DASHBOARDS_SCHEMA_STATEMENTS,
     EQUIPMENT_ASSIGNMENTS_NOTE_SQL,
     EQUIPMENT_SITE_FK_NEEDS_FIX_SQL,
     EQUIPMENT_SITE_FK_SQL,
@@ -47,6 +58,8 @@ from app.services.tenant_provisioner import (
     TEAM_TABLES,
     TEAMS_SCHEMA_STATEMENTS,
     USERS_IS_RESOURCE_SQL,
+    dashboard_seed_params,
+    dashboard_seed_statement,
 )
 from app.utils import utcnow_naive
 
@@ -848,6 +861,89 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Created RBAC tables on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (rbac) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Dashboards (add_dashboards.sql, 2.3.0): the three tables and their
+        # indexes, then -- in the same transaction, only in the run that
+        # creates the tables -- the two base dashboards "Overview" and
+        # "Capacity and flows" with their widgets and the one-shot grant of
+        # views.dashboards (superuser, user) and dashboards.manage (superuser)
+        # to the system roles that exist. Never again once every table
+        # exists, so an admin's later removal of a dashboard or of a key is
+        # never undone. After the RBAC step:
+        # dashboard_roles references roles. One statement per execute.
+        try:
+            tables_check = await conn.execute(text(DASHBOARDS_PROBE_SQL))
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(DASHBOARD_TABLES):
+                logger.info("Auto-migration: Adding dashboards on tenant %s...", slug)
+                for statement in DASHBOARDS_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                for dashboard, widgets in dashboard_seed_params():
+                    sql, binds = dashboard_seed_statement(dashboard)
+                    dashboard_id = (await conn.execute(text(sql).bindparams(**binds))).scalar()
+                    if dashboard_id is None:
+                        continue  # it exists: none of its widgets is written
+                    for widget in widgets:
+                        await conn.execute(
+                            text(DASHBOARD_WIDGET_SEED_SQL).bindparams(
+                                dashboard_id=dashboard_id, **widget
+                            )
+                        )
+                for role, permission in DASHBOARD_PERMISSION_BACKFILL:
+                    await conn.execute(
+                        text(DASHBOARD_PERMISSION_BACKFILL_SQL).bindparams(
+                            permission=permission, role=role, existing_permission=permission
+                        )
+                    )
+                await conn.commit()
+                logger.info("Auto-migration: Added dashboards on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (dashboards) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Dashboard sharing (add_dashboard_sharing.sql, 2.3.0): the site, team
+        # and person link tables with their indexes while one is missing (no
+        # seed), then -- on every pool creation, it gates itself -- the
+        # visibility CHECK of a pre-release database ('roles' -> 'shared',
+        # rows included). After the dashboards step: the links reference
+        # dashboards. One statement per execute. The tables are committed
+        # before the visibility block, in its own transaction: a failing ALTER
+        # (the pool's user not owning ``dashboards``) must not roll back the
+        # link tables every dashboard read loads.
+        try:
+            tables_check = await conn.execute(text(DASHBOARD_SHARING_PROBE_SQL))
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(DASHBOARD_SHARING_TABLES):
+                logger.info("Auto-migration: Adding dashboard sharing on tenant %s...", slug)
+                for statement in DASHBOARD_SHARING_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (dashboard sharing) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+        try:
+            await conn.execute(text(DASHBOARD_VISIBILITY_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (dashboard visibility) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+        # The widget-kind CHECK of a pre-release 2.3.0 database (gauge,
+        # heatmap, treemap, sankey). Every pool creation, self-gated; its own
+        # transaction, like the visibility block.
+        try:
+            await conn.execute(text(DASHBOARD_WIDGET_KIND_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            # An error, not a warning: without the widened CHECK a saved
+            # gauge, heatmap, treemap or sankey widget fails on insert.
+            logger.error(
+                "Auto-migration (dashboard widget kinds) failed for %s: %s -- gauge, "
+                "heatmap, treemap and sankey widgets cannot be saved until "
+                "migrations/add_dashboard_widget_kinds.sql is applied",
+                slug,
+                e,
+            )
             await _rollback_quietly(conn)
 
         # Notification types (add_change_notifications.sql). Runs on every pool

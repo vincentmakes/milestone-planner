@@ -1,29 +1,44 @@
 /**
  * ProjectFieldsPanel (Settings hub > Project fields)
  *
- * The fields every project carries, edited in the project dialog:
+ * The fields every project carries, in one list with two switch columns:
+ * "In project dialog" and "In Gantt details" (the Gantt's Shift-hover
+ * details of a project bar, `project_tooltip_rows`).
  * - Built-in fields: Customer, Sales PM, Volume and Confirmed keep their
  *   place in the dialog; each can get another label instance-wide, and all
  *   but Confirmed can be hidden (Confirmed drives the project status, the
  *   default ordering and the counts); Volume has a Format like a number
  *   field (default 1.0). Stored in the settings `project_field_labels` /
- *   `project_fields_hidden` / `volume_decimals`.
+ *   `project_fields_hidden` / `volume_decimals`. Hiding a field also takes it
+ *   out of the Gantt details (stored off; showing it again leaves it off).
+ * - Also in the Gantt details: PM, Tags, Period, Completion, Work days,
+ *   Total and Assigned staff, with the Gantt switch only.
  * - Custom fields: text, number, switch, dropdown and multi-select dropdown,
- *   in a drag-reorderable list. The type is fixed at creation. A number
- *   field has a Format, picked as the pattern of 1 (As typed / 1 / 1.0 /
- *   1.00 / 1.000 = decimals null / 0-3) in the add row or the row's edit
- *   form (the pencil, saved with its Save), with a live preview of 12.345:
- *   new values are rounded to it, stored ones shown rounded. Deleting a
- *   field removes every project's value (the confirmation names the count).
+ *   in a drag-reorderable list, always in the dialog, each with a Gantt
+ *   switch. The type is fixed at creation. A number field has a Format,
+ *   picked as the pattern of 1 (As typed / 1 / 1.0 / 1.00 / 1.000 = decimals
+ *   null / 0-3) in the add row or the row's edit form (the pencil, saved with
+ *   its Save), with a live preview of 12.345: new values are rounded to it,
+ *   stored ones shown rounded. Deleting a field removes every project's value
+ *   (the confirmation names the count).
  * - Items of the dropdown fields: colour, and like tags, all sites or only
  *   some, per site optionally only some teams. Drag to reorder within the field.
+ *
+ * The settings apply at once (useSettingWriter: the store first, then one
+ * PUT per key, "Saving… / Saved" at the top): switches and Format on change,
+ * a label on blur or Enter (Escape reverts it). There is no Save button for
+ * them; only an unfinished add or edit counts as unsaved for the hub.
+ *
+ * A preview card (ProjectFieldsPreview) beside the list, sticky when the
+ * panel is wide enough (a container query), shows the project dialog or the
+ * Gantt details of a sample project, labels being typed included.
  *
  * Writes need project_fields.manage (admins by default); the server rejects
  * conflicting changes (409) with a message shown inline.
  */
 
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
@@ -33,21 +48,24 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Icon, DragHandleIcon, EditIcon, TrashIcon, PlusIcon, ListIcon } from '@/components/common/Icon';
 import { useAppStore } from '@/stores/appStore';
 import { projectFieldsApi } from '@/api/endpoints/projectFields';
-import { getInstanceSettings, updateSetting } from '@/api/endpoints/settings';
+import { getInstanceSettings } from '@/api/endpoints/settings';
 import { EVENT_COLOR_SWATCHES } from '@/utils/colorSwatches';
 import { teamIdsWithinSites } from '@/utils/teams';
 import { confirmAction } from '@/utils/confirmDialog';
 import {
   BUILT_IN_PROJECT_FIELDS,
   MAX_FIELD_LABEL_LENGTH,
+  PROJECT_TOOLTIP_ROWS,
   fieldLabelsValue,
   hiddenFieldsValue,
   parseFieldLabels,
   parseHiddenFields,
+  parseTooltipRows,
+  tooltipRowsValue,
   volumeDecimals,
   volumeDecimalsValue,
 } from '@/utils/instanceSettings';
-import type { BuiltInFieldKey } from '@/utils/instanceSettings';
+import type { BuiltInFieldKey, TooltipRow, TooltipRowKey } from '@/utils/instanceSettings';
 import {
   FIELD_DECIMALS,
   FIELD_TYPE_LABELS,
@@ -58,7 +76,9 @@ import {
 import type { ProjectField, ProjectFieldOption, ProjectFieldType, Site, Team } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { useSettingWriter } from '../useSettingWriter';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { ProjectFieldsPreview } from './ProjectFieldsPreview';
 import { SiteChecklist } from './SiteChecklist';
 import { TeamScope } from './TeamScope';
 import { useDragReorder, moveId } from './useDragReorder';
@@ -67,8 +87,25 @@ import styles from './ProjectFieldsPanel.module.css';
 const DEFAULT_ITEM_COLOR = EVENT_COLOR_SWATCHES[5].value;
 const DRAG_CLASSES = { dragging: styles.dragging, dropBefore: styles.dropBefore, dropAfter: styles.dropAfter };
 
-/** Hint under the Confirmed row: why it cannot be hidden */
+/** Why Confirmed is always in the project dialog (its "Always" slot's title) */
 export const CONFIRMED_HINT = 'Confirmed drives the project status, ordering and counts';
+
+/** Hint under the Gantt switch of a hidden built-in field */
+export const HIDDEN_DETAILS_HINT = 'Hidden fields are never shown';
+
+/** Title of a custom field's "Always" slot */
+export const CUSTOM_ALWAYS_HINT = 'Custom fields are always in the project dialog';
+
+/** "Saved" stays this long after the last write landed */
+const SAVED_STATUS_MS = 2000;
+
+const BUILT_IN_KEYS: readonly string[] = BUILT_IN_PROJECT_FIELDS.map((f) => f.key);
+
+/** The rows of the Gantt details that are not fields: PM, Tags, Period, ... Assigned staff */
+const GANTT_ONLY_ROWS = PROJECT_TOOLTIP_ROWS.filter((r) => !BUILT_IN_KEYS.includes(r.key));
+
+/** The rows always in the project dialog among them (the others are not dialog fields) */
+const ALWAYS_IN_DIALOG: readonly TooltipRowKey[] = ['pm', 'tags'];
 
 const TYPE_OPTIONS: { value: ProjectFieldType; label: string }[] = [
   { value: 'select', label: FIELD_TYPE_LABELS.select },
@@ -107,12 +144,11 @@ function formatPreview(decimals: number | null, withExistingNote: boolean): stri
   return withExistingNote ? `${sample} ${FORMAT_EXISTING_NOTE}` : sample;
 }
 
-/** The type pill: "Number · 1.0" for a number field with a format */
-function typeBadgeText(field: ProjectField): string {
-  const type = FIELD_TYPE_LABELS[field.field_type];
-  return field.field_type === 'number' && field.decimals != null
-    ? `${type} · ${fieldNumberInputText(1, field.decimals)}`
-    : type;
+/** A number field's format as the Format column shows it: "1.0", "As typed" (other types have none) */
+function formatText(field: ProjectField): string | null {
+  if (field.field_type !== 'number') return null;
+  const choice = choiceFromDecimals(field.decimals);
+  return FORMAT_OPTIONS.find((o) => o.value === choice)?.label ?? null;
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -150,6 +186,9 @@ function deleteFieldMessage(field: ProjectField, projects: number | null): strin
 
 type Labels = Partial<Record<BuiltInFieldKey, string>>;
 
+/** The stored settings, read at click time (never from a render's closure) */
+const storedSettings = () => useAppStore.getState().instanceSettings;
+
 interface ItemEdit {
   optionId: number;
   name: string;
@@ -159,25 +198,27 @@ interface ItemEdit {
   teamIds: number[];
 }
 
+/** The ids of the column header cells, which describe the switches under them */
+interface ColumnIds {
+  project: string;
+  gantt: string;
+}
+
 export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const setStoreFields = useAppStore((s) => s.setProjectFields);
   const setInstanceSettings = useAppStore((s) => s.setInstanceSettings);
+  const settings = useAppStore((s) => s.instanceSettings);
   const sites = useAppStore((s) => s.sites);
   const teams = useAppStore((s) => s.teams);
 
   const [fields, setFields] = useState<ProjectField[]>([]);
+  // Whether `fields` is the server's list (a deleted field's id is pruned only then)
+  const [fieldsLoaded, setFieldsLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Built-in fields: the saved settings and the edited copy
-  const [savedLabels, setSavedLabels] = useState<Labels>({});
-  const [savedHidden, setSavedHidden] = useState<string[]>([]);
-  const [labels, setLabels] = useState<Labels>({});
-  const [hidden, setHidden] = useState<string[]>([]);
-  // Volume's format, as a FORMAT_OPTIONS choice ('' = as typed)
-  const [savedVolumeFormat, setSavedVolumeFormat] = useState(choiceFromDecimals(1));
-  const [volumeFormat, setVolumeFormat] = useState(choiceFromDecimals(1));
-  const [builtInSuccess, setBuiltInSuccess] = useState<string | null>(null);
+  // The label being typed per built-in field; written on blur or Enter
+  const [labelDrafts, setLabelDrafts] = useState<Labels>({});
 
   // Custom fields
   const [newFieldName, setNewFieldName] = useState('');
@@ -195,10 +236,28 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const [newItemColor, setNewItemColor] = useState(DEFAULT_ITEM_COLOR);
 
   // One write of each kind at a time (Enter twice would send two writes)
-  const builtInSave = useSubmitGuard();
   const fieldAdd = useSubmitGuard();
   const itemAdd = useSubmitGuard();
   const editSave = useSubmitGuard();
+
+  // The settings apply at once; a failure shows in the panel's error Notice
+  const writer = useSettingWriter(setError);
+  const [expiredSave, setExpiredSave] = useState<number | null>(null);
+  useEffect(() => {
+    if (writer.savedAt === null) return;
+    const savedAt = writer.savedAt;
+    const timer = setTimeout(() => setExpiredSave(savedAt), SAVED_STATUS_MS);
+    return () => clearTimeout(timer);
+  }, [writer.savedAt]);
+  const status = writer.pending
+    ? 'Saving…'
+    : writer.savedAt !== null && expiredSave !== writer.savedAt
+      ? 'Saved'
+      : '';
+
+  const headerProjectId = useId();
+  const headerGanttId = useId();
+  const columnIds: ColumnIds = { project: headerProjectId, gantt: headerGanttId };
 
   // Fields with their items, kept in sync with the store (project dialogs)
   const loadFields = useCallback(async () => {
@@ -206,27 +265,20 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       const data = await projectFieldsApi.getAll();
       const sorted = [...data].sort(byOrder).map((f) => ({ ...f, options: [...f.options].sort(byOrder) }));
       setFields(sorted);
+      setFieldsLoaded(true);
       setStoreFields(sorted);
     } catch (err) {
       setError(errorMessage(err, 'Failed to load project fields'));
     }
   }, [setStoreFields]);
 
+  // The store is the source of the settings: fetched fresh on mount
   useEffect(() => {
     let cancelled = false;
     Promise.all([
       loadFields(),
-      getInstanceSettings().then((settings) => {
-        if (cancelled) return;
-        const initialLabels = parseFieldLabels(settings.project_field_labels);
-        const initialHidden = parseHiddenFields(settings.project_fields_hidden);
-        setSavedLabels(initialLabels);
-        setLabels(initialLabels);
-        setSavedHidden(initialHidden);
-        setHidden(initialHidden);
-        const initialVolumeFormat = choiceFromDecimals(volumeDecimals(settings));
-        setSavedVolumeFormat(initialVolumeFormat);
-        setVolumeFormat(initialVolumeFormat);
+      getInstanceSettings().then((loaded) => {
+        if (!cancelled) setInstanceSettings(loaded);
       }),
     ])
       .catch((err) => {
@@ -238,16 +290,9 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
     return () => {
       cancelled = true;
     };
-  }, [loadFields]);
+  }, [loadFields, setInstanceSettings]);
 
-  // ---- Dirty state (one flag for the hub) ----
-
-  const labelsValue = fieldLabelsValue(labels);
-  const hiddenValue = hiddenFieldsValue(hidden);
-  const builtInDirty =
-    labelsValue !== fieldLabelsValue(savedLabels) ||
-    hiddenValue !== hiddenFieldsValue(savedHidden) ||
-    volumeFormat !== savedVolumeFormat;
+  // ---- Dirty state (one flag for the hub): only unfinished adds and edits ----
 
   const editedField = editingFieldId !== null ? fields.find((f) => f.id === editingFieldId) : undefined;
   const fieldEditDirty =
@@ -272,7 +317,7 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       !sameIds(itemEdit.teamIds, editedItem.team_ids ?? []));
   useReportDirty(
     onDirtyChange,
-    builtInDirty || fieldEditDirty || itemDirty || newFieldName.trim() !== '' || newItemName.trim() !== ''
+    fieldEditDirty || itemDirty || newFieldName.trim() !== '' || newItemName.trim() !== ''
   );
 
   const run = async (action: () => Promise<unknown>, fallback: string) => {
@@ -285,51 +330,80 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
     await loadFields();
   };
 
-  // ---- Built-in fields ----
+  // ---- Settings: written at once ----
 
-  const toggleShown = (key: BuiltInFieldKey, shown: boolean) => {
-    setBuiltInSuccess(null);
-    setHidden((prev) => (shown ? prev.filter((k) => k !== key) : [...prev.filter((k) => k !== key), key]));
+  const storedLabels = parseFieldLabels(settings?.project_field_labels);
+  const hidden = parseHiddenFields(settings?.project_fields_hidden) as string[];
+  const shownRows = parseTooltipRows(settings?.project_tooltip_rows);
+  const volumeFormat = choiceFromDecimals(volumeDecimals(settings));
+
+  // The preview follows the labels being typed
+  const labelsSetting = settings?.project_field_labels;
+  const previewSettings = useMemo(
+    () => ({
+      ...(settings ?? {}),
+      project_field_labels: fieldLabelsValue({ ...parseFieldLabels(labelsSetting), ...labelDrafts }),
+    }),
+    [settings, labelsSetting, labelDrafts]
+  );
+
+  const write = (key: Parameters<typeof writer.write>[0], value: string) => {
+    setError(null);
+    writer.write(key, value);
   };
 
-  const handleSaveBuiltIn = () =>
-    builtInSave.guard(async () => {
-      setError(null);
-      setBuiltInSuccess(null);
-      const saved: Record<string, string> = {};
-      try {
-        if (labelsValue !== fieldLabelsValue(savedLabels)) {
-          await updateSetting('project_field_labels', labelsValue);
-          saved.project_field_labels = labelsValue;
-          setSavedLabels(parseFieldLabels(labelsValue));
-        }
-        if (hiddenValue !== hiddenFieldsValue(savedHidden)) {
-          await updateSetting('project_fields_hidden', hiddenValue);
-          saved.project_fields_hidden = hiddenValue;
-          setSavedHidden(parseHiddenFields(hiddenValue));
-        }
-        if (volumeFormat !== savedVolumeFormat) {
-          const value = volumeDecimalsValue(decimalsFromChoice(volumeFormat));
-          await updateSetting('volume_decimals', value);
-          saved.volume_decimals = value;
-          setSavedVolumeFormat(volumeFormat);
-        }
-        setBuiltInSuccess('Built-in fields saved');
-      } catch (err) {
-        setError(errorMessage(err, 'Failed to save the built-in fields'));
-      } finally {
-        // What reached the server applies to the dialogs and rows right away
-        if (Object.keys(saved).length > 0) {
-          setInstanceSettings({ ...(useAppStore.getState().instanceSettings ?? {}), ...saved });
-        }
-      }
+  /** Write the Gantt rows `update` makes of the stored ones, without the ids of deleted fields */
+  const writeRows = (update: (rows: TooltipRow[]) => TooltipRow[]) => {
+    const fieldIds = new Set(fields.map((f) => f.id));
+    const rows = update(parseTooltipRows(storedSettings()?.project_tooltip_rows)).filter(
+      (r) => typeof r !== 'number' || !fieldsLoaded || fieldIds.has(r)
+    );
+    write('project_tooltip_rows', tooltipRowsValue(rows));
+  };
+
+  const toggleGantt = (row: TooltipRow, shown: boolean) =>
+    writeRows((rows) => (shown ? [...rows, row] : rows.filter((r) => r !== row)));
+
+  // Hiding a field takes it out of the Gantt details too (stored off)
+  const toggleShown = (key: BuiltInFieldKey, shown: boolean) => {
+    const current = parseHiddenFields(storedSettings()?.project_fields_hidden) as string[];
+    const next = shown ? current.filter((k) => k !== key) : [...current, key];
+    write('project_fields_hidden', hiddenFieldsValue(next));
+    if (!shown && parseTooltipRows(storedSettings()?.project_tooltip_rows).includes(key)) {
+      writeRows((rows) => rows.filter((r) => r !== key));
+    }
+  };
+
+  const setFormat = (choice: string) => write('volume_decimals', volumeDecimalsValue(decimalsFromChoice(choice)));
+
+  const dropDraft = (key: BuiltInFieldKey) =>
+    setLabelDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
     });
 
-  const handleResetBuiltIn = () => {
-    setLabels(savedLabels);
-    setHidden(savedHidden);
-    setVolumeFormat(savedVolumeFormat);
-    setBuiltInSuccess(null);
+  // A label is written when it differs from the stored one (Enter then blur writes once)
+  const commitLabel = (key: BuiltInFieldKey) => {
+    const draft = labelDrafts[key];
+    if (draft === undefined) return;
+    dropDraft(key);
+    const stored = parseFieldLabels(storedSettings()?.project_field_labels);
+    if (draft.trim() === (stored[key] ?? '')) return;
+    write('project_field_labels', fieldLabelsValue({ ...stored, [key]: draft }));
+  };
+
+  const handleLabelKeyDown = (e: KeyboardEvent<HTMLInputElement>, key: BuiltInFieldKey) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitLabel(key);
+    } else if (e.key === 'Escape') {
+      const draft = labelDrafts[key];
+      if (draft === undefined) return;
+      // A changed draft is reverted without closing the hub; an unchanged one lets Escape through
+      if (draft.trim() !== (storedLabels[key] ?? '')) e.stopPropagation();
+      dropDraft(key);
+    }
   };
 
   // ---- Custom fields ----
@@ -489,116 +563,162 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
 
   return (
     <div className={styles.container}>
-      <p className={styles.description}>
-        Fields every project carries, filled in the project dialog. Rename or hide the built-in
-        ones, and add your own. Dropdown items can be limited to some sites and teams. Drag to
-        reorder.
-      </p>
+      <div className={styles.topRow}>
+        <p className={styles.description}>
+          Fields every project carries, filled in the project dialog. Rename or hide the built-in
+          ones, and add your own. Dropdown items can be limited to some sites and teams. Drag to
+          reorder.
+        </p>
+        <span className={styles.status} role="status" aria-live="polite">
+          {status}
+        </span>
+      </div>
 
       {error && <Notice tone="error">{error}</Notice>}
 
-      <section className={styles.block} aria-labelledby="project-fields-builtin">
-        <h3 id="project-fields-builtin" className={styles.blockTitle}>
-          Built-in fields
-        </h3>
-        <div className={styles.list}>
-          {BUILT_IN_PROJECT_FIELDS.map(({ key, label }) => (
-            <BuiltInRow
-              key={key}
-              fieldKey={key}
-              defaultLabel={label}
-              label={labels[key] ?? ''}
-              shown={!hidden.includes(key)}
-              disabled={builtInSave.isSubmitting}
-              onLabelChange={(value) => {
-                setBuiltInSuccess(null);
-                setLabels((prev) => ({ ...prev, [key]: value }));
-              }}
-              onShownChange={(shown) => toggleShown(key, shown)}
-              {...(key === 'volume' && {
-                format: volumeFormat,
-                onFormatChange: (value: string) => {
-                  setBuiltInSuccess(null);
-                  setVolumeFormat(value);
-                },
-              })}
-            />
-          ))}
-        </div>
-        {builtInSuccess && <Notice tone="success">{builtInSuccess}</Notice>}
-        <div className={styles.saveRow}>
-          <span className={styles.hint}>{builtInDirty ? 'You have unsaved changes' : ''}</span>
-          {builtInDirty && (
-            <Button variant="ghost" onClick={handleResetBuiltIn} disabled={builtInSave.isSubmitting}>
-              Reset
-            </Button>
-          )}
-          <Button onClick={handleSaveBuiltIn} disabled={!builtInDirty} loading={builtInSave.isSubmitting}>
-            Save Changes
-          </Button>
-        </div>
-      </section>
+      <div className={styles.layout}>
+        <div className={styles.blocks}>
+          <section className={styles.block} aria-labelledby="project-fields-builtin">
+            <h3 id="project-fields-builtin" className={styles.blockTitle}>
+              Built-in fields
+            </h3>
+            <p className={styles.hint}>
+              What every project has. Choose the label, what the project dialog shows and what the
+              Gantt&apos;s Shift-hover details show. Changes apply right away.
+            </p>
+            <div className={styles.list}>
+              <div className={styles.columnHeader} data-testid="pf-column-header">
+                <span>Field</span>
+                <span>Label</span>
+                <span>Format</span>
+                <span id={columnIds.project} className={styles.colProject}>
+                  In project dialog
+                </span>
+                <span id={columnIds.gantt} className={styles.colGantt}>
+                  In Gantt details
+                </span>
+                <span aria-hidden="true" />
+              </div>
+              {BUILT_IN_PROJECT_FIELDS.map(({ key, label }) => (
+                <BuiltInRow
+                  key={key}
+                  fieldKey={key}
+                  defaultLabel={label}
+                  label={labelDrafts[key] ?? storedLabels[key] ?? ''}
+                  shown={!hidden.includes(key)}
+                  inGantt={shownRows.includes(key)}
+                  columnIds={columnIds}
+                  onLabelChange={(value) => setLabelDrafts((prev) => ({ ...prev, [key]: value }))}
+                  onLabelBlur={() => commitLabel(key)}
+                  onLabelKeyDown={(e) => handleLabelKeyDown(e, key)}
+                  onShownChange={(shown) => toggleShown(key, shown)}
+                  onGanttChange={(shown) => toggleGantt(key, shown)}
+                  {...(key === 'volume' && { format: volumeFormat, onFormatChange: setFormat })}
+                />
+              ))}
+              <div className={styles.subCaption}>Also in the Gantt details</div>
+              {GANTT_ONLY_ROWS.map(({ key, label }) => (
+                <div key={key} className={styles.builtInRow} data-testid={`gantt-only-${key}`}>
+                  <div className={styles.lead}>
+                    <span className={styles.builtInName}>{label}</span>
+                  </div>
+                  {ALWAYS_IN_DIALOG.includes(key) ? (
+                    <SlotText className={styles.colProject} caption="Dialog" srText="in the project dialog">
+                      Always
+                    </SlotText>
+                  ) : (
+                    <SlotText className={styles.colProject} caption="Dialog" srText="Not a dialog field">
+                      —
+                    </SlotText>
+                  )}
+                  <RowSwitch
+                    className={styles.colGantt}
+                    caption="Gantt"
+                    checked={shownRows.includes(key)}
+                    onChange={(shown) => toggleGantt(key, shown)}
+                    aria-label={`Show ${label} in Gantt details`}
+                    describedBy={columnIds.gantt}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
 
-      <section className={styles.block} aria-labelledby="project-fields-custom">
-        <h3 id="project-fields-custom" className={styles.blockTitle}>
-          Custom fields
-        </h3>
-        {fields.length === 0 ? (
-          <div className={`${styles.list} ${styles.empty}`}>No custom fields yet. Add one below.</div>
-        ) : (
-          <div className={styles.list}>
-            {fields.map((field) => {
-              const isEditing = editingFieldId === field.id;
-              const isExpanded = expandedFieldId === field.id;
-              const dropdown = isDropdownField(field);
-              return (
-                <div
-                  key={field.id}
-                  className={`${styles.item} ${fieldDrag.rowClass(field.id)}`}
-                  data-testid={`field-${field.id}`}
-                  {...fieldDrag.rowProps(field.id, !isEditing && !isExpanded)}
-                >
-                  <div className={styles.mainRow}>
-                    <span className={styles.dragHandle} aria-hidden="true">
-                      <Icon icon={DragHandleIcon} size={16} />
-                    </span>
-                    <div className={styles.name}>
-                      {isEditing ? (
-                        <Input
-                          className={styles.renameInput}
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onKeyDown={(e) => handleEditKeyDown(e, field)}
-                          aria-label="Field name"
-                          maxLength={100}
-                          autoFocus
+          <section className={styles.block} aria-labelledby="project-fields-custom">
+            <h3 id="project-fields-custom" className={styles.blockTitle}>
+              Custom fields
+            </h3>
+            {fields.length === 0 ? (
+              <div className={`${styles.list} ${styles.empty}`}>No custom fields yet. Add one below.</div>
+            ) : (
+              <div className={styles.list}>
+                {fields.map((field) => {
+                  const isEditing = editingFieldId === field.id;
+                  const isExpanded = expandedFieldId === field.id;
+                  const dropdown = isDropdownField(field);
+                  return (
+                    <div
+                      key={field.id}
+                      className={`${styles.item} ${fieldDrag.rowClass(field.id)}`}
+                      data-testid={`field-${field.id}`}
+                      {...fieldDrag.rowProps(field.id, !isEditing && !isExpanded)}
+                    >
+                      <div className={styles.fieldRow}>
+                        <div className={styles.lead}>
+                          <div className={`${styles.colName} ${isEditing ? styles.colNameEditing : ''}`}>
+                            <span className={styles.dragHandle} aria-hidden="true">
+                              <Icon icon={DragHandleIcon} size={16} />
+                            </span>
+                            <div className={styles.name}>
+                              {isEditing ? (
+                                <Input
+                                  className={styles.renameInput}
+                                  value={editName}
+                                  onChange={(e) => setEditName(e.target.value)}
+                                  onKeyDown={(e) => handleEditKeyDown(e, field)}
+                                  aria-label="Field name"
+                                  maxLength={100}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span>{field.name}</span>
+                              )}
+                            </div>
+                          </div>
+                          {!isEditing && (
+                            <div
+                              className={`${styles.colLabel} ${styles.colType} ${formatText(field) === null ? styles.colTypeWide : ''}`}
+                            >
+                              <span className={styles.typeBadge}>{FIELD_TYPE_LABELS[field.field_type]}</span>
+                              {dropdown && (
+                                <span className={styles.typeMeta}>
+                                  {field.options.length} item{field.options.length === 1 ? '' : 's'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {!isEditing && formatText(field) !== null && (
+                            <span className={`${styles.colFormat} ${styles.slotText}`}>{formatText(field)}</span>
+                          )}
+                        </div>
+                        <SlotText
+                          className={styles.colProject}
+                          caption="Dialog"
+                          title={CUSTOM_ALWAYS_HINT}
+                          srText="in the project dialog"
+                        >
+                          Always
+                        </SlotText>
+                        <RowSwitch
+                          className={styles.colGantt}
+                          caption="Gantt"
+                          checked={shownRows.includes(field.id)}
+                          onChange={(shown) => toggleGantt(field.id, shown)}
+                          aria-label={`Show ${field.name} in Gantt details`}
+                          describedBy={columnIds.gantt}
                         />
-                      ) : (
-                        <span>{field.name}</span>
-                      )}
-                    </div>
-                    <span className={styles.typeBadge}>{typeBadgeText(field)}</span>
-                    {dropdown && (
-                      <span className={styles.meta}>
-                        {field.options.length} item{field.options.length === 1 ? '' : 's'}
-                      </span>
-                    )}
-                    <div className={styles.actions}>
-                      {isEditing ? (
-                        <>
-                          <Button variant="secondary" onClick={() => setEditingFieldId(null)}>
-                            Cancel
-                          </Button>
-                          <Button
-                            onClick={() => void handleSaveField(field)}
-                            disabled={!editName.trim() || editSave.isSubmitting}
-                          >
-                            Save
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          {dropdown && (
+                        <div className={styles.colActions}>
+                          {!isEditing && dropdown && (
                             <button
                               type="button"
                               className={`${styles.iconBtn} ${isExpanded ? styles.iconBtnActive : ''}`}
@@ -610,118 +730,194 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                               <Icon icon={ListIcon} size={15} />
                             </button>
                           )}
+                          {!isEditing && (
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              onClick={() => startEditing(field)}
+                              title={field.field_type === 'number' ? 'Edit name and format' : 'Edit name'}
+                              aria-label={`Edit ${field.name}`}
+                            >
+                              <Icon icon={EditIcon} size={15} />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            className={styles.iconBtn}
-                            onClick={() => startEditing(field)}
-                            title={field.field_type === 'number' ? 'Edit name and format' : 'Edit name'}
-                            aria-label={`Edit ${field.name}`}
+                            className={`${styles.iconBtn} ${styles.danger}`}
+                            onClick={() => void handleDeleteField(field)}
+                            title="Delete"
+                            aria-label={`Delete ${field.name}`}
                           >
-                            <Icon icon={EditIcon} size={15} />
+                            <Icon icon={TrashIcon} size={15} />
                           </button>
-                        </>
+                        </div>
+                        {isEditing && (
+                          <div className={`${styles.rowNote} ${styles.editLine}`}>
+                            {field.field_type === 'number' && (
+                              <div className={styles.formatEdit}>
+                                <Select
+                                  className={styles.format}
+                                  label="Format"
+                                  value={editDecimals}
+                                  options={FORMAT_OPTIONS}
+                                  onChange={(e) => setEditDecimals(e.target.value)}
+                                  onKeyDown={(e) => handleEditKeyDown(e, field)}
+                                  aria-label={`Format of ${field.name}`}
+                                />
+                                <p className={styles.hint} aria-live="polite">
+                                  {formatPreview(decimalsFromChoice(editDecimals), true)}
+                                </p>
+                              </div>
+                            )}
+                            <div className={styles.editActions}>
+                              <Button variant="secondary" onClick={() => setEditingFieldId(null)}>
+                                Cancel
+                              </Button>
+                              <Button
+                                onClick={() => void handleSaveField(field)}
+                                disabled={!editName.trim() || editSave.isSubmitting}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {isExpanded && dropdown && (
+                        <ItemsEditor
+                          field={field}
+                          sites={sites}
+                          teams={teams}
+                          itemEdit={itemEdit}
+                          onItemEditChange={setItemEdit}
+                          onStartEditing={startEditingItem}
+                          onSave={() => void handleSaveItem()}
+                          saving={editSave.isSubmitting}
+                          onDelete={(item) => void handleDeleteItem(field, item)}
+                          onReorder={(order) => reorderItems(field, order)}
+                          newItemName={newItemName}
+                          onNewItemNameChange={setNewItemName}
+                          newItemColor={newItemColor}
+                          onNewItemColorChange={setNewItemColor}
+                          onAdd={() => void handleAddItem(field)}
+                          adding={itemAdd.isSubmitting}
+                        />
                       )}
-                      <button
-                        type="button"
-                        className={`${styles.iconBtn} ${styles.danger}`}
-                        onClick={() => void handleDeleteField(field)}
-                        title="Delete"
-                        aria-label={`Delete ${field.name}`}
-                      >
-                        <Icon icon={TrashIcon} size={15} />
-                      </button>
                     </div>
-                  </div>
-                  {isEditing && field.field_type === 'number' && (
-                    <div className={styles.formatEdit}>
-                      <Select
-                        className={styles.format}
-                        label="Format"
-                        value={editDecimals}
-                        options={FORMAT_OPTIONS}
-                        onChange={(e) => setEditDecimals(e.target.value)}
-                        onKeyDown={(e) => handleEditKeyDown(e, field)}
-                        aria-label={`Format of ${field.name}`}
-                      />
-                      <p className={styles.hint} aria-live="polite">
-                        {formatPreview(decimalsFromChoice(editDecimals), true)}
-                      </p>
-                    </div>
-                  )}
-                  {isExpanded && dropdown && (
-                    <ItemsEditor
-                      field={field}
-                      sites={sites}
-                      teams={teams}
-                      itemEdit={itemEdit}
-                      onItemEditChange={setItemEdit}
-                      onStartEditing={startEditingItem}
-                      onSave={() => void handleSaveItem()}
-                      saving={editSave.isSubmitting}
-                      onDelete={(item) => void handleDeleteItem(field, item)}
-                      onReorder={(order) => reorderItems(field, order)}
-                      newItemName={newItemName}
-                      onNewItemNameChange={setNewItemName}
-                      newItemColor={newItemColor}
-                      onNewItemColorChange={setNewItemColor}
-                      onAdd={() => void handleAddItem(field)}
-                      adding={itemAdd.isSubmitting}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <form
-          className={styles.addForm}
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleAddField();
-          }}
-        >
-          <div className={styles.addRow}>
-            <Input
-              className={styles.addInput}
-              value={newFieldName}
-              onChange={(e) => setNewFieldName(e.target.value)}
-              placeholder="New field, e.g. Budget"
-              aria-label="New field name"
-              maxLength={100}
-            />
-            <Select
-              className={styles.addType}
-              value={newFieldType}
-              options={TYPE_OPTIONS}
-              onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
-              aria-label="Type"
-            />
-            {newFieldType === 'number' && (
-              <Select
-                className={styles.format}
-                label="Format"
-                value={newFieldDecimals}
-                options={FORMAT_OPTIONS}
-                onChange={(e) => setNewFieldDecimals(e.target.value)}
-              />
+                  );
+                })}
+              </div>
             )}
-            <Button
-              type="submit"
-              icon={<Icon icon={PlusIcon} />}
-              disabled={!newFieldName.trim()}
-              loading={fieldAdd.isSubmitting}
+            <form
+              className={styles.addForm}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleAddField();
+              }}
             >
-              Add field
-            </Button>
-          </div>
-          {newFieldType === 'number' && (
-            <p className={styles.hint} aria-live="polite">
-              {formatPreview(decimalsFromChoice(newFieldDecimals), false)}
-            </p>
-          )}
-        </form>
-      </section>
+              <div className={styles.addRow}>
+                <Input
+                  className={styles.addInput}
+                  value={newFieldName}
+                  onChange={(e) => setNewFieldName(e.target.value)}
+                  placeholder="New field, e.g. Budget"
+                  aria-label="New field name"
+                  maxLength={100}
+                />
+                <Select
+                  className={styles.addType}
+                  value={newFieldType}
+                  options={TYPE_OPTIONS}
+                  onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
+                  aria-label="Type"
+                />
+                {newFieldType === 'number' && (
+                  <Select
+                    className={styles.format}
+                    label="Format"
+                    value={newFieldDecimals}
+                    options={FORMAT_OPTIONS}
+                    onChange={(e) => setNewFieldDecimals(e.target.value)}
+                  />
+                )}
+                <Button
+                  type="submit"
+                  icon={<Icon icon={PlusIcon} />}
+                  disabled={!newFieldName.trim()}
+                  loading={fieldAdd.isSubmitting}
+                >
+                  Add field
+                </Button>
+              </div>
+              {newFieldType === 'number' && (
+                <p className={styles.hint} aria-live="polite">
+                  {formatPreview(decimalsFromChoice(newFieldDecimals), false)}
+                </p>
+              )}
+            </form>
+          </section>
+        </div>
+        <aside className={styles.preview} aria-label="Preview">
+          <ProjectFieldsPreview settings={previewSettings} fields={fields} />
+        </aside>
+      </div>
     </div>
+  );
+}
+
+// =============================================================================
+// ROW SLOTS
+// =============================================================================
+
+/** A muted word in a switch column ("Always", "—"), with words for screen readers */
+function SlotText({
+  className,
+  caption,
+  title,
+  srText,
+  children,
+}: {
+  className: string;
+  /** Shown before the word on phones, where the column header is hidden */
+  caption: string;
+  title?: string;
+  srText: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={`${styles.slotText} ${className}`} title={title}>
+      <span aria-hidden="true" className={styles.slotCaption}>
+        {caption}:{' '}
+      </span>
+      <span aria-hidden="true">{children}</span>
+      <span className="sr-only">{srText}</span>
+    </span>
+  );
+}
+
+interface RowSwitchProps {
+  className: string;
+  /** Shown beside the switch on phones, where the column header is hidden */
+  caption: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  'aria-label': string;
+  describedBy: string;
+  disabled?: boolean;
+}
+
+/** A switch of the "In project dialog" / "In Gantt details" columns */
+function RowSwitch({ className, caption, checked, onChange, 'aria-label': ariaLabel, describedBy, disabled }: RowSwitchProps) {
+  return (
+    <ToggleSwitch
+      className={`${styles.cellSwitch} ${className}`}
+      checked={checked}
+      onChange={onChange}
+      label={<span className={styles.switchCaption}>{caption}</span>}
+      aria-label={ariaLabel}
+      aria-describedby={describedBy}
+      disabled={disabled}
+    />
   );
 }
 
@@ -732,11 +928,17 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
 interface BuiltInRowProps {
   fieldKey: BuiltInFieldKey;
   defaultLabel: string;
+  /** The label shown: the draft being typed, else the stored one ('' = the default) */
   label: string;
   shown: boolean;
-  disabled: boolean;
+  /** Listed in the Gantt details (shown there unless the field is hidden) */
+  inGantt: boolean;
+  columnIds: ColumnIds;
   onLabelChange: (label: string) => void;
+  onLabelBlur: () => void;
+  onLabelKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
   onShownChange: (shown: boolean) => void;
+  onGanttChange: (shown: boolean) => void;
   /** A number field's format (a FORMAT_OPTIONS choice): the picker shows only when passed (Volume) */
   format?: string;
   onFormatChange?: (format: string) => void;
@@ -747,52 +949,79 @@ function BuiltInRow({
   defaultLabel,
   label,
   shown,
-  disabled,
+  inGantt,
+  columnIds,
   onLabelChange,
+  onLabelBlur,
+  onLabelKeyDown,
   onShownChange,
+  onGanttChange,
   format,
   onFormatChange,
 }: BuiltInRowProps) {
   const hintId = useId();
   const locked = fieldKey === 'confirmed';
+  const hidden = !locked && !shown;
   return (
     <div className={styles.builtInRow} data-testid={`builtin-${fieldKey}`}>
-      <span className={styles.builtInName}>{defaultLabel}</span>
-      <Input
-        className={styles.builtInLabel}
-        value={label}
-        onChange={(e) => onLabelChange(e.target.value)}
-        placeholder={defaultLabel}
-        aria-label={`Label of ${defaultLabel}`}
-        maxLength={MAX_FIELD_LABEL_LENGTH}
-        disabled={disabled}
-      />
-      {format !== undefined && onFormatChange && (
-        <Select
-          className={styles.format}
-          label="Format"
-          value={format}
-          options={FORMAT_OPTIONS}
-          onChange={(e) => onFormatChange(e.target.value)}
-          aria-label={`Format of ${defaultLabel}`}
-          disabled={disabled}
+      <div className={styles.lead}>
+        <span className={styles.builtInName}>{defaultLabel}</span>
+        <Input
+          className={styles.colLabel}
+          value={label}
+          onChange={(e) => onLabelChange(e.target.value)}
+          onBlur={onLabelBlur}
+          onKeyDown={onLabelKeyDown}
+          placeholder={defaultLabel}
+          aria-label={`Label of ${defaultLabel}`}
+          maxLength={MAX_FIELD_LABEL_LENGTH}
+        />
+        {format !== undefined && onFormatChange && (
+          <Select
+            className={`${styles.format} ${styles.colFormat}`}
+            label="Format"
+            value={format}
+            options={FORMAT_OPTIONS}
+            onChange={(e) => onFormatChange(e.target.value)}
+            aria-label={`Format of ${defaultLabel}`}
+          />
+        )}
+      </div>
+      {locked ? (
+        <SlotText
+          className={styles.colProject}
+          caption="Dialog"
+          title={CONFIRMED_HINT}
+          srText={`in the project dialog. ${CONFIRMED_HINT}`}
+        >
+          Always
+        </SlotText>
+      ) : (
+        <RowSwitch
+          className={styles.colProject}
+          caption="Dialog"
+          checked={shown}
+          onChange={onShownChange}
+          aria-label={`Show ${defaultLabel} in project dialog`}
+          describedBy={columnIds.project}
         />
       )}
-      <ToggleSwitch
-        checked={locked || shown}
-        onChange={onShownChange}
-        label="Shown"
-        aria-label={`Show ${defaultLabel}`}
-        aria-describedby={locked ? hintId : undefined}
-        disabled={disabled || locked}
+      <RowSwitch
+        className={styles.colGantt}
+        caption="Gantt"
+        checked={inGantt && !hidden}
+        onChange={onGanttChange}
+        aria-label={`Show ${defaultLabel} in Gantt details`}
+        describedBy={hidden ? hintId : columnIds.gantt}
+        disabled={hidden}
       />
-      {locked && (
-        <span id={hintId} className={styles.builtInHint}>
-          {CONFIRMED_HINT}
+      {hidden && (
+        <span id={hintId} className={`${styles.rowNote} ${styles.builtInHint}`}>
+          {HIDDEN_DETAILS_HINT}
         </span>
       )}
       {format !== undefined && onFormatChange && (
-        <span className={styles.builtInHint} aria-live="polite">
+        <span className={`${styles.rowNote} ${styles.builtInHint}`} aria-live="polite">
           {formatPreview(decimalsFromChoice(format), true)}
         </span>
       )}

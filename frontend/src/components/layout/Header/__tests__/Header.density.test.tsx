@@ -162,7 +162,10 @@ describe('Header density', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: 'Overview panels' })).toBeInTheDocument();
+    const panels = screen.getByRole('dialog', { name: 'Overview panels' });
+    // The two toggles are named after the views they dock below the Gantt.
+    expect(within(panels).getByRole('button', { name: 'Staff & Calendar' })).toBeInTheDocument();
+    expect(within(panels).getByRole('button', { name: 'Equipment' })).toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
 
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -192,6 +195,21 @@ describe('Header density', () => {
     renderAt('minimal');
     expect(screen.getByAltText('Milestone').getAttribute('src')).toContain('no_text');
   });
+
+  // Undo/redo act on the Gantt's edits: no other view offers them (the
+  // dashboard builder has its own, in its edit toolbar).
+  it.each(TIERS.flatMap((tier) => (['dashboards', 'staff', 'archived'] as const).map((view) => [tier, view] as const)))(
+    'offers no undo or redo at %s on the %s view, in the bar or the menu',
+    (tier, view) => {
+      useViewStore.setState({ currentView: view });
+      renderAt(tier);
+      if (overflowTrigger()) fireEvent.click(overflowTrigger()!);
+      expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Redo' })).not.toBeInTheDocument();
+      // The rest of the timeline controls stay
+      expect(screen.getByRole('button', { name: 'Zoom in' })).toBeInTheDocument();
+    }
+  );
 
   it('shows no overflow menu on the Kanban board, which has no timeline controls', () => {
     // condensed demotes only zoom and history; the board has neither, so the

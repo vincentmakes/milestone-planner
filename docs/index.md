@@ -12,6 +12,7 @@
 - **Equipment Booking** — Reserve lab instruments and equipment across projects
 - **Multi-Site Support** — Manage resources across geographic locations with cross-site visibility
 - **What-If Planning** — Test scheduling scenarios without affecting live data
+- **Dashboards** — KPI tiles, bar, line and pie charts and tables over the plan (booked weeks per project, team or month, confirmed shares, projects per site), built in the app and shared with roles or everyone
 - **Roles & Approvals** — Editable roles with per-action permissions, approval of own bookings, and a My Work list of your approvals, bookings and requests
 - **Real-Time Collaboration** — WebSocket-powered live updates across all connected clients
 - **Import/Export** — Exchange data with Microsoft Project (CSV, XML, MPP)

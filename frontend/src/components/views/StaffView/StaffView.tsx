@@ -611,7 +611,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
       <div className={styles.panel} style={panelStyle}>
         <div className={styles.panelHeader}>
           <div className={styles.headerLeft}>
-            <span className={styles.headerTitle}>Staff Overview</span>
+            <span className={styles.headerTitle}>Staff & Calendar</span>
             <span className={styles.headerCount}>{siteStaff.length}{hasActiveFilters ? `/${allSiteStaff.length}` : ''}</span>
           </div>
           

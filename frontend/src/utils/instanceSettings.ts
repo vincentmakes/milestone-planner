@@ -181,3 +181,132 @@ export function volumeDecimals(settings: InstanceSettings | null | undefined): n
 export function volumeDecimalsValue(decimals: number | null): string {
   return decimals === null ? 'any' : String(decimals);
 }
+
+// =============================================================================
+// GANTT DETAILS (SHIFT + HOVER ON A PROJECT BAR)
+// =============================================================================
+
+/** The built-in rows of the project details; the project name is the title, not a row. */
+export type TooltipRowKey =
+  | 'customer'
+  | 'pm'
+  | 'sales_pm'
+  | 'volume'
+  | 'confirmed'
+  | 'tags'
+  | 'period'
+  | 'completion'
+  | 'work_days'
+  | 'total_days'
+  | 'staff';
+
+/** A row of the project details: a built-in row, or a custom project field's id. */
+export type TooltipRow = TooltipRowKey | number;
+
+/**
+ * The built-in rows in display order with their default captions -- the
+ * backend's `PROJECT_TOOLTIP_ROWS`. Custom field rows follow them. Read a
+ * caption through {@link tooltipRowLabel} (the built-in fields can be renamed).
+ */
+export const PROJECT_TOOLTIP_ROWS: readonly { key: TooltipRowKey; label: string }[] = [
+  { key: 'customer', label: BUILT_IN_FIELD_DEFAULTS.customer },
+  { key: 'pm', label: 'PM' },
+  { key: 'sales_pm', label: BUILT_IN_FIELD_DEFAULTS.sales_pm },
+  { key: 'volume', label: BUILT_IN_FIELD_DEFAULTS.volume },
+  { key: 'confirmed', label: BUILT_IN_FIELD_DEFAULTS.confirmed },
+  { key: 'tags', label: 'Tags' },
+  { key: 'period', label: 'Period' },
+  { key: 'completion', label: 'Completion' },
+  { key: 'work_days', label: 'Work days' },
+  { key: 'total_days', label: 'Total' },
+  { key: 'staff', label: 'Assigned staff' },
+];
+
+const TOOLTIP_ROW_KEYS = PROJECT_TOOLTIP_ROWS.map((r) => r.key);
+const TOOLTIP_ROW_DEFAULT_LABELS = Object.fromEntries(
+  PROJECT_TOOLTIP_ROWS.map((r) => [r.key, r.label])
+) as Readonly<Record<TooltipRowKey, string>>;
+
+/** The rows shown until an admin saves the setting (the rows before 2.3.0). */
+export const DEFAULT_TOOLTIP_ROWS: readonly TooltipRowKey[] = [
+  'customer',
+  'pm',
+  'confirmed',
+  'tags',
+  'period',
+  'completion',
+  'work_days',
+  'total_days',
+  'staff',
+];
+
+function isTooltipRowKey(key: unknown): key is TooltipRowKey {
+  return typeof key === 'string' && (TOOLTIP_ROW_KEYS as string[]).includes(key);
+}
+
+/** The caption of a built-in row: the field's (renamed) label for the four built-in fields. */
+export function tooltipRowLabel(
+  settings: InstanceSettings | null | undefined,
+  key: TooltipRowKey
+): string {
+  if (isBuiltInKey(key)) return builtInFieldLabel(settings, key);
+  return TOOLTIP_ROW_DEFAULT_LABELS[key];
+}
+
+/**
+ * `project_tooltip_rows` → the shown rows, built-in keys in display order then
+ * field ids ascending, each once. Missing, empty or malformed reads as the
+ * default rows; `[]` is no row. Unknown keys and non-positive numbers are
+ * dropped (existence is not checked: callers skip ids they do not know).
+ */
+export function parseTooltipRows(value: string | null | undefined): TooltipRow[] {
+  if (!value) return [...DEFAULT_TOOLTIP_ROWS];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [...DEFAULT_TOOLTIP_ROWS];
+  }
+  if (!Array.isArray(parsed)) return [...DEFAULT_TOOLTIP_ROWS];
+  return canonicalRows(parsed);
+}
+
+function canonicalRows(items: Iterable<unknown>): TooltipRow[] {
+  const keys = new Set<TooltipRowKey>();
+  const ids = new Set<number>();
+  for (const item of items) {
+    if (isTooltipRowKey(item)) keys.add(item);
+    else if (typeof item === 'number' && Number.isInteger(item) && item > 0) ids.add(item);
+  }
+  return [...TOOLTIP_ROW_KEYS.filter((key) => keys.has(key)), ...[...ids].sort((a, b) => a - b)];
+}
+
+/**
+ * The canonical `project_tooltip_rows` value: compact JSON, built-in keys in
+ * display order then field ids ascending -- the bytes the server stores.
+ */
+export function tooltipRowsValue(rows: Iterable<TooltipRow>): string {
+  return JSON.stringify(canonicalRows(rows));
+}
+
+/**
+ * The project details' row gate: `row` is shown when listed in
+ * `project_tooltip_rows` and, for Customer, Sales PM and Volume, not hidden
+ * instance-wide (a hidden field is never shown; Confirmed never is hidden).
+ * Parses the settings once; the returned test is cheap per row.
+ */
+export function tooltipRowGate(
+  settings: InstanceSettings | null | undefined
+): (row: TooltipRow) => boolean {
+  const listed = new Set<TooltipRow>(parseTooltipRows(settings?.project_tooltip_rows));
+  const hidden = new Set<string>(parseHiddenFields(settings?.project_fields_hidden));
+  return (row) => listed.has(row) && (typeof row === 'number' || !hidden.has(row));
+}
+
+/** Whether the project details show `row` ({@link tooltipRowGate} for one row). */
+export function isTooltipRowShown(
+  settings: InstanceSettings | null | undefined,
+  row: TooltipRow
+): boolean {
+  return tooltipRowGate(settings)(row);
+}

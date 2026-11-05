@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
+
+from app.schemas.base import EmailAddress
 
 # ---------------------------------------------------------
 # Admin Auth Schemas
@@ -70,7 +72,7 @@ class TenantBase(BaseModel):
 
     name: str
     slug: str
-    admin_email: EmailStr = Field(alias="adminEmail")
+    admin_email: EmailAddress = Field(alias="adminEmail")
     company_name: str | None = Field(None, alias="companyName")
     plan: str | None = "standard"
     max_users: int | None = Field(50, alias="maxUsers")
@@ -91,7 +93,7 @@ class TenantUpdate(BaseModel):
 
     name: str | None = None
     company_name: str | None = Field(None, alias="companyName")
-    admin_email: EmailStr | None = Field(None, alias="adminEmail")
+    admin_email: EmailAddress | None = Field(None, alias="adminEmail")
     status: TenantStatus | None = None
     plan: str | None = None
     max_users: int | None = Field(None, alias="maxUsers")
@@ -168,7 +170,7 @@ class TenantCreateResponse(BaseModel):
 class TenantProvisionRequest(BaseModel):
     """Request to provision tenant database."""
 
-    admin_email: EmailStr | None = Field(None, alias="adminEmail")
+    admin_email: EmailAddress | None = Field(None, alias="adminEmail")
     admin_password: str | None = Field(None, alias="adminPassword", min_length=MIN_PASSWORD_LENGTH)
     # Fill the new database with the demo data set instead of the bare defaults.
     seed_demo_data: bool = Field(False, alias="seedDemoData")
@@ -189,7 +191,7 @@ class TenantProvisionResponse(BaseModel):
 class ResetAdminPasswordRequest(BaseModel):
     """Request to reset tenant admin password."""
 
-    email: EmailStr | None = None
+    email: EmailAddress | None = None
     password: str | None = Field(None, min_length=MIN_PASSWORD_LENGTH)
 
 
@@ -248,7 +250,7 @@ class SystemStatsResponse(BaseModel):
 class AdminUserCreate(BaseModel):
     """Create admin user request."""
 
-    email: EmailStr
+    email: EmailAddress
     password: str = Field(..., min_length=MIN_PASSWORD_LENGTH)
     name: str | None = None
     role: AdminRole = "admin"

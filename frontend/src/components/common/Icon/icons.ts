@@ -152,8 +152,30 @@ export { default as RepeatIcon } from '@mui/icons-material/Repeat';
 export { default as CommentIcon } from '@mui/icons-material/ChatBubbleOutline';
 /** Tenants */
 export { default as BuildingIcon } from '@mui/icons-material/ApartmentOutlined';
-/** Statistics */
+/** Statistics; a bar chart widget */
 export { default as BarChartIcon } from '@mui/icons-material/BarChartOutlined';
+/** The Dashboards view */
+export { default as DashboardIcon } from '@mui/icons-material/DashboardOutlined';
+/** A pie chart widget */
+export { default as PieChartIcon } from '@mui/icons-material/PieChartOutlined';
+/** A line chart widget */
+export { default as LineChartIcon } from '@mui/icons-material/ShowChartOutlined';
+/** A table widget */
+export { default as TableIcon } from '@mui/icons-material/TableChartOutlined';
+/** A KPI widget: one number */
+export { default as KpiIcon } from '@mui/icons-material/NumbersOutlined';
+/** A gauge widget: one value against a target */
+export { default as GaugeIcon } from '@mui/icons-material/SpeedOutlined';
+/** A heatmap widget: a grid of shaded cells */
+export { default as HeatmapIcon } from '@mui/icons-material/GridOnOutlined';
+/** A treemap widget: nested boxes */
+export { default as TreemapIcon } from '@mui/icons-material/ViewQuiltOutlined';
+/** A sankey widget: flows between two dimensions */
+export { default as SankeyIcon } from '@mui/icons-material/AccountTreeOutlined';
+/** Duplicate (a dashboard) */
+export { default as CopyIcon } from '@mui/icons-material/ContentCopyOutlined';
+/** Share (a dashboard with roles or everyone) */
+export { default as ShareIcon } from '@mui/icons-material/ShareOutlined';
 /** Disable */
 export { default as BanIcon } from '@mui/icons-material/BlockOutlined';
 /** Open in a new tab */

@@ -9,7 +9,10 @@ export {
   findCellIndex,
 } from './timeline';
 
-export type { TimelineCell, TimelineHeader } from './timeline';
+export type { CellEvent, TimelineCell, TimelineHeader } from './timeline';
+
+export { assignEventLanes, MAX_LANES } from './eventLanes';
+export type { EventRun } from './eventLanes';
 
 export {
   extractDependencies,

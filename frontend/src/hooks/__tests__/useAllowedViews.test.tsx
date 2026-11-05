@@ -20,7 +20,9 @@ describe('useAllowedViews', () => {
   it('lists every view for a user holding the view keys at two sites', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
     const { result } = renderHook(() => useAllowedViews());
-    expect(result.current.visible).toEqual(['gantt', 'kanban', 'work', 'staff', 'equipment', 'crosssite', 'archived']);
+    expect(result.current.visible).toEqual([
+      'gantt', 'kanban', 'work', 'dashboards', 'staff', 'equipment', 'crosssite', 'archived',
+    ]);
     expect(result.current.isAllowed('crosssite')).toBe(true);
   });
 
@@ -39,14 +41,14 @@ describe('useAllowedViews', () => {
     const withoutBoard = PERMISSION_KEYS.filter((key) => key !== 'views.kanban');
     useAppStore.setState({ currentUser: makeUser({ role: 'admin', permissions: withoutBoard, site_ids: [1, 2] }) });
     const { result } = renderHook(() => useAllowedViews());
-    expect(result.current.visible).toEqual(['gantt', 'work', 'staff', 'equipment', 'crosssite', 'archived']);
+    expect(result.current.visible).toEqual(['gantt', 'work', 'dashboards', 'staff', 'equipment', 'crosssite', 'archived']);
     expect(result.current.isAllowed('kanban')).toBe(false);
   });
 
   it('hides Cross-site while only one site is visible', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [2] }) });
     const { result } = renderHook(() => useAllowedViews());
-    expect(result.current.visible).toEqual(['gantt', 'kanban', 'work', 'staff', 'equipment', 'archived']);
+    expect(result.current.visible).toEqual(['gantt', 'kanban', 'work', 'dashboards', 'staff', 'equipment', 'archived']);
     expect(result.current.isAllowed('crosssite')).toBe(false);
   });
 
@@ -54,6 +56,20 @@ describe('useAllowedViews', () => {
     useAppStore.setState({ sites: [makeSite({ id: 1 })], currentUser: makeUser({ role: 'admin' }) });
     const { result } = renderHook(() => useAllowedViews());
     expect(result.current.visible).not.toContain('crosssite');
+  });
+
+  it('lists Dashboards after My Work with views.dashboards, and hides it without', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view', 'views.dashboards', 'views.staff'] }),
+    });
+    const { result, rerender } = renderHook(() => useAllowedViews());
+    expect(result.current.visible).toEqual(['gantt', 'work', 'dashboards', 'staff']);
+    expect(result.current.isAllowed('dashboards')).toBe(true);
+
+    useAppStore.setState({ currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'] }) });
+    rerender();
+    expect(result.current.visible).not.toContain('dashboards');
+    expect(result.current.isAllowed('dashboards')).toBe(false);
   });
 
   it('allows only the Gantt without a user', () => {

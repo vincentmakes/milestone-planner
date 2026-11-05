@@ -1,12 +1,37 @@
 /**
  * TimelineHeader
- * Displays the time period headers above the timeline
+ * Displays the time period headers above the timeline: the period row, the
+ * day / week / month labels, and the events row (`TimelineMarkers`: holiday
+ * lines, company-event bands and their panel, at every zoom). The header is
+ * `--timeline-header-total` high (23 + 28 + 15 px: the events row draws the
+ * header's bottom border); the left panes' headers read the same token, so
+ * their rows stay aligned.
  */
 
 import { memo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell, TimelineHeader as TimelineHeaderType } from '../utils';
+import { TimelineMarkers } from './TimelineMarkers';
 import styles from './TimelineHeader.module.css';
+
+/** `--event-color` for a cell whose first event has a colour */
+function eventColorStyle(cell: TimelineCell): React.CSSProperties | undefined {
+  return cell.companyEventColor
+    ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+    : undefined;
+}
+
+/**
+ * The label cell's title: the holiday name first, then every event of the
+ * cell joined by " · ", with " (n events)" when there are several;
+ * `undefined` when the cell has neither.
+ */
+function headerCellTitle(cell: TimelineCell): string | undefined {
+  const names = cell.companyEvents.map((event) => event.name);
+  const parts = cell.isBankHoliday && cell.bankHolidayName ? [cell.bankHolidayName, ...names] : names;
+  if (parts.length === 0) return undefined;
+  return names.length > 1 ? `${parts.join(' · ')} (${names.length} events)` : parts.join(' · ');
+}
 
 interface TimelineHeaderProps {
   headers: {
@@ -33,6 +58,8 @@ export const TimelineHeader = memo(function TimelineHeader({
   // Only show weekend/holiday highlighting in week and month views
   const showHighlighting = viewMode === 'week' || viewMode === 'month';
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  // The events row names the teams of the current site (events are loaded for it)
+  const siteId = useAppStore((s) => s.currentSite?.id);
 
   return (
     <div className={styles.header}>
@@ -78,7 +105,7 @@ export const TimelineHeader = memo(function TimelineHeader({
                   <div
                     key={`bg-${index}`}
                     className={`${styles.bgCell} ${bgClass}`}
-                    style={{ left: index * cellWidth, width: cellWidth }}
+                    style={{ left: index * cellWidth, width: cellWidth, ...eventColorStyle(cell) }}
                   />
                 );
               })}
@@ -107,18 +134,12 @@ export const TimelineHeader = memo(function TimelineHeader({
               textClass = styles.eventText;
             }
             
-            const tooltipText = cell.isBankHoliday 
-              ? cell.bankHolidayName 
-              : cell.isCompanyEvent 
-                ? cell.companyEventName 
-                : undefined;
-            
             return (
               <div
                 key={index}
                 className={`${styles.secondaryCell} ${textClass}`}
-                style={{ width: cellWidth }}
-                title={tooltipText}
+                style={{ width: cellWidth, ...eventColorStyle(cell) }}
+                title={headerCellTitle(cell)}
                 data-date={cell.dateStr}
                 data-date-end={cell.dateEnd || undefined}
               >
@@ -137,6 +158,15 @@ export const TimelineHeader = memo(function TimelineHeader({
           })}
         </div>
         
+        {/* Events row: the holiday / company-event strip and its panel, at
+            every zoom, below the day labels and above the bars */}
+        <div
+          className={styles.eventsRow}
+          style={{ '--cell-width': `${cellWidth}px` } as React.CSSProperties}
+        >
+          <TimelineMarkers cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
+        </div>
+
         {/* Spacer row to align with custom column headers in ProjectPanel */}
         {hasCustomColumns && (
           <div className={styles.customColumnSpacer} />

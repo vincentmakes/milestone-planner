@@ -212,12 +212,12 @@ def shot_gantt_with_staff(context: BrowserContext) -> None:
     use_quarter_view(page)
     expand_all_projects(page)
     click_today(page)
-    open_panel(page, "Staff")
+    open_panel(page, "Staff & Calendar")
     page.screenshot(path=str(OUT / "gantt-with-staff-panel.png"))
     log("[done] gantt-with-staff-panel.png")
     # Panel visibility persists in localStorage — close it again so later
     # shots (modals, What-If) capture a clean Gantt.
-    open_panel(page, "Staff")
+    open_panel(page, "Staff & Calendar")
     page.close()
 
 
@@ -267,9 +267,9 @@ def shot_vacations_view(context: BrowserContext) -> None:
     login(page)
     nav = page.locator('aside, nav').first
     try:
-        nav.get_by_role('button', name='Staff Overview', exact=True).click()
+        nav.get_by_role('button', name='Staff & Calendar', exact=True).click()
     except Exception:
-        page.click('button:has-text("Staff Overview")')
+        page.click('button:has-text("Staff & Calendar")')
     page.wait_for_timeout(1500)
     use_quarter_view(page)
     click_today(page)
@@ -538,9 +538,9 @@ def shot_assignment_overview(context: BrowserContext) -> None:
     # take half the height: close it for this shot.
     if page.get_by_text("Equipment Overview", exact=True).count() > 0:
         open_panel(page, "Equipment")
-    # (the sidebar's "Staff Overview" view entry is one match already)
-    if page.get_by_text("Staff Overview", exact=True).count() > 1:
-        open_panel(page, "Staff")
+    # (the sidebar's "Staff & Calendar" view entry is one match already)
+    if page.get_by_text("Staff & Calendar", exact=True).count() > 1:
+        open_panel(page, "Staff & Calendar")
     expand_all_projects(page)
     click_today(page)
     group = page.get_by_role("button", name="Collapse Charlie Clark's bookings")
@@ -612,6 +612,109 @@ def shot_date_picker(context: BrowserContext) -> None:
     page.close()
 
 
+def _open_dashboards(page: Page) -> None:
+    """Open the Dashboards view (a lazy chunk) and wait for the charts to draw."""
+    open_sidebar_item(page, "Dashboards")
+    page.locator("canvas").first.wait_for()
+    # ECharts animates its first draw; let it settle.
+    page.wait_for_timeout(2000)
+
+
+def shot_dashboards(context: BrowserContext) -> None:
+    """The Overview dashboard as Bob (superuser): four KPI tiles, then the
+    bar charts of booked weeks per project and per team by Confirmed."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_dashboards(page)
+    page.screenshot(path=str(OUT / "dashboards.png"))
+    log("[done] dashboards.png")
+    fresh.close()
+
+
+def shot_dashboard_builder(context: BrowserContext) -> None:
+    """The widget editor as Bob, on a new (unsaved) dashboard: a bar chart of
+    booked weeks by person this year, with the live preview beside the form.
+    Nothing is saved: the widget and the draft are cancelled afterwards."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_dashboards(page)
+    page.get_by_role("button", name="New", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Name").first.fill("Team workload")
+    dialog.get_by_role("button", name="Create dashboard", exact=True).click()
+    page.wait_for_timeout(600)
+    page.get_by_role("button", name="Add widget").first.click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Title *").fill("Booked weeks by person")
+    pick_in_searchable_select(page, "Dimension 1", "Person")
+    # The preview queries 400 ms after the last change, then draws.
+    dialog.locator("canvas").first.wait_for()
+    page.wait_for_timeout(2000)
+    page.screenshot(path=str(OUT / "dashboard-builder.png"))
+    log("[done] dashboard-builder.png")
+    fresh.close()
+
+
+def _dashboard_picker(page: Page):
+    """The toolbar's dashboard picker: a listbox button named "Dashboard ..."
+    (its label, then the chosen dashboard)."""
+    return page.get_by_role("button", name=re.compile("^Dashboard")).and_(
+        page.locator('button[aria-haspopup="listbox"]')
+    )
+
+
+def _pick_dashboard(page: Page, name: str) -> None:
+    """Open a dashboard through the toolbar picker (a SearchableSelect)."""
+    _dashboard_picker(page).click()
+    page.get_by_role("combobox", name="Find a dashboard").fill(name)
+    page.get_by_role("option", name=re.compile(f"^{re.escape(name)}")).first.click()
+    page.wait_for_timeout(1500)
+
+
+def shot_dashboard_share(context: BrowserContext) -> None:
+    """The Share dialog as Bob, on a dashboard shared with one site
+    (Winterthur), one team (Analytical Lab) and one person (Diana Davis).
+    The dashboard is created through the API first and deleted afterwards,
+    so the demo is left as it was."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    api = f"{BASE}/t/demo/api"
+    sites = fresh.request.get(f"{api}/sites").json()
+    teams = fresh.request.get(f"{api}/teams").json()
+    people = fresh.request.get(f"{api}/dashboards/shareable-users").json()
+    site_id = next(s["id"] for s in sites if s["name"] == "Winterthur")
+    team_id = next(t["id"] for t in teams if t["name"] == "Analytical Lab")
+    user_id = next(u["id"] for u in people if u["name"] == "Diana Davis")
+    created = fresh.request.post(
+        f"{api}/dashboards",
+        data={
+            "name": "Lab workload",
+            "description": "Booked time of the analytical lab, by project and month",
+            "visibility": "shared",
+            "role_ids": [],
+            "site_ids": [site_id],
+            "team_ids": [team_id],
+            "user_ids": [user_id],
+        },
+    ).json()
+    try:
+        _open_dashboards_empty(page)
+        _pick_dashboard(page, "Lab workload")
+        page.get_by_role("button", name="Share…", exact=True).click()
+        page.get_by_role("dialog").wait_for()
+        page.wait_for_timeout(800)
+        page.screenshot(path=str(OUT / "dashboard-share.png"))
+        log("[done] dashboard-share.png")
+    finally:
+        fresh.request.delete(f"{api}/dashboards/{created['id']}")
+        fresh.close()
+
+
+def _open_dashboards_empty(page: Page) -> None:
+    """Open the Dashboards view without waiting for a chart (the dashboard
+    shown first may have no widget)."""
+    open_sidebar_item(page, "Dashboards")
+    _dashboard_picker(page).wait_for()
+    page.wait_for_timeout(1500)
+
+
 def _sidebar_modal_shot(context: BrowserContext, label: str, outfile: str) -> None:
     page = context.new_page()
     login(page)
@@ -669,7 +772,7 @@ def shot_import_modal(context: BrowserContext) -> None:
 def shot_staff_overview(context: BrowserContext) -> None:
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     use_quarter_view(page)
     click_today(page)
@@ -802,7 +905,7 @@ def shot_vacation_modal(context: BrowserContext) -> None:
     """Vacation modal from an expanded staff row (capture only — never saved)."""
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     # Staff rows expand by clicking the row itself.
     page.get_by_text("Alice Anderson", exact=True).first.click()
@@ -815,10 +918,10 @@ def shot_vacation_modal(context: BrowserContext) -> None:
 
 
 def shot_staff_filter(context: BrowserContext) -> None:
-    """Role/skills filter dropdown in the Staff Overview header."""
+    """Role/skills filter dropdown in the Staff & Calendar header."""
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     page.get_by_role("button", name="Filter", exact=True).click()
     page.wait_for_timeout(500)
@@ -828,10 +931,10 @@ def shot_staff_filter(context: BrowserContext) -> None:
 
 
 def shot_bank_holidays(context: BrowserContext) -> None:
-    """Staff Overview with the Bank Holidays row expanded."""
+    """Staff & Calendar with the Bank Holidays row expanded."""
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     use_quarter_view(page)
     click_today(page)
@@ -1027,6 +1130,9 @@ TARGETS = {
     "defaults-settings": shot_defaults_settings,
     "my-work": shot_my_work,
     "my-assignments": shot_my_assignments,
+    "dashboards": shot_dashboards,
+    "dashboard-builder": shot_dashboard_builder,
+    "dashboard-share": shot_dashboard_share,
     "pending": shot_pending_assignment,
     "assignment-overview-row": shot_assignment_overview,
     "assign-staff": shot_assign_staff_modal,

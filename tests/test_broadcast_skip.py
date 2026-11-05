@@ -135,3 +135,16 @@ def test_no_todos_pattern_is_left():
 def test_the_sso_test_route_never_broadcasts():
     """POST /api/auth/sso/test only reads; ^/api/auth is skipped as a whole."""
     assert _resolve_entity_type("/api/auth/sso/test") is None
+
+
+@pytest.mark.parametrize("path", ["/api/dashboards/query", "/api/dashboards/12/data"])
+def test_dashboard_reads_are_skipped(path):
+    """A preview or a data load is a read sent as POST: no change:dashboard."""
+    assert _resolve_entity_type(path) is None
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/dashboards", "/api/dashboards/12", "/api/dashboards/query-builder"]
+)
+def test_dashboard_writes_broadcast(path):
+    assert _resolve_entity_type(path) == "dashboard"

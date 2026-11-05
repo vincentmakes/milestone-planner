@@ -11,6 +11,8 @@
  * and undo/redo must not change the Gantt behind a dialog.
  * - Ctrl+Z: Undo
  * - Ctrl+Y / Ctrl+Shift+Z: Redo
+ *   (Gantt view only: the undo history holds Gantt edits, so another view
+ *   never changes the chart unseen; the dashboard builder has its own keys)
  * - Home: Jump to today
  * - +/-: Zoom in/out
  */
@@ -35,6 +37,7 @@ export function useKeyboardShortcuts() {
   const activeModal = useUIStore((s) => s.activeModal);
   const openModalCount = useUIStore((s) => s.openModalCount);
 
+  const currentView = useViewStore((s) => s.currentView);
   const cellWidth = useViewStore((s) => s.cellWidth);
   const setCellWidth = useViewStore((s) => s.setCellWidth);
 
@@ -102,6 +105,8 @@ export function useKeyboardShortcuts() {
     }
 
     const ctrlOrMeta = e.ctrlKey || e.metaKey;
+    // Undo/redo act on the Gantt, so only there (keys left to the view).
+    if (currentView !== 'gantt') return;
 
     // Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y - Redo
     if (
@@ -128,6 +133,7 @@ export function useKeyboardShortcuts() {
     endPhantomSibling,
     triggerScrollToToday,
     triggerZoom,
+    currentView,
     cellWidth,
     setCellWidth,
     undo,

@@ -43,6 +43,19 @@ ANALYTICAL = "Analytical Method Transfer"
 QUALITY = "Quality System Upgrade"
 LEGACY = "Legacy Filtration Study"
 
+# Eight more projects for the dashboards (2.3.0): three finished, three running,
+# two planned, so the charts over last year, the last 12 months and all time
+# have a shape. Nothing in the docs' prose names them.
+ENZYME = "Enzyme Stability Study"
+REFERENCE = "Reference Standard Qualification"
+PACKAGING = "Packaging Line Validation"
+SOLVENT = "Solvent Recovery Pilot"
+IMPURITY = "Impurity Profiling"
+CLEANROOM = "Cleanroom Requalification"
+FERMENTATION = "Fermentation Media Screening"
+STABILITY = "Stability Chamber Upgrade"
+CANONICAL_PROJECTS = (CATALYST, BIOPROCESS, ANALYTICAL, QUALITY, LEGACY)
+
 ALICE = "alice.anderson@demo.local"
 BOB = "bob.brown@demo.local"
 CHARLIE = "charlie.clark@demo.local"
@@ -203,6 +216,10 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
     """
     d = DemoData(today=today, admin_email=admin_email)
     day = timedelta
+
+    def months(n: float) -> timedelta:
+        """About ``n`` months (30.44 days each), for the spans of the extra projects."""
+        return timedelta(days=round(n * 30.44))
 
     d.settings = [("instance_title", instance_title), ("fiscal_year_start", "1")]
     d.predefined_phases = list(PHASE_TYPES)
@@ -563,6 +580,105 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today + day(30),
             archived=True,
         ),
+        # Finished: they carry last year and the first months of the last 12.
+        project(
+            ENZYME,
+            FRANKFURT,
+            "Enzymix GmbH",
+            True,
+            today - months(16),
+            today - months(10),
+            pm=GEORGE,
+            sales_pm="K. Braun",
+            fields={"Project type": ["Customer"], "Area": ["Analytics", "QA"]},
+            teams=("Formulation",),
+        ),
+        project(
+            REFERENCE,
+            WINTERTHUR,
+            "Internal",
+            True,
+            today - months(14),
+            today - months(6),
+            pm=ALICE,
+            tags=("Tech Transfer",),
+            fields={"Project type": ["Internal"], "Area": ["Analytics", "QA"]},
+            teams=("Analytical Lab",),
+        ),
+        project(
+            PACKAGING,
+            FRANKFURT,
+            "Medipack AG",
+            True,
+            today - months(12),
+            today - months(2),
+            pm=FIONA,
+            tags=("GMP",),
+            fields={"Project type": ["Customer"], "Area": ["QA", "Process"]},
+            teams=("QA & Compliance",),
+        ),
+        # Running: started months ago, ending in the coming months.
+        project(
+            SOLVENT,
+            FRANKFURT,
+            "Chemtec Solutions",
+            True,
+            today - months(8),
+            today + months(3),
+            pm=GEORGE,
+            sales_pm="M. Keller",
+            tags=("Tech Transfer",),
+            fields={"Project type": ["Customer"], "Area": ["Process"]},
+            teams=("Formulation", "QA & Compliance"),
+        ),
+        project(
+            IMPURITY,
+            FRANKFURT,
+            "Helvetia Pharma",
+            False,
+            today - months(5),
+            today + months(6),
+            pm=FIONA,
+            sales_pm="S. Weber",
+            tags=("Critical", "GMP"),
+            fields={"Project type": ["Customer"], "Area": ["Analytics"]},
+            teams=("QA & Compliance",),
+        ),
+        project(
+            CLEANROOM,
+            WINTERTHUR,
+            "Internal",
+            True,
+            today - months(3),
+            today + months(1),
+            pm=BOB,
+            tags=("Critical",),
+            fields={"Project type": ["Internal"], "Area": ["QA"]},
+            teams=("Process Development",),
+        ),
+        # Planned: not confirmed yet.
+        project(
+            FERMENTATION,
+            FRANKFURT,
+            "Fermenta Biologics",
+            False,
+            today + months(1),
+            today + months(7),
+            pm=GEORGE,
+            fields={"Project type": ["Internal"], "Area": ["Process", "Analytics"]},
+            teams=("Formulation",),
+        ),
+        project(
+            STABILITY,
+            WINTERTHUR,
+            "Lumen Diagnostics",
+            False,
+            today + months(3),
+            today + months(9),
+            pm=ALICE,
+            fields={"Project type": ["Internal"], "Area": ["QA"]},
+            teams=("Analytical Lab", "Process Development"),
+        ),
     ]
 
     # Phases: the five templates back to back over the project; the first phase
@@ -600,6 +716,11 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
                 )
             )
             phase_window[(p["name"], ptype)] = (ps, pe)
+
+    # One late phase (the dashboards' Phases overdue): the Cleanroom trial
+    # ended three weeks ago and stays in progress, its report not signed off.
+    late = next(ph for ph in d.phases if (ph["project"], ph["type"]) == (CLEANROOM, "Trial"))
+    late.update(completion=80, status="in_progress")
 
     def subphase(
         proj: str,
@@ -640,6 +761,11 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         subphase(CATALYST, "Analytics", "Kinetics", 10, 12, order=1),
         subphase(QUALITY, "Preparation", "Gap analysis", 0, 8, order=0),
         subphase(QUALITY, "Preparation", "Training plan", 8, 6, order=1),
+        subphase(SOLVENT, "Trial", "Solvent screening", 0, 12, order=0),
+        subphase(SOLVENT, "Trial", "Recovery run", 14, 20, order=1),
+        subphase(SOLVENT, "Trial", "Pilot sign-off", 40, 1, milestone=True, order=2),
+        subphase(IMPURITY, "Analytics", "Method scouting", 0, 10, order=0),
+        subphase(IMPURITY, "Analytics", "Forced degradation", 12, 15, order=1),
     ]
 
     # Dependencies: successor ← predecessor, JSON `{id, type, lag, entity}` on
@@ -669,20 +795,21 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
 
     # Phase assignments: deterministic rotation through each site's active staff
     # (the pool excludes Edward, who is inactive). Alice is over-allocated for a
-    # week on Bioprocess via her project-level booking below.
+    # week on Bioprocess via her project-level booking below. The extra projects
+    # take a third allocation pattern, so the people's totals differ.
     wt_pool = [ALICE, BOB, CHARLIE, DIANA]
     ff_pool = [FIONA, GEORGE, HANNAH, DIANA]
     allocations = [50, 100, 75, 50, 25]
+    extra_allocations = [40, 80, 60, 30, 70]
     for pi, p in enumerate(p for p in d.projects if not p["archived"]):
         pool = wt_pool if p["site"] == WINTERTHUR else ff_pool
+        pattern = allocations if p["name"] in CANONICAL_PROJECTS else extra_allocations
         for ph in (x for x in d.phases if x["project"] == p["name"]):
             i = ph["sort_order"]
             first = pool[(pi + i) % len(pool)]
             second = pool[(pi + i + 2) % len(pool)]
             d.phase_assignments.append(
-                dict(
-                    project=p["name"], phase=ph["type"], staff=first, allocation=allocations[i % 5]
-                )
+                dict(project=p["name"], phase=ph["type"], staff=first, allocation=pattern[i % 5])
             )
             if i % 2 == 0:
                 d.phase_assignments.append(
@@ -704,6 +831,19 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(single, start_date=analytics_start + day(7), end_date=analytics_start + day(9)),
     ]
 
+    # Likewise on the Trial phase of Impurity Profiling: two stays of ten days.
+    impurity_trial, _ = phase_window[(IMPURITY, "Trial")]
+    at = next(
+        i
+        for i, a in enumerate(d.phase_assignments)
+        if (a["project"], a["phase"]) == (IMPURITY, "Trial")
+    )
+    single = d.phase_assignments[at]
+    d.phase_assignments[at : at + 1] = [
+        dict(single, start_date=impurity_trial + day(3), end_date=impurity_trial + day(12)),
+        dict(single, start_date=impurity_trial + day(25), end_date=impurity_trial + day(34)),
+    ]
+
     trial_start, _ = phase_window[(BIOPROCESS, "Trial")]
     d.project_assignments = [
         dict(
@@ -720,6 +860,36 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             allocation=50,
             start_date=trial_start,
             end_date=trial_start + day(6),
+        ),
+        # Project-level support on the extra projects, one per quarter of the
+        # last year, each by someone else.
+        dict(
+            project=PACKAGING,
+            staff=HANNAH,
+            allocation=30,
+            start_date=today - months(11.5),
+            end_date=today - months(9),
+        ),
+        dict(
+            project=REFERENCE,
+            staff=CHARLIE,
+            allocation=20,
+            start_date=today - months(9),
+            end_date=today - months(6.2),
+        ),
+        dict(
+            project=SOLVENT,
+            staff=GEORGE,
+            allocation=40,
+            start_date=today - months(6),
+            end_date=today - months(3),
+        ),
+        dict(
+            project=CLEANROOM,
+            staff=ALICE,
+            allocation=25,
+            start_date=today - months(2.8),
+            end_date=today - day(3),
         ),
     ]
     d.subphase_assignments = [
@@ -762,6 +932,19 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             start_date=today + day(3),
             end_date=today + day(9),
         ),
+        # Earlier bookings of the finished and running extra projects.
+        dict(
+            project=REFERENCE,
+            equipment="Centrifuge",
+            start_date=today - months(10),
+            end_date=today - months(10) + day(4),
+        ),
+        dict(
+            project=SOLVENT,
+            equipment="HPLC System 2",
+            start_date=today - months(4),
+            end_date=today - months(4) + day(6),
+        ),
     ]
     d.equipment_blocks = [
         dict(
@@ -787,7 +970,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         ),
     ]
 
-    for year in (today.year, today.year + 1):
+    # Last year too: the dashboards count last year's working days.
+    for year in (today.year - 1, today.year, today.year + 1):
         for when, name in swiss_holidays(year):
             d.bank_holidays.append(dict(site=WINTERTHUR, date=when, name=name, year=year))
         for when, name in german_holidays(year):
@@ -825,6 +1009,29 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             # Limited to the Formulation team: a plain event like this one still
             # shows to the whole site; only a closure would spare non-members.
             teams=[(FRANKFURT, "Formulation")],
+        ),
+        # Two more on the audit's first day, so the timelines show several
+        # events stacked on one day (and a team-limited one among them). Their
+        # colours are swatches of the Settings event form (Cyan, Purple), so
+        # the demo can be edited there without losing them, and neither is the
+        # colour of a Winterthur team.
+        dict(
+            name="Lab safety walk-through",
+            sites=[WINTERTHUR],
+            date=today + day(12),
+            end_date=None,
+            color="#06b6d4",
+            counts_as_unavailable=False,
+            teams=[],
+        ),
+        dict(
+            name="Instrument calibration day",
+            sites=[WINTERTHUR],
+            date=today + day(12),
+            end_date=None,
+            color="#8b5cf6",
+            counts_as_unavailable=False,
+            teams=[(WINTERTHUR, "Analytical Lab")],
         ),
     ]
 
@@ -871,6 +1078,127 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=today + day(52),
             description="Family holiday",
             type="Holidays",
+        ),
+    ]
+
+    # The dashboards' capacity and equipment measures (2.3.0), appended after
+    # the rows above. A week off for the two most booked people, this quarter:
+    # Bob was ill last week and Charlie takes a holiday week next month, so
+    # Process Development runs over capacity while the other teams do not.
+    d.vacations += [
+        dict(
+            staff=BOB,
+            start_date=today - day(10),
+            end_date=today - day(4),
+            description="Sick leave",
+            type="Illness",
+        ),
+        dict(
+            staff=CHARLIE,
+            start_date=today + day(21),
+            end_date=today + day(27),
+            description="Holiday week",
+            type="Holidays",
+        ),
+    ]
+    # Instrument time over the last twelve months and the next six: every
+    # instrument and type, one to three weeks each, inside the project's
+    # dates and at its site; the Mass Spectrometer is double-booked one week.
+    d.equipment_bookings += [
+        dict(
+            project=ENZYME,
+            equipment="Freeze Dryer",
+            start_date=today - months(11),
+            end_date=today - months(11) + day(13),
+        ),
+        dict(
+            project=REFERENCE,
+            equipment="PCR Thermocycler",
+            start_date=today - months(9),
+            end_date=today - months(9) + day(20),
+        ),
+        dict(
+            project=PACKAGING,
+            equipment="Plate Reader",
+            start_date=today - months(8),
+            end_date=today - months(8) + day(13),
+        ),
+        dict(
+            project=SOLVENT,
+            equipment="Mass Spectrometer",
+            start_date=today - months(6),
+            end_date=today - months(6) + day(6),
+        ),
+        # The same week as the Solvent run → a second overlap.
+        dict(
+            project=IMPURITY,
+            equipment="Mass Spectrometer",
+            start_date=today - months(6) + day(2),
+            end_date=today - months(6) + day(8),
+        ),
+        dict(
+            project=CLEANROOM,
+            equipment="Biosafety Cabinet",
+            start_date=today - months(2),
+            end_date=today - months(2) + day(13),
+        ),
+        dict(
+            project=QUALITY,
+            equipment="HPLC System 2",
+            start_date=today - day(45),
+            end_date=today - day(31),
+        ),
+        dict(
+            project=CATALYST,
+            equipment="Mass Spectrometer",
+            start_date=today - day(20),
+            end_date=today - day(7),
+        ),
+        dict(
+            project=BIOPROCESS,
+            equipment="Biosafety Cabinet",
+            start_date=today + day(30),
+            end_date=today + day(50),
+        ),
+        dict(
+            project=ANALYTICAL,
+            equipment="Centrifuge",
+            start_date=today + day(40),
+            end_date=today + day(46),
+        ),
+        dict(
+            project=FERMENTATION,
+            equipment="Freeze Dryer",
+            start_date=today + months(2),
+            end_date=today + months(2) + day(20),
+        ),
+        dict(
+            project=IMPURITY,
+            equipment="HPLC System 2",
+            start_date=today + months(2) + day(7),
+            end_date=today + months(2) + day(16),
+        ),
+        dict(
+            project=STABILITY,
+            equipment="PCR Thermocycler",
+            start_date=today + months(4),
+            end_date=today + months(4) + day(13),
+        ),
+    ]
+    d.equipment_blocks += [
+        dict(
+            equipment="Centrifuge",
+            start_date=today - months(11),
+            end_date=today - months(11) + day(4),
+            reason="defect",
+            description="Rotor replacement",
+        ),
+        dict(
+            equipment="HPLC System 2",
+            start_date=today + months(3),
+            end_date=today + months(3) + day(4),
+            reason="maintenance",
+            description="Pump seal service",
         ),
     ]
 
@@ -1042,4 +1370,5 @@ __all__ = [
     "swiss_holidays",
     "german_holidays",
     "PHASE_TYPES",
+    "CANONICAL_PROJECTS",
 ]

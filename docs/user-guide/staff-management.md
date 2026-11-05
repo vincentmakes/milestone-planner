@@ -1,11 +1,11 @@
 # Staff Management
 
-The **Staff Overview** provides a timeline view centered on people rather than projects. It shows each staff member's assignments, availability, and time off.
+The **Staff & Calendar** view is a timeline centered on people rather than projects. It shows each staff member's assignments, availability, and time off.
 
-![Staff Overview with allocation percentages and availability](../assets/screenshots/staff-overview.png){ loading=lazy }
+![Staff & Calendar view with allocation percentages and availability](../assets/screenshots/staff-overview.png){ loading=lazy }
 
 !!! tip
-    People who can edit projects (admins and superusers by default) and project managers can dock the Staff Overview directly below the Gantt chart via the **Panels** button — see [Resource Panels](gantt-charts.md#resource-panels).
+    People who can edit projects (admins and superusers by default) and project managers can dock the Staff & Calendar view directly below the Gantt chart via the **Panels** button — see [Resource Panels](gantt-charts.md#resource-panels).
 
 ## Staff List Panel
 
@@ -26,6 +26,7 @@ The right side shows a horizontal timeline with:
 - **Absence blocks** — Drawn in the color of their [absence type](vacations.md#absence-types). Only types that count as unavailable reduce capacity; a Home Office day is shown but leaves the person available
 - **Workload indicator** — Thin bar showing total utilization level
 - **Site closures** — Company events marked as closures make the staff of their sites unavailable; see [below](#site-closures-in-the-workload)
+- **Event strip** — The thin strip under the day labels of the timeline header lists every bank holiday and company event of a day, as on the [Gantt chart](gantt-charts.md#holidays-and-events-on-the-timeline)
 - **Bank holidays and company events** — Expandable rows at the bottom. Admins and superusers can click an entry to edit it, or **+** to add one, in [Settings](settings.md#bank-holidays); changes appear for other users straight away
 
 ## Site Closures in the Workload
@@ -40,17 +41,17 @@ Someone who belongs to several sites is unavailable as soon as **one** of their 
 
 A closure can be limited to [teams](settings.md#teams): then only the members of those teams are unavailable at that site, and everyone else keeps their normal availability. The event still appears in the Company Events row (unless the header team filter leaves its teams out), but the calendar columns are not shaded as closed.
 
-With the header [team filter](settings.md#team-filter) set, the Staff Overview lists only the people of the ticked teams (or those without a team, with **(No team)**) and only the company events open to them.
+With the header [team filter](settings.md#team-filter) set, the Staff & Calendar view lists only the people of the ticked teams (or those without a team, with **(No team)**) and only the company events open to them.
 
 ## Assigning Staff
 
 Admins and superusers (any role with **Assign and manage anyone**) can assign anyone to any project at the sites they can see. The **project manager** of a project can do the same on that project. Everyone else can [add themselves](#adding-yourself-to-a-project) — directly, or with approval when their role requires it.
 
-New assignments (drag-and-drop, **Assign Staff**, **Assign me…**) can't be created while [What-If mode](what-if-planning.md) is active; existing ones can still be edited, moved and removed there. What-If is entered from the Gantt chart, and the Staff Overview itself is not reachable while a plan is open.
+New assignments (drag-and-drop, **Assign Staff**, **Assign me…**) can't be created while [What-If mode](what-if-planning.md) is active; existing ones can still be edited, moved and removed there. What-If is entered from the Gantt chart, and the Staff & Calendar view itself is not reachable while a plan is open.
 
 ### Method 1: Drag & Drop
 
-1. Grab a staff member by the drag handle in the Staff Overview or the resource panel
+1. Grab a staff member by the drag handle in the Staff & Calendar view or the resource panel
 2. Drag them onto a project/phase/subphase bar on the Gantt timeline
 3. On a project bar, a five-day assignment at the person's maximum capacity is created where you drop it; on a phase or subphase bar, the person is booked at their maximum capacity with the phase's dates as the booking's own (an [unlinked booking](gantt-charts.md#bookings-on-phases-and-subphases), like the assignment dialog's default; click its pin to make it follow the phase). Dropping someone who is already on the phase [places a second booking](gantt-charts.md#bookings-on-phases-and-subphases) for them. Adjust the dates or allocation afterwards
 
@@ -81,7 +82,7 @@ New assignments (drag-and-drop, **Assign Staff**, **Assign me…**) can't be cre
 With the default roles, anyone — including users with the plain **User** role — can book their own time on a project, change it and withdraw it again, without being able to assign other people. An administrator can change that per role in [Settings → Roles](settings.md#roles-permissions): booking yourself, changing your booking and removing it can each be allowed, need approval (see [below](#booking-yourself-when-approval-is-required)) or be denied — then the matching menu entries and buttons are hidden.
 
 - **Right-click** a project, phase or subphase in the Gantt chart and choose **Assign me…**. The assignment dialog opens with **You** as the staff member and the allocation preset to your own maximum capacity: adjust the percentage, add an optional comment, then click **Assign me**. On a project the dates are the project's and can be changed; on a phase or subphase the booking gets its own dates, the phase's, which you can narrow inside it (turn *Follow the phase dates* on to pin it to the phase instead). Saving without changing anything books you at your maximum capacity, for the item's dates. Once you are on a phase or subphase the entry reads **Assign me again…**: the dialog says you are already booked, and unless you turn the switch off to pick the dates, the second booking is [placed automatically](gantt-charts.md#bookings-on-phases-and-subphases) (the second half of your booking that covers the whole phase, or the largest free stretch); if it does not fit, the dialog shows why and stays open. On a project it reads **Assigned to me** (greyed out) once you are on it
-- **Drag your own card** from the Staff Overview or the resource panel onto a project, phase or subphase bar — on a project this creates a five-day assignment at your maximum capacity where you drop it (in quarter and year views, starting at the day under the pointer); on a phase or subphase it books you with the phase's dates as your own (unlinked; dropping again places a second booking). Only your own card can be dragged
+- **Drag your own card** from the Staff & Calendar view or the resource panel onto a project, phase or subphase bar — on a project this creates a five-day assignment at your maximum capacity where you drop it (in quarter and year views, starting at the day under the pointer); on a phase or subphase it books you with the phase's dates as your own (unlinked; dropping again places a second booking). Only your own card can be dragged
 - On the [Kanban board](kanban-board.md#joining-a-card-yourself), open a card and click **Join this card**
 - On **your own** assignment row you can change the allocation with the slider, move or resize your own assignment bar (on a phase or subphase once it has [its own dates](gantt-charts.md#bookings-on-phases-and-subphases)), and remove the assignment. **Edit Assignment** in its right-click menu opens the assignment dialog with the staff member fixed to **You**
 

@@ -48,7 +48,7 @@
   justify-content: space-between;
   /* Keeps the count pill off the Filter trigger in a narrow header */
   gap: 0.75rem;
-  height: 52px;
+  height: var(--timeline-header-total); /* Match the timeline header */
   padding: 0 1rem;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);

@@ -31,6 +31,8 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
   }, ref) {
     
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+    // Background tints are week/month only; the event strip sits in the
+    // header's events row (TimelineHeader)
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
     
@@ -123,35 +125,6 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
               }
             })}
           </div>
-          
-          {/* Holiday and event tooltip overlay - sits above all content */}
-          {showHighlighting && (
-            <div className={styles.holidayTooltipOverlay}>
-              {cells.map((cell, index) => {
-                if (cell.isCompanyEvent) {
-                  return (
-                    <div
-                      key={`event-tooltip-${index}`}
-                      className={styles.eventTooltipZone}
-                      style={{ left: index * cellWidth, width: cellWidth }}
-                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
-                    />
-                  );
-                }
-                if (cell.isBankHoliday) {
-                  return (
-                    <div
-                      key={`holiday-tooltip-${index}`}
-                      className={styles.holidayTooltipZone}
-                      style={{ left: index * cellWidth, width: cellWidth }}
-                      data-tooltip={cell.bankHolidayName || 'Holiday'}
-                    />
-                  );
-                }
-                return null;
-              })}
-            </div>
-          )}
         </div>
       </div>
     );

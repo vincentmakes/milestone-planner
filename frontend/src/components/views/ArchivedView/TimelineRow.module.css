@@ -40,16 +40,10 @@
 
 .bankHoliday {
   background: rgba(249, 115, 22, 0.12);
-  pointer-events: auto;
-  cursor: default;
-  z-index: 100;
 }
 
 .companyEvent {
   background: color-mix(in srgb, var(--event-color, #ef4444) 15%, transparent);
-  pointer-events: auto;
-  cursor: default;
-  z-index: 100;
 }
 
 /* Site closure (staff unavailable) - stronger hatched tint in the event colour */
@@ -59,34 +53,6 @@
     color-mix(in srgb, var(--event-color, #ef4444) 32%, transparent) 0 4px,
     color-mix(in srgb, var(--event-color, #ef4444) 16%, transparent) 4px 8px
   );
-}
-
-/* CSS-based fast tooltip for holidays/events */
-.bankHoliday[data-tooltip]::after,
-.companyEvent[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  white-space: nowrap;
-  z-index: 10000;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.05s, visibility 0.05s;
-  pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(100% + 4px);
-}
-
-.bankHoliday:hover[data-tooltip]::after,
-.companyEvent:hover[data-tooltip]::after {
-  opacity: 1;
-  visibility: visible;
 }
 
 .today {

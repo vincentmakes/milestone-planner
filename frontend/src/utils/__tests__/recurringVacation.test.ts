@@ -18,6 +18,7 @@ import {
   defaultAbsenceTypeId,
   guessAbsenceTypeId,
   cleanVacationDescription,
+  parseRecurringPattern,
 } from '../recurringVacation';
 import type { AbsenceType, Vacation } from '@/types';
 
@@ -115,5 +116,49 @@ describe('absence type helpers', () => {
     expect(cleanVacationDescription('[R:1,3] Part-time')).toBe('Part-time');
     expect(cleanVacationDescription('Annual leave')).toBe('Annual leave');
     expect(cleanVacationDescription(undefined)).toBe('');
+  });
+});
+
+/**
+ * The same table as PATTERN_CASES in tests/test_absence_patterns.py: the
+ * server parses `[R:d,…]` (0 = Sunday) for the dashboards' capacity exactly
+ * like this parser does for the heatmap. Change one, change both.
+ */
+const PATTERN_CASES: [string | undefined, number[] | null][] = [
+  ['[R:1,3] Home office', [1, 3]],
+  ['[R:1,3]', [1, 3]],
+  ['[R:1,3]Home office', [1, 3]],
+  ['[R:3,1] Part-time', [1, 3]],
+  ['[R:0] Sunday', [0]],
+  ['[R:1] Monday', [1]],
+  ['[R:6,0] Weekend', [0, 6]],
+  ['[R:0,1,2,3,4,5,6] Every day', [0, 1, 2, 3, 4, 5, 6]],
+  ['[R:5] [R:1] Two prefixes', [5]],
+  [undefined, null],
+  ['', null],
+  ['Holidays', null],
+  [' [R:1] Leading space', null],
+  ['Home office [R:1]', null],
+  ['[R:7] Out of range', null],
+  ['[R:1,7] One out of range', null],
+  ['[R:13] Two digits', null],
+  ['[R:] Empty', null],
+  ['[R:1,] Trailing comma', null],
+  ['[R:,1] Leading comma', null],
+  ['[R: 1] Space', null],
+  ['[R:1, 3] Space after comma', null],
+  ['[r:1] Lower case', null],
+  ['[R:1;3] Semicolon', null],
+  ['[R:1,3 Unclosed', null],
+  ['R:1 No brackets', null],
+];
+
+describe('mirror of app/services/absence_patterns.py', () => {
+  it.each(PATTERN_CASES)('parses %j as %j', (description, days) => {
+    expect(parseRecurringPattern(description)?.daysOfWeek ?? null).toEqual(days);
+  });
+
+  it('holds the whole shared table', () => {
+    expect(PATTERN_CASES).toHaveLength(26);
   });
 });

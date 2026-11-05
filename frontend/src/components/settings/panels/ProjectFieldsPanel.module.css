@@ -1,9 +1,68 @@
 /* ProjectFieldsPanel (Settings hub > Project fields) */
 
 .container {
+  /* The columns every row shares, so they line up under the header: field, label / type, format, dialog, gantt, actions */
+  --pf-cols: 7rem minmax(8rem, 1fr) 6rem 5rem 5rem 5.75rem;
+  /* The preview sits beside the list when the panel (not the window) is wide enough */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+/* The blocks, then the preview under them; side by side from 66rem of panel width */
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.preview {
+  min-width: 0;
+}
+
+/* Sticky against the Settings hub's scrolling content; align-self keeps it from stretching */
+@container (min-width: 66rem) {
+  .layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .blocks {
+    flex: 1 1 0;
+  }
+
+  .preview {
+    flex: 0 0 20rem;
+    position: sticky;
+    top: 1rem;
+    align-self: flex-start;
+    max-height: calc(100vh - 6rem);
+    overflow: auto;
+  }
+}
+
+/* The description and the save status, which keeps its width (no layout shift) */
+.topRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.status {
+  flex: 0 0 auto;
+  min-width: 5rem;
+  text-align: right;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
 }
 
 .description {
@@ -55,13 +114,138 @@
   color: var(--text-muted);
 }
 
+/* The shared grid: the column header, the built-in rows and the custom field rows */
+
+.columnHeader,
+.builtInRow,
+.fieldRow {
+  display: grid;
+  grid-template-columns: var(--pf-cols);
+  column-gap: 0.75rem;
+  row-gap: 0.5rem;
+  align-items: center;
+}
+
+/* Matches the rows' padding and border so its columns sit over theirs */
+.columnHeader {
+  padding: 0 0.75rem 0.25rem;
+  border: 1px solid transparent;
+  font-size: var(--font-size-sm);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.columnHeader > .colProject,
+.columnHeader > .colGantt {
+  text-align: center;
+}
+
+/* Above the phone width the lead's children are cells of the row's grid; below it, one wrapping line */
+.lead {
+  display: contents;
+}
+
+/* The columns, by the cell that sits in each */
+.builtInName,
+.colName {
+  grid-column: 1;
+}
+
+.colLabel {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.colFormat {
+  grid-column: 3;
+  min-width: 0;
+}
+
+.colProject {
+  grid-column: 4;
+  justify-self: center;
+}
+
+.colGantt {
+  grid-column: 5;
+  justify-self: center;
+}
+
+.colActions {
+  grid-column: 6;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* A custom field's name column: the handle and the name; while renaming, the input spans the name, label and format columns */
+.colName {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.colNameEditing {
+  grid-column: 1 / 4;
+}
+
+/* A custom field's type pill, with its items count on the same line */
+.colType {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* A pill with no format beside it (every type but Number) may use the Format column's room, so "Multi-select dropdown · 2 items" fits */
+.colTypeWide {
+  grid-column: 2 / 4;
+}
+
+.typeMeta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.typeMeta::before {
+  content: '·';
+  margin-right: 0.5rem;
+}
+
+/* A full-width line under a row: hints, the Volume preview, a field's edit form */
+.rowNote {
+  grid-column: 1 / -1;
+}
+
+/* "Always" / "—" in a switch column, a number field's format in the Format column */
+.slotText {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* Names the slot on phones, like the switches' captions */
+.slotCaption {
+  display: none;
+}
+
+/* A switch in a column: label-less above the phone width, its caption names it below */
+.builtInRow .cellSwitch,
+.fieldRow .cellSwitch {
+  gap: 0;
+}
+
+.switchCaption {
+  display: none;
+}
+
 /* Built-in fields */
 
 .builtInRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
   padding: 0.5rem 0.75rem;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
@@ -70,32 +254,26 @@
 
 .builtInName {
   flex: 0 0 7rem;
+  min-width: 0;
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
-}
-
-.builtInLabel {
-  flex: 1 1 12rem;
-  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .builtInHint {
-  flex: 1 1 100%;
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
-.saveRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.saveRow .hint {
-  margin-right: auto;
+/* "Also in the Gantt details": the rows that are not fields */
+.subCaption {
+  padding: 0.5rem 0.75rem 0.125rem;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Custom fields and items */
@@ -153,7 +331,8 @@
   opacity: 0.5;
 }
 
-.item:hover > .mainRow > .dragHandle {
+.item:hover > .mainRow > .dragHandle,
+.item:hover > .fieldRow .dragHandle {
   opacity: 1;
 }
 
@@ -312,6 +491,33 @@
   gap: 0.5rem;
 }
 
+/* In the Volume row the Format column's header names the picker: its label is for screen readers (phones show it) */
+.builtInRow .format {
+  position: relative;
+}
+
+.builtInRow .format > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.builtInRow .format > :last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The edit line of a custom field: its Format picker and preview (a number field), then Cancel / Save */
+.editLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
 /* The edit form of a number field: the Format picker and its preview, under the name */
 .formatEdit {
   display: flex;
@@ -329,5 +535,75 @@
 
   .items {
     margin-left: 0;
+  }
+}
+
+/* Phones: the name and label take the whole line, the switches (captioned) and actions go under it, wrapping when they do not fit */
+@media (max-width: 640px) {
+  .columnHeader {
+    display: none;
+  }
+
+  .builtInRow,
+  .fieldRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+  }
+
+  .lead {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    min-width: 0;
+  }
+
+  .rowNote {
+    flex: 1 1 100%;
+  }
+
+  .colActions {
+    margin-left: auto;
+  }
+
+  .colName {
+    flex: 1 1 10rem;
+  }
+
+  .colLabel {
+    flex: 1 1 12rem;
+  }
+
+  .colFormat {
+    flex: 0 0 auto;
+  }
+
+  .builtInRow .format > label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+
+  .builtInRow .format > :last-child {
+    flex: 0 0 auto;
+  }
+
+  .slotCaption {
+    display: inline;
+  }
+
+  .builtInRow .cellSwitch,
+  .fieldRow .cellSwitch {
+    gap: 0.5rem;
+  }
+
+  .switchCaption {
+    display: inline;
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
   }
 }

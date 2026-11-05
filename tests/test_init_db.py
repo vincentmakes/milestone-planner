@@ -73,6 +73,12 @@ class FakePg:
     async def fetchrow(self, sql, *args):
         return self.server.admin_row
 
+    async def fetch(self, sql, *args):
+        self.executed.append((sql, args))
+        if "information_schema.tables" in sql:
+            return [(t,) for t in self.server.tables]
+        raise AssertionError(f"unexpected fetch: {sql}")
+
     async def execute(self, sql, *args):
         self.executed.append((sql, args))
         if self.server.fail_on and self.server.fail_on in sql:
@@ -92,8 +98,11 @@ class FakePg:
 
 
 class FakeServer:
-    def __init__(self, databases=(), roles=(), admin_row=None, has_must_change_column=True):
+    def __init__(
+        self, databases=(), roles=(), admin_row=None, has_must_change_column=True, tables=()
+    ):
         self.databases = set(databases)
+        self.tables = tuple(tables)  # tables already in the tenant database
         self.roles = set(roles)
         self.admin_row = admin_row
         self.has_must_change_column = has_must_change_column
@@ -367,8 +376,13 @@ async def test_tenant_schema_and_seed_with_configured_password(monkeypatch):
         "app_user",
         "app_pw",
     )
-    assert tenant.sql()[0] == "-- SCHEMA"
-    seed.assert_awaited_once_with(tenant, "admin@milestone.local", "hashed:Tenant-Pass-1")
+    # The dashboards probe, then the schema.
+    assert "information_schema.tables" in tenant.sql()[0]
+    assert tenant.sql()[1] == "-- SCHEMA"
+    # A fresh database: the run creates the dashboards tables, so it seeds them.
+    seed.assert_awaited_once_with(
+        tenant, "admin@milestone.local", "hashed:Tenant-Pass-1", seed_dashboards=True
+    )
     assert tenant.ran("INSERT INTO settings (key, value)")
     assert tenant.closed
 
@@ -388,7 +402,39 @@ async def test_tenant_schema_generates_a_password_when_unset(capsys):
     assert seed.await_args.args[2] == "hashed:Auto-Gen-7"
     assert "auto-generated" in capsys.readouterr().out
     # The real tenant schema was applied.
-    assert "CREATE TABLE IF NOT EXISTS users" in server.conn("milestone_dev").sql()[0]
+    assert "CREATE TABLE IF NOT EXISTS users" in server.conn("milestone_dev").sql()[1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tables", "seeds"),
+    [
+        ((), True),
+        (("dashboards", "dashboard_widgets"), True),
+        (("dashboards", "dashboard_roles", "dashboard_widgets"), False),
+    ],
+    ids=["fresh-or-2.0", "partial", "already-there"],
+)
+async def test_tenant_dashboards_are_seeded_only_by_the_run_creating_them(tables, seeds):
+    """AUTO_INIT_DB re-applies the schema on every start: the base dashboard
+    and the dashboard key grants come only with the run that creates the
+    tables, so an Overview or a key an admin removed never comes back."""
+    server = FakeServer(databases={"milestone_dev"}, tables=tables)
+    seed = AsyncMock()
+    with (
+        server.patch(),
+        patch("app.services.tenant_provisioner.run_seed_data", seed),
+        patch("app.services.encryption.hash_user_password", return_value="h"),
+        patch("app.services.tenant_provisioner.get_tenant_schema_sql", return_value="-- SCHEMA"),
+    ):
+        await init_db.apply_tenant_schema(settings())
+
+    assert seed.await_args.kwargs == {"seed_dashboards": seeds}
+    # Probed before the schema creates the tables.
+    sql = server.conn("milestone_dev").sql()
+    assert sql.index("-- SCHEMA") > next(
+        i for i, s in enumerate(sql) if "information_schema.tables" in s
+    )
 
 
 @pytest.mark.asyncio

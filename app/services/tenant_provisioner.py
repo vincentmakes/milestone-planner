@@ -14,7 +14,9 @@ import asyncpg
 
 from app.config import get_settings
 from app.models.card_comment import COMMENT_ENTITY_TYPES
+from app.models.dashboard import DASHBOARD_WIDGET_KINDS
 from app.scripts.demo_data import build_demo
+from app.services.dashboard_seed import base_dashboard_rows
 from app.services.demo_seed import insert_demo_data
 from app.services.encryption import generate_password, hash_user_password
 from app.services.permissions import (
@@ -23,6 +25,7 @@ from app.services.permissions import (
     SYSTEM_ROLES,
     build_default_role_permissions_sql,
 )
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -1298,6 +1301,343 @@ STALE_APPROVAL_POINTER_CLEANUP_SQL: tuple[str, ...] = tuple(
 )
 
 
+# --- Dashboards (add_dashboards.sql, 2.3.0) ---------------------------------
+# KPI and chart dashboards: the dashboards, the roles a dashboard is shared
+# with, and its widgets (the metric query, display options and grid layout as
+# JSON text). dashboards.owner_id references users and dashboard_roles.role_id
+# references roles, so the block follows both tables in every DDL source. At
+# most one default dashboard (partial unique index dashboards_one_default,
+# created before any seed insert: the seed's ON CONFLICT names it). One
+# statement per constant: the auto-migration executes them one at a time
+# (asyncpg runs a single statement per call); setup_databases.sql, the
+# template and migrations/add_dashboards.sql carry the same text
+# (tests/test_dashboards_schema.py).
+DASHBOARDS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboards (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      visibility VARCHAR(10) NOT NULL,
+      is_default BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT dashboards_visibility_check
+        CHECK (visibility IN ('private', 'shared', 'everyone'))
+    )"""
+
+DASHBOARD_ROLES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_roles (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, role_id)
+    )"""
+
+# The widget kinds (DASHBOARD_WIDGET_KINDS, app/models/dashboard.py). The ORM,
+# the four CREATE TABLE dashboard_widgets sources and the widening below
+# (DASHBOARD_WIDGET_KIND_CHECK_SQL) spell the same CHECK.
+DASHBOARD_WIDGET_KIND_CHECK = (
+    "kind IN (" + ", ".join(f"'{k}'" for k in DASHBOARD_WIDGET_KINDS) + ")"
+)
+
+DASHBOARD_WIDGETS_TABLE_SQL = f"""
+    CREATE TABLE IF NOT EXISTS dashboard_widgets (
+      id SERIAL PRIMARY KEY,
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      kind VARCHAR(12) NOT NULL,
+      title VARCHAR(120) NOT NULL,
+      query TEXT NOT NULL,
+      options TEXT NOT NULL DEFAULT '{{}}',
+      layout TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      CONSTRAINT dashboard_widgets_kind_check
+        CHECK ({DASHBOARD_WIDGET_KIND_CHECK})
+    )"""
+
+DASHBOARDS_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS dashboards_one_default "
+    "ON dashboards(is_default) WHERE is_default",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_roles_role ON dashboard_roles(role_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_dashboard ON dashboard_widgets(dashboard_id)",
+)
+
+DASHBOARDS_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    DASHBOARDS_TABLE_SQL,
+    DASHBOARD_ROLES_TABLE_SQL,
+    DASHBOARD_WIDGETS_TABLE_SQL,
+    *DASHBOARDS_INDEX_STATEMENTS,
+)
+
+DASHBOARD_TABLES: tuple[str, ...] = ("dashboards", "dashboard_roles", "dashboard_widgets")
+
+DASHBOARDS_SCHEMA_SQL = ";\n".join(DASHBOARDS_SCHEMA_STATEMENTS) + ";"
+
+# Probe of the dashboards auto-migration step: the step (schema, the two base
+# dashboards, permission backfill) runs only while a table is missing.
+DASHBOARDS_PROBE_SQL = (
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+    "AND table_name IN (" + ", ".join(f"'{t}'" for t in DASHBOARD_TABLES) + ")"
+)
+
+# The two base dashboards (app/services/dashboard_seed.py) and their widgets,
+# written in the step that creates the tables, with bound parameters:
+# SQLAlchemy text() binds (:name) for the tenant auto-migration, asyncpg
+# placeholders ($n) for the provisioner and init_db. The Overview: ON CONFLICT
+# names the partial unique index dashboards_one_default, so a concurrent
+# creation inserts one default. "Capacity and flows": inserted only while no
+# dashboard has its name (DASHBOARD_NAMED_SEED_SQL). No id back = the
+# dashboard exists, and none of its widgets is written.
+DASHBOARD_SEED_COLUMNS: tuple[str, ...] = (
+    "name",
+    "description",
+    "visibility",
+    "is_default",
+    "created_at",
+    "updated_at",
+)
+DASHBOARD_WIDGET_SEED_COLUMNS: tuple[str, ...] = (
+    "dashboard_id",
+    "kind",
+    "title",
+    "query",
+    "options",
+    "layout",
+    "sort_order",
+)
+
+
+def _seed_insert_sql(table: str, columns: tuple[str, ...], placeholders: list[str]) -> str:
+    return f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+
+
+_DEFAULT_CONFLICT = " ON CONFLICT (is_default) WHERE is_default DO NOTHING RETURNING id"
+
+DASHBOARD_SEED_SQL = (
+    _seed_insert_sql(
+        "dashboards", DASHBOARD_SEED_COLUMNS, [f":{c}" for c in DASHBOARD_SEED_COLUMNS]
+    )
+    + _DEFAULT_CONFLICT
+)
+DASHBOARD_SEED_PG_SQL = (
+    _seed_insert_sql(
+        "dashboards",
+        DASHBOARD_SEED_COLUMNS,
+        [f"${i}" for i in range(1, len(DASHBOARD_SEED_COLUMNS) + 1)],
+    )
+    + _DEFAULT_CONFLICT
+)
+# A non-default base dashboard, keyed by its name (INSERT ... SELECT ...
+# WHERE NOT EXISTS; the name bound a second time as its own parameter, so
+# asyncpg uses each placeholder once).
+_NAMED_SEED_GUARD = " WHERE NOT EXISTS (SELECT 1 FROM dashboards WHERE name = {}) RETURNING id"
+
+
+def _seed_select_sql(table: str, columns: tuple[str, ...], placeholders: list[str]) -> str:
+    return f"INSERT INTO {table} ({', '.join(columns)}) SELECT {', '.join(placeholders)}"
+
+
+DASHBOARD_NAMED_SEED_SQL = _seed_select_sql(
+    "dashboards", DASHBOARD_SEED_COLUMNS, [f":{c}" for c in DASHBOARD_SEED_COLUMNS]
+) + _NAMED_SEED_GUARD.format(":existing_name")
+DASHBOARD_NAMED_SEED_PG_SQL = _seed_select_sql(
+    "dashboards",
+    DASHBOARD_SEED_COLUMNS,
+    [f"${i}" for i in range(1, len(DASHBOARD_SEED_COLUMNS) + 1)],
+) + _NAMED_SEED_GUARD.format(f"${len(DASHBOARD_SEED_COLUMNS) + 1}")
+DASHBOARD_WIDGET_SEED_SQL = _seed_insert_sql(
+    "dashboard_widgets",
+    DASHBOARD_WIDGET_SEED_COLUMNS,
+    [f":{c}" for c in DASHBOARD_WIDGET_SEED_COLUMNS],
+)
+DASHBOARD_WIDGET_SEED_PG_SQL = _seed_insert_sql(
+    "dashboard_widgets",
+    DASHBOARD_WIDGET_SEED_COLUMNS,
+    [f"${i}" for i in range(1, len(DASHBOARD_WIDGET_SEED_COLUMNS) + 1)],
+)
+
+# The one-shot grant of the dashboard keys to the system roles of an existing
+# tenant, in the same step: (role key, permission) pairs, inserted only where
+# the role row exists and holds no row for that key (an admin's later removal
+# is never undone: the step runs only while it creates the tables). New
+# tenants get the keys from the catalogue defaults (RBAC_SEED_ROLES_SQL).
+DASHBOARD_PERMISSION_BACKFILL: tuple[tuple[str, str], ...] = (
+    ("superuser", "views.dashboards"),
+    ("user", "views.dashboards"),
+    ("superuser", "dashboards.manage"),
+)
+DASHBOARD_PERMISSION_BACKFILL_SQL = (
+    "INSERT INTO role_permissions (role_id, permission, mode) "
+    "SELECT r.id, :permission, 'allow' FROM roles r "
+    "WHERE r.key = :role AND NOT EXISTS ("
+    "SELECT 1 FROM role_permissions rp "
+    "WHERE rp.role_id = r.id AND rp.permission = :existing_permission)"
+)
+# asyncpg: each placeholder once (PostgreSQL deduces one type per parameter).
+DASHBOARD_PERMISSION_BACKFILL_PG_SQL = (
+    DASHBOARD_PERMISSION_BACKFILL_SQL.replace(":permission", "$1")
+    .replace(":role", "$2")
+    .replace(":existing_permission", "$3")
+)
+
+
+# --- Dashboard sharing (add_dashboard_sharing.sql, 2.3.0) -------------------
+# A ``shared`` dashboard opens for anyone matching one of its targets: a role
+# (dashboard_roles, above), a site -- its members --, a team -- its members --
+# or a person. The three link tables reference dashboards, sites, teams and
+# users, so the block follows the dashboards block in every DDL source. Their
+# own constants and auto-migration step (no seed): adding them to
+# DASHBOARD_TABLES would re-run the Overview seed on every tenant created
+# before them. One statement per constant (asyncpg); setup_databases.sql, the
+# template and migrations/add_dashboard_sharing.sql carry the same text
+# (tests/test_dashboard_sharing_schema.py).
+DASHBOARD_SITES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_sites (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, site_id)
+    )"""
+
+DASHBOARD_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_teams (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, team_id)
+    )"""
+
+DASHBOARD_USERS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_users (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, user_id)
+    )"""
+
+DASHBOARD_SHARING_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_sites_site ON dashboard_sites(site_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_teams_team ON dashboard_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_users_user ON dashboard_users(user_id)",
+)
+
+DASHBOARD_SHARING_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    DASHBOARD_SITES_TABLE_SQL,
+    DASHBOARD_TEAMS_TABLE_SQL,
+    DASHBOARD_USERS_TABLE_SQL,
+    *DASHBOARD_SHARING_INDEX_STATEMENTS,
+)
+
+DASHBOARD_SHARING_TABLES: tuple[str, ...] = (
+    "dashboard_sites",
+    "dashboard_teams",
+    "dashboard_users",
+)
+
+DASHBOARD_SHARING_SCHEMA_SQL = ";\n".join(DASHBOARD_SHARING_SCHEMA_STATEMENTS) + ";"
+
+# Probe of the sharing auto-migration step: its DDL runs only while a table is
+# missing.
+DASHBOARD_SHARING_PROBE_SQL = (
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+    "AND table_name IN (" + ", ".join(f"'{t}'" for t in DASHBOARD_SHARING_TABLES) + ")"
+)
+
+# The visibility value 'roles' became 'shared' before 2.3.0 was released: a
+# database created from a pre-release build carries the old CHECK and 'roles'
+# rows. Self-gated (a no-op once the constraint allows 'shared', or without a
+# dashboards table), so it runs on every pool creation; the UPDATE sits
+# between the DROP and the ADD. Only in the auto-migration step and
+# migrations/add_dashboard_sharing.sql -- the fresh sources create the new
+# CHECK directly.
+DASHBOARD_VISIBILITY_CHECK_SQL = """
+    DO $$
+    BEGIN
+        IF to_regclass('public.dashboards') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.dashboards')
+              AND conname = 'dashboards_visibility_check'
+              AND strpos(pg_get_constraintdef(oid), 'shared') > 0
+        ) THEN
+            ALTER TABLE dashboards DROP CONSTRAINT IF EXISTS dashboards_visibility_check;
+            UPDATE dashboards SET visibility = 'shared' WHERE visibility = 'roles';
+            ALTER TABLE dashboards ADD CONSTRAINT dashboards_visibility_check
+                CHECK (visibility IN ('private', 'shared', 'everyone'));
+        END IF;
+    END $$"""
+
+# The gauge, heatmap, treemap and sankey kinds came before 2.3.0 was
+# released: a database created from a pre-release build carries the
+# five-kind CHECK. Self-gated (a no-op once the constraint allows the newest
+# kind, DASHBOARD_WIDGET_KINDS[-1], or without a dashboard_widgets table), so
+# it runs on every pool creation; no row changes (every old kind stays
+# valid). Only in the auto-migration step and
+# migrations/add_dashboard_widget_kinds.sql -- the fresh sources create the
+# new CHECK directly. One statement, no trailing ';'.
+DASHBOARD_WIDGET_KIND_CHECK_SQL = f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.dashboard_widgets') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.dashboard_widgets')
+              AND conname = 'dashboard_widgets_kind_check'
+              AND strpos(pg_get_constraintdef(oid), '{DASHBOARD_WIDGET_KINDS[-1]}') > 0
+        ) THEN
+            ALTER TABLE dashboard_widgets DROP CONSTRAINT IF EXISTS dashboard_widgets_kind_check;
+            ALTER TABLE dashboard_widgets ADD CONSTRAINT dashboard_widgets_kind_check
+                CHECK ({DASHBOARD_WIDGET_KIND_CHECK});
+        END IF;
+    END $$"""
+
+
+def dashboard_seed_params(
+    field_ids: dict[str, int] | None = None,
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Both base dashboards' insert parameters (with their timestamps) and
+    their widgets', Overview first."""
+    now = utcnow_naive()
+    return [
+        ({**dashboard, "created_at": now, "updated_at": now}, widgets)
+        for dashboard, widgets in base_dashboard_rows(field_ids)
+    ]
+
+
+def dashboard_seed_statement(dashboard: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The SQLAlchemy text and binds inserting one base dashboard (the tenant
+    auto-migration): the default through its unique index, any other by name."""
+    if dashboard["is_default"]:
+        return DASHBOARD_SEED_SQL, dashboard
+    return DASHBOARD_NAMED_SEED_SQL, {**dashboard, "existing_name": dashboard["name"]}
+
+
+def dashboard_seed_pg_statement(dashboard: dict[str, Any]) -> tuple[str, list[Any]]:
+    """``dashboard_seed_statement`` for asyncpg (the provisioner and init_db)."""
+    values = [dashboard[c] for c in DASHBOARD_SEED_COLUMNS]
+    if dashboard["is_default"]:
+        return DASHBOARD_SEED_PG_SQL, values
+    return DASHBOARD_NAMED_SEED_PG_SQL, [*values, dashboard["name"]]
+
+
+async def seed_base_dashboard(conn: asyncpg.Connection) -> list[int | None]:
+    """
+    Insert both base dashboards with their widgets and grant the dashboard
+    keys (asyncpg; the provisioner and init_db). Per dashboard, the id of the
+    new row, or None when it already existed (then none of its widgets is
+    written).
+    """
+    ids: list[int | None] = []
+    for dashboard, widgets in dashboard_seed_params():
+        sql, args = dashboard_seed_pg_statement(dashboard)
+        dashboard_id = await conn.fetchval(sql, *args)
+        if dashboard_id is not None:
+            for widget in widgets:
+                await conn.execute(
+                    DASHBOARD_WIDGET_SEED_PG_SQL,
+                    dashboard_id,
+                    *(widget[c] for c in DASHBOARD_WIDGET_SEED_COLUMNS[1:]),
+                )
+        ids.append(dashboard_id)
+    for role, permission in DASHBOARD_PERMISSION_BACKFILL:
+        await conn.execute(DASHBOARD_PERMISSION_BACKFILL_PG_SQL, permission, role, permission)
+    return ids
+
+
 def _sql_block(*statements: str) -> str:
     """Statements joined for a multi-statement script (each terminated by ';')."""
     return "".join(f"{statement};\n" for statement in statements)
@@ -1903,6 +2243,18 @@ def get_tenant_schema_sql() -> str:
         + PROJECT_FIELD_DECIMALS_SQL
         + """
 
+    -- Dashboards (after users and roles), the roles they are shared with and
+    -- their widgets, with their indexes
+    """
+        + DASHBOARDS_SCHEMA_SQL
+        + """
+
+    -- The sites, teams and people dashboards are shared with (after sites,
+    -- teams and users), with their indexes
+    """
+        + DASHBOARD_SHARING_SCHEMA_SQL
+        + """
+
     -- Approval policies (seeded: the project manager approves), approval
     -- requests, the assignment approval columns, the booking segment
     -- columns (no-ops here: CREATE TABLE has them), the widened
@@ -1979,8 +2331,20 @@ def get_tenant_schema_sql() -> str:
     )
 
 
-async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_password_hash: str):
-    """Seed initial data for a new tenant using parameterized queries."""
+async def run_seed_data(
+    conn: asyncpg.Connection,
+    admin_email: str,
+    admin_password_hash: str,
+    *,
+    seed_dashboards: bool = True,
+):
+    """Seed initial data for a new tenant using parameterized queries.
+
+    ``seed_dashboards``: also write the two base dashboards and the dashboard
+    key grants (seed_base_dashboard()). The provisioner always does (a new database);
+    init_db only in the run that creates the dashboards tables, so a later
+    start never brings back a dashboard an admin deleted.
+    """
     # Static seed data (no user input)
     await conn.execute("""
     INSERT INTO sso_config (id, enabled) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
@@ -2014,6 +2378,9 @@ async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_passwo
     # keeps its (possibly edited) permissions.
     for statement in (RBAC_SEED_ROLES_SQL, RBAC_SEED_POLICIES_SQL):
         await conn.execute(statement)
+    # The two base dashboards and the dashboard key grants, after the roles.
+    if seed_dashboards:
+        await seed_base_dashboard(conn)
     # User input - use parameterized queries
     await conn.execute(
         "INSERT INTO users "

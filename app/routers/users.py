@@ -8,7 +8,7 @@ Matches the Node.js API at /api/users exactly.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +18,7 @@ from app.middleware.auth import (
     require_any_permission,
     require_permission,
 )
+from app.models.dashboard import Dashboard
 from app.models.rbac import Role
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
@@ -612,6 +613,13 @@ async def delete_user(
     await SessionService(db).destroy_user_sessions(user_id, commit=False)
     # Their pending approval requests expire (and then cascade with the user).
     expired = await approvals.expire_for_requester(db, admin, user_id, deleted=True)
+
+    # Their private dashboards go; the shared ones stay, owned by no one
+    # (administrators manage them). The FK would SET NULL anyway.
+    await db.execute(
+        delete(Dashboard).where(Dashboard.owner_id == user_id, Dashboard.visibility == "private")
+    )
+    await db.execute(update(Dashboard).where(Dashboard.owner_id == user_id).values(owner_id=None))
 
     # Delete user
     await db.delete(user)

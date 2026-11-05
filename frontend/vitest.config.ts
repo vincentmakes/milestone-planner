@@ -68,12 +68,28 @@ export default defineConfig({
       // with the searchable people pickers, the same rule on lines 92.9,
       // statements 91.83, functions 93.48, branches 83.66; with the pilot
       // feedback round 2 of 2.1.0, raised to lines 93.0, statements 92.0,
-      // functions 93.4, branches 84.0.
+      // functions 93.4, branches 84.0; with the
+      // Dashboards view of 2.3.0, the same rule on lines 93.12, statements
+      // 92.07, functions 93.7, branches 84.11; with the dashboard builder,
+      // on lines 93.32, statements 92.28, functions 93.89, branches 84.6;
+      // with dashboard sharing by site, team and person, on lines 93.38,
+      // statements 92.34, functions 93.98, branches 84.68; with the measure
+      // families of the dashboards, on lines 93.49, statements 92.48,
+      // functions 94.08, branches 84.93; with the gauge, heatmap, treemap
+      // and sankey charts, rounded down from lines 93.54, statements 92.54,
+      // functions 94.13, branches 85.11; with their builder rules, from
+      // lines 93.55, statements 92.55, functions 94.13, branches 85.14.
+      // Each floor was the higher of the two lines at the rebase onto 2.1.0;
+      // then raised just under the merged totals (lines 94.08, statements
+      // 93.1, functions 94.4, branches 86.19) of 2.3.0, which the rebase
+      // onto 2.2.0 measured again unchanged; lines, statements and functions
+      // up 0.1 with the Project fields one-list round (94.13 / 93.17 / 94.48,
+      // branches 86.27 unchanged).
       thresholds: {
-        lines: 93.0,
-        statements: 92.0,
-        functions: 93.4,
-        branches: 84.0,
+        lines: 93.9,
+        statements: 92.9,
+        functions: 94.3,
+        branches: 85.9,
       },
     },
   },

@@ -12,11 +12,18 @@ never duplicated. Only the asyncpg API (`execute` / `fetchval`) is used.
 
 import json
 import re
+from datetime import datetime
 from typing import Any
 
 from app.scripts.demo_data import DEMO_PASSWORD, DemoData
+from app.services.dashboard_seed import (
+    CAPACITY_DASHBOARD_NAME,
+    capacity_dashboard_rows,
+    overview_rows,
+)
 from app.services.encryption import generate_password, hash_user_password
 from app.services.mentions import parse_mention_ids
+from app.utils import utcnow_naive
 
 # ---------------------------------------------------------------------------
 # Loader: names → ids, every insert guarded so a partially seeded database
@@ -71,6 +78,67 @@ async def _row_id(conn: Any, table: str, key: dict[str, Any]) -> int:
     if row_id is None:
         raise RuntimeError(f"{table}: row {key} missing after insert")
     return int(row_id)
+
+
+async def _insert_dashboard(
+    conn: Any,
+    dashboard: dict[str, Any],
+    widgets: list[dict[str, Any]],
+    key: dict[str, Any],
+    now: datetime,
+) -> None:
+    """One dashboard keyed by ``key``, with its widgets only when this call
+    created it: re-seeding never reverts an admin's edits (or a dashboard they
+    deleted widgets from), and looks no id up."""
+    if await _insert_once(
+        conn, "dashboards", {**dashboard, "created_at": now, "updated_at": now}, key
+    ):
+        dashboard_id = await _row_id(conn, "dashboards", key)
+        for w in widgets:
+            await _insert_once(
+                conn,
+                "dashboard_widgets",
+                {"dashboard_id": dashboard_id, **w},
+                {"dashboard_id": dashboard_id, "sort_order": w["sort_order"]},
+            )
+
+
+async def insert_demo_dashboards(conn: Any, field_ids: dict[str, int]) -> dict[str, int]:
+    """Insert the demo's two dashboards through `conn` (asyncpg API).
+
+    The two base dashboards (app/services/dashboard_seed.py) with the demo's
+    extras:
+
+    1. "Overview", keyed as the one default dashboard, with the two widgets
+       over the demo's "Project type" and "Area" fields when `field_ids`
+       (field name -> id) names them.
+    2. "Capacity and flows", keyed by its name, owner NULL, with the
+       demo-only utilisation gauge before its heatmap, treemap and sankey.
+
+    Each dashboard's widgets are written only in the run that creates it.
+    Called by `insert_demo_data`, and callable on its own against a tenant
+    seeded before the second dashboard existed: with `field_ids={}` the
+    existing Overview is left alone (nothing inserted, nothing looked up) and
+    "Capacity and flows" is created if it is missing. Order constraint: the
+    widened widget-kind CHECK (tenant_provisioner.DASHBOARD_WIDGET_KIND_CHECK_SQL)
+    must be in place first -- the application's tenant auto-migration applies
+    it when the tenant's pool is created, so open the tenant once (or apply
+    migrations/add_dashboard_widget_kinds.sql) before calling this on a
+    pre-release database; otherwise the gauge insert fails the old CHECK.
+
+    Returns the row counts of the two dashboards, for the summary.
+    """
+    now = utcnow_naive()
+    overview, overview_widgets = overview_rows(field_ids)
+    await _insert_dashboard(conn, overview, overview_widgets, {"is_default": True}, now)
+    capacity, capacity_widgets = capacity_dashboard_rows(with_gauge=True)
+    await _insert_dashboard(
+        conn, capacity, capacity_widgets, {"name": CAPACITY_DASHBOARD_NAME}, now
+    )
+    return {
+        "dashboards": 2,
+        "dashboard_widgets": len(overview_widgets) + len(capacity_widgets),
+    }
 
 
 async def insert_demo_data(
@@ -294,8 +362,9 @@ async def insert_demo_data(
     # Project fields and their dropdown items (natural keys: the field's name,
     # the item's name within its field), with the items' site / team limits.
     option_id: dict[tuple[str, str], int] = {}
+    field_id: dict[str, int] = {}
     for f in demo.project_fields:
-        fid = await _insert_id(
+        fid = field_id[f["name"]] = await _insert_id(
             conn,
             "project_fields",
             {"name": f["name"], "field_type": f["field_type"], "sort_order": f["sort_order"]},
@@ -330,6 +399,8 @@ async def insert_demo_data(
                     team_id[team],
                 )
     counts["project_fields"] = len(demo.project_fields)
+
+    counts.update(await insert_demo_dashboards(conn, field_id))
 
     tag_id: dict[str, int] = {}
     for t in demo.tags:

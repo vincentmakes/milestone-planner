@@ -1,8 +1,8 @@
 # Vacations & Time Off
 
-Milestone tracks staff absences — vacations, home-office days, illness, business trips, training and other time off — to provide accurate availability data in the Staff Overview and the workload views.
+Milestone tracks staff absences — vacations, home-office days, illness, business trips, training and other time off — to provide accurate availability data in the Staff & Calendar view and the workload views.
 
-![Staff Overview with absence bars and bank holiday rows](../assets/screenshots/vacations-view.png){ loading=lazy }
+![Staff & Calendar view with absence bars and bank holiday rows](../assets/screenshots/vacations-view.png){ loading=lazy }
 
 ## Absence Types
 
@@ -14,7 +14,7 @@ Each type has a color and a **Counts as unavailable** setting, which decides how
 |---|---|---|
 | Shown on the Staff timeline | Yes, in the type's color | Yes, in the type's color |
 | Reduces capacity in the workload heatmap | Yes — the day counts as time off | No — the person stays fully plannable |
-| Today's availability in the Staff Overview and resource cards | Unavailable | Available |
+| Today's availability in the Staff & Calendar view and resource cards | Unavailable | Available |
 
 If an unavailable and an available absence overlap on the same day (for example Illness during a Home Office week), the unavailable one wins.
 
@@ -26,13 +26,13 @@ If an unavailable and an available absence overlap on the same day (for example 
 
 ## Creating an Absence
 
-1. In the Staff Overview, expand a staff member and click **+ Add vacation / time off** — or use [My absences](#my-absences) for your own
+1. In the Staff & Calendar view, expand a staff member and click **+ Add vacation / time off** — or use [My absences](#my-absences) for your own
 2. Choose the **Absence type** — it defaults to the first active type that counts as unavailable (normally Holidays)
 3. Set the **From** and **To** dates (duration is calculated automatically)
 4. Optionally add a **description** (e.g., "Annual Leave", "Conference")
 5. Click **Save**
 
-People whose role can **manage others' absences** (admins and superusers by default) can create absences for any staff member at the sites they can see by picking them in the **Staff Member** dropdown, which opens with a search box — type to find a person ([how the pickers work](gantt-charts.md#picking-a-person)); everyone else can only book their own. They can also click an existing absence in the Staff Overview to edit it. A person who belongs to several sites appears once in the staff picker.
+People whose role can **manage others' absences** (admins and superusers by default) can create absences for any staff member at the sites they can see by picking them in the **Staff Member** dropdown, which opens with a search box — type to find a person ([how the pickers work](gantt-charts.md#picking-a-person)); everyone else can only book their own. They can also click an existing absence in the Staff & Calendar view to edit it. A person who belongs to several sites appears once in the staff picker.
 
 **From** and **To** are picked on the [shared calendar](gantt-charts.md#picking-dates), so **To** can never fall before **From**; for a recurring absence, the selected weekdays are highlighted in the calendar.
 
@@ -58,7 +58,7 @@ For regular part-time patterns (e.g., every Monday and Wednesday off):
 2. Select the days of the week (Mon through Sun)
 3. Click **Save**
 
-Recurring patterns are shown with a repeat badge in the staff list and only affect the selected weekdays — the Staff Overview, the workload heatmap and resource cards all treat the other days in the range as normal working days.
+Recurring patterns are shown with a repeat badge in the staff list and only affect the selected weekdays — the Staff & Calendar view, the workload heatmap and resource cards all treat the other days in the range as normal working days.
 
 ## My Absences
 
@@ -69,11 +69,11 @@ Everyone — including regular users — can manage their own time off from the 
 
 Each entry shows its type (with an *available* note for types such as Home Office that don't reduce capacity), dates, description and any recurring days, with **Edit** and **Delete** buttons. Click **Add absence** to book a new one, or **Import .ics** to load several from a calendar file.
 
-The Staff Overview keeps its own entry points — **+ Add vacation / time off** and clicking an existing absence — for people planning on behalf of others (admins and superusers by default).
+The Staff & Calendar view keeps its own entry points — **+ Add vacation / time off** and clicking an existing absence — for people planning on behalf of others (admins and superusers by default).
 
 ## Importing from Calendar (ICS)
 
-Import absences directly from Outlook or other calendar applications — from **My absences → Import .ics**, or from the **Import .ics** tab of the absence form in the Staff Overview:
+Import absences directly from Outlook or other calendar applications — from **My absences → Import .ics**, or from the **Import .ics** tab of the absence form in the Staff & Calendar view:
 
 1. Pick a **Default absence type** for the import
 2. Drag-and-drop an **.ics file** onto the upload zone (or click to browse)

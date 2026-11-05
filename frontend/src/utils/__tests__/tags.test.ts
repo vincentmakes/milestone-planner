@@ -6,6 +6,7 @@ import {
   sortTags,
   indexTags,
   siteKey,
+  tenantKey,
   SITE_KEY_PATTERN,
   tagFilterKey,
   TAG_FILTER_KEY_PATTERN,
@@ -106,6 +107,12 @@ describe('siteKey', () => {
     expect(SITE_KEY_PATTERN.test('acme:3')).toBe(true);
     expect(SITE_KEY_PATTERN.test(':3')).toBe(true);
     expect(SITE_KEY_PATTERN.test('3')).toBe(false);
+  });
+
+  it('names the tenant part alone (per-tenant preferences)', () => {
+    expect(tenantKey('/t/acme')).toBe('acme');
+    expect(tenantKey('')).toBe('');
+    expect(tenantKey()).toBe('');
   });
 
   it('keeps the former names as aliases', () => {

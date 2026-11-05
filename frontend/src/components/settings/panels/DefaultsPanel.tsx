@@ -41,7 +41,7 @@ import styles from './DefaultsPanel.module.css';
 /** The settings of this panel (the built-in project field settings live in Settings → Project fields) */
 type DefaultsKey = Exclude<
   DefaultedSettingKey,
-  'project_field_labels' | 'project_fields_hidden' | 'volume_decimals'
+  'project_field_labels' | 'project_fields_hidden' | 'volume_decimals' | 'project_tooltip_rows'
 >;
 
 /** The seven settings as the backend stores them */

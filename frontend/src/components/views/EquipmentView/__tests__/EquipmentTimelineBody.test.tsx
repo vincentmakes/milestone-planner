@@ -70,3 +70,29 @@ describe('EquipmentTimelineBody block bars', () => {
     expect(useUIStore.getState().editingEquipmentBlock).toBeNull();
   });
 });
+
+describe('EquipmentTimelineBody event strip', () => {
+  // The strip sits in the timeline header's events row (TimelineHeader)
+  it.each(['month', 'quarter'] as const)('draws no event strip in the body at %s zoom', (viewMode) => {
+    const cells = generateTimelineCells(new Date(2026, 8, 15), viewMode, new Set(), [], new Set(['2026-09-16']), [
+      { id: 7, date: '2026-09-16', name: 'ISO audit', color: '#f59e0b' },
+    ]);
+    const { container } = render(
+      <EquipmentTimelineBody
+        equipment={[equipment]}
+        bookingsMap={new Map()}
+        blocksMap={new Map()}
+        overlapMap={new Map()}
+        expandedEquipment={new Set()}
+        canManage={false}
+        cells={cells}
+        cellWidth={30}
+        totalWidth={cells.length * 30}
+        viewMode={viewMode}
+      />
+    );
+    expect(container.querySelector('[class*="markerLayer"]')).toBeNull();
+    expect(container.querySelector('button[class*="markerBadge"]')).toBeNull();
+    expect(container.querySelector('[data-tooltip]')).toBeNull();
+  });
+});

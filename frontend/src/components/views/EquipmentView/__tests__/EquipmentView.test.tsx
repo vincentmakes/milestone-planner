@@ -400,3 +400,29 @@ describe('EquipmentView layout', () => {
     expect(onPanelWidthChange).toHaveBeenCalledWith(200);
   });
 });
+
+describe('EquipmentView event strip', () => {
+  const stripEvents: CompanyEvent[] = [
+    { id: 91, site_id: 1, site_ids: [1], date: isoOffset(2), end_date: null, name: 'ISO audit', team_ids: [] },
+  ];
+
+  it.each(['month', 'quarter'] as const)('draws the strip exactly once, in the timeline header, at %s zoom', (viewMode) => {
+    seed();
+    useAppStore.setState({ companyEvents: stripEvents, companyEventDates: buildEventDateSet(stripEvents) });
+    useViewStore.setState({ viewMode, currentDate: new Date() });
+    const { container } = render(<EquipmentView />);
+    const layers = container.querySelectorAll('[class*="markerLayer"]');
+    expect(layers).toHaveLength(1);
+    expect(layers[0].closest('[class*="eventsRow"]')).not.toBeNull();
+    const hits = layers[0].querySelectorAll('button[class*="markerBadge"]');
+    expect(hits).toHaveLength(1);
+    expect(hits[0].getAttribute('aria-label')).toMatch(/— 1 event: ISO audit$/);
+  });
+
+  it('draws no strip when embedded below the Gantt (no header: the Gantt header has it)', () => {
+    seed();
+    useAppStore.setState({ companyEvents: stripEvents, companyEventDates: buildEventDateSet(stripEvents) });
+    const { container } = render(<EquipmentView embedded />);
+    expect(container.querySelector('[class*="markerLayer"]')).toBeNull();
+  });
+});

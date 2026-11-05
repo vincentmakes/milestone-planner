@@ -38,6 +38,35 @@ MAX_FIELD_LABEL_LENGTH = 60
 BUILT_IN_PROJECT_FIELDS: tuple[str, ...] = ("customer", "sales_pm", "volume", "confirmed")
 HIDEABLE_PROJECT_FIELDS: tuple[str, ...] = ("customer", "sales_pm", "volume")
 
+# The built-in rows of the Gantt's Shift-hover project details
+# (project_tooltip_rows), in display order: the built-in fields and PM, then
+# the fixed rows. The setting is the shown-list: these keys plus custom project
+# field ids, so a new field stays off until an admin ticks it.
+PROJECT_TOOLTIP_ROWS: tuple[str, ...] = (
+    "customer",
+    "pm",
+    *BUILT_IN_PROJECT_FIELDS[1:],
+    "tags",
+    "period",
+    "completion",
+    "work_days",
+    "total_days",
+    "staff",
+)
+# Today's rows: tenants that never save the setting see no change.
+DEFAULT_PROJECT_TOOLTIP_ROWS: tuple[str, ...] = (
+    "customer",
+    "pm",
+    "confirmed",
+    "tags",
+    "period",
+    "completion",
+    "work_days",
+    "total_days",
+    "staff",
+)
+MAX_TOOLTIP_FIELD_IDS = 500
+
 _TRUE = frozenset({"true", "1", "yes", "on"})
 _FALSE = frozenset({"false", "0", "no", "off"})
 
@@ -143,6 +172,30 @@ def _hidden_fields(value: str) -> str:
     return _compact([key for key in HIDEABLE_PROJECT_FIELDS if key in items])
 
 
+def _tooltip_rows(value: str) -> str:
+    """
+    The shown rows: built-in keys in display order, then custom field ids
+    ascending, each once. Existence is not checked (a deleted field's id is
+    ignored by the readers until the next save).
+    """
+    keys: set[str] = set()
+    ids: set[int] = set()
+    for item in _json_list(value):
+        if isinstance(item, str):
+            if item not in PROJECT_TOOLTIP_ROWS:
+                raise ValueError(f"expected rows among {', '.join(PROJECT_TOOLTIP_ROWS)}")
+            keys.add(item)
+        # bool is an int subclass: true/false are not ids.
+        elif isinstance(item, bool) or not isinstance(item, int) or item <= 0:
+            raise ValueError("expected row keys or positive integer field ids")
+        else:
+            ids.add(item)
+    if len(ids) > MAX_TOOLTIP_FIELD_IDS:
+        raise ValueError(f"at most {MAX_TOOLTIP_FIELD_IDS} fields")
+    rows: list[Any] = [key for key in PROJECT_TOOLTIP_ROWS if key in keys]
+    return _compact(rows + sorted(ids))
+
+
 KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "gantt_default_panel": SettingSpec(_choice("none", "staff", "equipment"), "none"),
     "staff_panel_default_skills": SettingSpec(_skill_ids, "[]"),
@@ -156,12 +209,16 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "project_fields_hidden": SettingSpec(_hidden_fields, "[]"),
     # 2.1.0: the built-in Volume's decimals; ``any`` = as typed.
     "volume_decimals": SettingSpec(_choice("any", "0", "1", "2", "3"), "1"),
+    # 2.3.0: the rows of the Gantt's Shift-hover project details.
+    "project_tooltip_rows": SettingSpec(
+        _tooltip_rows, _compact(list(DEFAULT_PROJECT_TOOLTIP_ROWS))
+    ),
 }
 
 # The settings Settings -> Project fields saves: writable with
 # project_fields.manage as well as settings.general (PUT /settings/{key}).
 PROJECT_FIELD_SETTING_KEYS: frozenset[str] = frozenset(
-    {"project_field_labels", "project_fields_hidden", "volume_decimals"}
+    {"project_field_labels", "project_fields_hidden", "volume_decimals", "project_tooltip_rows"}
 )
 
 # The permission keys a switch turned off disables for everyone.

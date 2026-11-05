@@ -256,7 +256,7 @@ def _charlie_segments(demo):
 
 @pytest.mark.parametrize("today", [date(2026, 10, 22), date(2027, 3, 1)])
 def test_demo_gives_charlie_two_segments_inside_the_analytics_phase(today):
-    from app.scripts.demo_data import BIOPROCESS, build_demo
+    from app.scripts.demo_data import BIOPROCESS, IMPURITY, build_demo
 
     demo = build_demo(today)
     phase = next(p for p in demo.phases if (p["project"], p["type"]) == (BIOPROCESS, "Analytics"))
@@ -272,9 +272,11 @@ def test_demo_gives_charlie_two_segments_inside_the_analytics_phase(today):
     assert not segments_overlap(
         first["start_date"], first["end_date"], second["start_date"], second["end_date"]
     )
-    # Every other demo booking stays linked.
+    # Every other demo booking stays linked, but for the two stays on the
+    # Trial phase of Impurity Profiling (a dashboards extra project).
     others = [a for a in demo.phase_assignments if a not in (first, second)]
-    assert all("start_date" not in a for a in others + demo.subphase_assignments)
+    dated = [a for a in others + demo.subphase_assignments if "start_date" in a]
+    assert [(a["project"], a["phase"]) for a in dated] == [(IMPURITY, "Trial")] * 2
 
 
 async def test_demo_seed_inserts_the_segments_with_a_null_safe_start_key():
@@ -287,6 +289,9 @@ async def test_demo_seed_inserts_the_segments_with_a_null_safe_start_key():
     await demo_seed.insert_demo_data(conn, demo)
 
     first, second = _charlie_segments(demo)
+    third, fourth = (
+        a for a in demo.phase_assignments if "start_date" in a and a["phase"] == "Trial"
+    )
     rows = [
         (sql, args)
         for sql, args in conn.inserts("phase_staff_assignments")
@@ -297,10 +302,13 @@ async def test_demo_seed_inserts_the_segments_with_a_null_safe_start_key():
     assert [args[4:6] for _, args in dated] == [
         (first["start_date"], first["end_date"]),
         (second["start_date"], second["end_date"]),
+        (third["start_date"], third["end_date"]),
+        (fourth["start_date"], fourth["end_date"]),
     ]
+    starts = {None, *(a["start_date"] for a in (first, second, third, fourth))}
     for sql, args in rows:
         # Natural key: (phase, staff, start) -- NULL-safe for linked rows.
         assert "start_date IS NOT DISTINCT FROM" in sql
-        assert args[-1] in (None, first["start_date"], second["start_date"])
+        assert args[-1] in starts
     linked = [args for sql, args in rows if "start_date, end_date) SELECT" not in sql]
     assert all(args[-1] is None for args in linked)

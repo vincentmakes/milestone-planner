@@ -88,7 +88,8 @@ export function TimelineRow({
         '--cell-width': `${cellWidth}px`
       } as React.CSSProperties}
     >
-      {/* Special cell markers for weekends/holidays */}
+      {/* Plain tints for weekends/holidays/events (the event strip and its
+          panel are mounted once by ArchivedView, above every row) */}
       {renderWeekendMarkers && cells.map((cell, index) => {
         if (cell.isWeekend) {
           return (
@@ -109,7 +110,6 @@ export function TimelineRow({
               key={`holiday-${index}`}
               className={`${styles.specialCell} ${styles.bankHoliday}`}
               style={{ left: index * cellWidth, width: cellWidth }}
-              data-tooltip={cell.bankHolidayName || 'Holiday'}
             />
           );
         }
@@ -129,7 +129,6 @@ export function TimelineRow({
                   ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
                   : {}),
               }}
-              data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
             />
           );
         }

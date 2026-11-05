@@ -29,7 +29,7 @@ The artifacts live in `.superpowers/sdd/<plan>/` (kept out of git locally: add i
 
 | When | What |
 |------|------|
-| While iterating | Only the touched tests: `npx vitest related --run <files>` or `npx vitest run --changed <ref>` in `frontend/`, `pytest <file>` from `tests/` on the backend |
+| While iterating | Only the touched tests: `npm run test:related -- <files>` or `npm run test:changed -- <ref>` in `frontend/`, `pytest <file>` from `tests/` on the backend |
 | End of a frontend task, once | The full suite, `npm run test:coverage`, `npm run lint`, `npm run build` |
 | End of a backend task, once | The full suite, `ruff check app/ && ruff format --check app/`, `mypy app/` |
 | Per round | **One** Docker rebuild in place and **one** Playwright pass; none for polish unless a screenshot is wanted |
@@ -37,10 +37,10 @@ The artifacts live in `.superpowers/sdd/<plan>/` (kept out of git locally: add i
 
 Coverage floors are raised, never lowered.
 
-The two frontend commands are Vitest's dependency-aware runs, from `frontend/`:
+The two frontend scripts are Vitest's dependency-aware runs:
 
-- `npx vitest related --run src/utils/date.ts src/components/Foo.tsx` runs the tests that import the given source files (without `--run` it would sit in watch mode).
-- `NODE_OPTIONS=--no-experimental-webstorage npx vitest run --changed origin/main` runs the tests affected by the files changed since a git ref (no ref means the uncommitted changes). It calls git, so in the sandbox prefix it with `GIT_CONFIG_GLOBAL=/dev/null`. A change to `package.json` itself re-runs everything.
+- `npm run test:related -- src/utils/metrics.ts src/components/Foo.tsx` runs the tests that import the given source files (`vitest related --run`; without `--run` it would sit in watch mode).
+- `NODE_OPTIONS=--no-experimental-webstorage npm run test:changed -- origin/main` runs the tests affected by the files changed since a git ref (`vitest run --changed`; no ref means the uncommitted changes). It calls git, so in the sandbox prefix it with `GIT_CONFIG_GLOBAL=/dev/null`. A change to `package.json` itself re-runs everything.
 
 ## Agent reuse
 

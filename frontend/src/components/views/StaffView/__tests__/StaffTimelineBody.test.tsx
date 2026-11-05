@@ -169,3 +169,31 @@ describe('StaffTimelineBody company events row', () => {
     expect(screen.getByTitle('Team B review')).toBeInTheDocument();
   });
 });
+
+describe('StaffTimelineBody event strip', () => {
+  // The strip sits in the timeline header's events row (TimelineHeader)
+  it.each(['month', 'quarter'] as const)('draws no event strip in the body at %s zoom', (viewMode) => {
+    seedUser({ id: 1, role: 'admin' });
+    const cells = generateTimelineCells(new Date(2026, 8, 15), viewMode, new Set(), [], new Set(['2026-09-16']), [
+      { id: 7, date: '2026-09-16', name: 'ISO audit', color: '#f59e0b' },
+    ]);
+    const { container } = render(
+      <StaffTimelineBody
+        staff={[bob]}
+        assignmentsMap={new Map()}
+        vacationsMap={new Map()}
+        rowHeights={new Map([[4, 44]])}
+        expandedStaff={new Set()}
+        expandedBankHolidays={false}
+        expandedCompanyEvents={false}
+        cells={cells}
+        cellWidth={30}
+        totalWidth={cells.length * 30}
+        viewMode={viewMode}
+      />
+    );
+    expect(container.querySelector('[class*="markerLayer"]')).toBeNull();
+    expect(container.querySelector('button[class*="markerBadge"]')).toBeNull();
+    expect(container.querySelector('[data-tooltip]')).toBeNull();
+  });
+});

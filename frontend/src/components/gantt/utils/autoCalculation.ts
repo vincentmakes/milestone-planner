@@ -8,8 +8,8 @@
  *
  * Dependencies are NOT cascaded on move: a dependency aligns the successor only
  * when it is created, and moving a predecessor afterwards leaves its successors
- * where they are so users keep manual lead/lag control (see CLAUDE.md,
- * "Auto-calculation semantics"). `cascadeDependentPhases` /
+ * where they are so users keep manual lead/lag control (see
+ * docs/developer-guide/frontend-architecture.md, "Gantt architecture"). `cascadeDependentPhases` /
  * `cascadeDependentSubphases` below are opt-in helpers that `processPhaseMove` /
  * `processSubphaseMove` deliberately never call.
  */

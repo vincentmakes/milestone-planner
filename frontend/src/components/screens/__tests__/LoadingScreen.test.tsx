@@ -13,6 +13,15 @@ describe('LoadingScreen', () => {
     render(<LoadingScreen message="Loading projects..." />);
     expect(screen.getByText('Loading projects...')).toBeInTheDocument();
   });
+
+  it('fills a view slot without the logo when compact', () => {
+    const { rerender } = render(<LoadingScreen />);
+    expect(screen.getByRole('img', { name: 'Milestone' })).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    rerender(<LoadingScreen compact message="Loading dashboards…" />);
+    expect(screen.queryByRole('img', { name: 'Milestone' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading dashboards…');
+  });
 });
 
 describe('LoadErrorScreen', () => {

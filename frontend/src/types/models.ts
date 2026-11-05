@@ -616,6 +616,12 @@ export interface InstanceSettings {
   project_fields_hidden?: string;
   /** Decimals the built-in Volume keeps: `any` (as typed) or `0`–`3` */
   volume_decimals?: string;
+  /**
+   * Compact JSON array: the rows of the Gantt's Shift-hover project details --
+   * built-in row keys (utils/instanceSettings.ts `PROJECT_TOOLTIP_ROWS`) then
+   * custom project field ids
+   */
+  project_tooltip_rows?: string;
   [key: string]: string | undefined;
 }
 
@@ -629,6 +635,7 @@ export type CurrentView =
   | 'gantt'
   | 'kanban'
   | 'work'
+  | 'dashboards'
   | 'staff'
   | 'equipment'
   | 'crosssite'
@@ -940,4 +947,274 @@ export interface AppNotification {
    * and are dismissed into localStorage rather than marked read on the server.
    */
   source?: 'server' | 'derived';
+}
+
+// =============================================================================
+// DASHBOARDS (2.3.0)
+// =============================================================================
+// Snake_case on both sides, like the API (api/endpoints/dashboards.ts). The
+// metric-query spec mirrors app/schemas/dashboard.py; the measure → dimension
+// matrix lives in utils/metrics.ts (asserted against shared/metric-matrix.json).
+
+/** The widget kinds, in the server's order (`DASHBOARD_WIDGET_KINDS`). */
+export type WidgetKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'gauge' | 'heatmap' | 'treemap' | 'sankey';
+
+/**
+ * Who sees a dashboard: its owner (and admins), the targets of `shared`
+ * (roles, sites, teams, people — any match grants view access) or everyone
+ * who can open the Dashboards view.
+ */
+export type DashboardVisibility = 'private' | 'shared' | 'everyone';
+
+export type Measure =
+  | 'booked_days'
+  | 'booked_weeks'
+  | 'booking_count'
+  | 'people_booked'
+  | 'project_count'
+  | 'project_weeks'
+  | 'project_volume'
+  | 'phase_count'
+  | 'phase_weeks'
+  | 'phases_due'
+  | 'phases_overdue'
+  | 'capacity_days'
+  | 'available_days'
+  | 'utilisation'
+  | 'people_over_capacity'
+  | 'equipment_booked_days'
+  | 'equipment_booking_count'
+  | 'equipment_booked'
+  | 'equipment_utilisation';
+
+/** The fact families of the measures, in the order the builder groups them. */
+export type MeasureFamily = 'booking' | 'project' | 'phase' | 'capacity' | 'equipment';
+
+export type DimensionKind =
+  | 'site'
+  | 'team'
+  | 'project_team'
+  | 'person'
+  | 'project'
+  | 'project_manager'
+  | 'customer'
+  | 'confirmed'
+  | 'tag'
+  | 'phase_type'
+  | 'status'
+  | 'equipment'
+  | 'equipment_type'
+  | 'field'
+  | 'period';
+
+export type Grain = 'year' | 'quarter' | 'month' | 'week';
+
+export type RelativePeriod =
+  | 'this_year'
+  | 'last_year'
+  | 'next_year'
+  | 'this_quarter'
+  | 'last_quarter'
+  | 'next_quarter'
+  | 'this_month'
+  | 'last_month'
+  | 'next_month'
+  | 'last_12_months'
+  | 'next_12_months'
+  | 'all';
+
+/** Units of a result: the measure's, or `percent` when the query asks a percentage. */
+export type MetricUnit =
+  | 'days'
+  | 'weeks'
+  | 'count'
+  | 'people'
+  | 'projects'
+  | 'phases'
+  | 'volume'
+  | 'equipment'
+  | 'percent';
+
+export type MetricDimension =
+  | { kind: Exclude<DimensionKind, 'field' | 'period'> }
+  | { kind: 'field'; field_id: number }
+  | { kind: 'period'; grain: Grain };
+
+/** A relative period, or an absolute one (`YYYY-MM-DD`, ≤ five years). */
+export type MetricPeriod = { relative: RelativePeriod } | { from: string; to: string };
+
+export interface MetricFilters {
+  site_ids?: number[] | null;
+  /** The booked person's teams */
+  team_ids?: number[] | null;
+  /** The project's teams */
+  project_team_ids?: number[] | null;
+  person_ids?: number[] | null;
+  project_ids?: number[] | null;
+  project_manager_ids?: number[] | null;
+  tag_ids?: number[] | null;
+  confirmed?: boolean | null;
+  /** Field id (as a JSON key) → item ids */
+  field_options?: Record<string, number[]> | null;
+  archived?: 'exclude' | 'include' | 'only';
+  period?: MetricPeriod;
+  equipment_ids?: number[] | null;
+  /** Exact equipment type names (case-sensitive) */
+  equipment_types?: string[] | null;
+  /** Phase measures: milestones counted too (`include`, the default, is never stored), only, or left out */
+  milestones?: 'include' | 'only' | 'exclude';
+}
+
+export interface MetricQuery {
+  measure: Measure;
+  dimensions?: MetricDimension[];
+  filters?: MetricFilters;
+  percent_of?: 'total' | 'first_dimension' | null;
+  top_n?: number | null;
+}
+
+/** One dimension value of a row: `key` true/false (confirmed, toggles), an id, a text, a period key, `null` (empty bucket) or `"__other__"`. */
+export interface MetricKey {
+  key: string | number | boolean | null;
+  label: string;
+  color?: string | null;
+}
+
+export interface MetricRow {
+  keys: MetricKey[];
+  /** `null` for a ratio over nothing (utilisation of a booked week with no capacity) */
+  value: number | null;
+}
+
+export interface MetricResult {
+  unit: MetricUnit;
+  dimensions: { kind: DimensionKind; label: string }[];
+  rows: MetricRow[];
+  /** `null` like a row value (a ratio over nothing) */
+  total: number | null;
+  /** The `all` period was cut to five years */
+  truncated: boolean;
+  /** Stale ids dropped from the filters ("Team 14 no longer exists") */
+  warnings: string[];
+  /** Set when a fact really counted in several values of a multi-valued dimension */
+  note?: string | null;
+  /** The resolved period (`YYYY-MM-DD`) */
+  period?: { from: string; to: string };
+}
+
+/** A widget whose query failed on `/data` (deleted field, missing permission, invalid spec). */
+export interface MetricError {
+  error: string;
+}
+
+export interface WidgetOptions {
+  stacked?: boolean | null;
+  percent?: boolean | null;
+  orientation?: 'horizontal' | 'vertical' | null;
+  number_format?: 'integer' | 'decimal' | 'percent' | null;
+  show_legend?: boolean | null;
+  /** The KPI's bucket when `percent_of` is set: a dimension value's key */
+  kpi_bucket?: boolean | number | string | null;
+  /** The gauge's target, in the result's unit (≥ 0): green below it, then amber, then red */
+  target?: number | null;
+}
+
+export interface GridPosition {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Grid position per breakpoint (`lg` 12 columns, `md` 8, `sm` 4). */
+export interface WidgetLayout {
+  lg: GridPosition;
+  md: GridPosition;
+  sm: GridPosition;
+}
+
+export interface DashboardWidget {
+  id: number;
+  kind: WidgetKind;
+  title: string;
+  query: MetricQuery;
+  options: WidgetOptions;
+  layout: WidgetLayout;
+  sort_order: number;
+}
+
+/** A sharing target with its name resolved by the server. */
+export interface SharedTarget {
+  id: number;
+  name: string;
+}
+
+/** Whom a `shared` dashboard is shared with, names resolved (each list by name). */
+export interface SharedWith {
+  roles: SharedTarget[];
+  sites: SharedTarget[];
+  teams: (SharedTarget & { site_name: string })[];
+  users: SharedTarget[];
+}
+
+/** A person a dashboard can be shared with (`GET /dashboards/shareable-users`). */
+export interface ShareableUser {
+  id: number;
+  name: string;
+  job_title: string | null;
+  /** Their sites among the caller's visible sites, by name */
+  site_names: string[];
+}
+
+export interface DashboardSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  visibility: DashboardVisibility;
+  /** The `shared` targets, ascending ids (all empty unless `shared`) */
+  role_ids: number[];
+  site_ids: number[];
+  team_ids: number[];
+  user_ids: number[];
+  shared_with: SharedWith;
+  owner_id: number | null;
+  owner_name: string | null;
+  is_default: boolean;
+  widget_count: number;
+  can_edit: boolean;
+  updated_at: string;
+}
+
+export interface Dashboard extends DashboardSummary {
+  widgets: DashboardWidget[];
+}
+
+/** A widget as sent in a save (ids are reassigned by the server). */
+export type DashboardWidgetDraft = Omit<DashboardWidget, 'id' | 'sort_order'> & {
+  id?: number;
+  sort_order?: number;
+};
+
+/**
+ * The body of a create / update. `widgets` omitted on a PUT keeps them, and
+ * so does a PUT without the visibility and the four target lists keep the
+ * sharing (only Share... sends them; a POST without `visibility` is private).
+ */
+export interface DashboardDraft {
+  id?: number;
+  name: string;
+  description?: string | null;
+  visibility?: DashboardVisibility;
+  role_ids?: number[];
+  site_ids?: number[];
+  team_ids?: number[];
+  user_ids?: number[];
+  widgets?: DashboardWidgetDraft[];
+  /** POST only: copy this dashboard's widgets */
+  source_id?: number;
+}
+
+export interface DashboardData {
+  widgets: Record<string, MetricResult | MetricError>;
+  loaded_at: string;
 }

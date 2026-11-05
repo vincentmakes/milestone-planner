@@ -46,6 +46,10 @@ SKIP_PATTERNS = [
     re.compile(r"^/api/notifications(?:/|$)"),
     # Approval decisions broadcast richly from their router.
     re.compile(r"^/api/approval-requests(?:/|$)"),
+    # Dashboard reads sent as POST (the builder's preview, a dashboard's
+    # data): broadcasting them would make open viewers reload each other.
+    re.compile(r"^/api/dashboards/query$"),
+    re.compile(r"^/api/dashboards/\d+/data$"),
     re.compile(r"^/api/import(?:/|$)"),
     re.compile(r"^/api/auth(?:/|$)"),
     re.compile(r"^/api/admin(?:/|$)"),
@@ -80,6 +84,8 @@ ENTITY_PATTERNS: list[tuple[re.Pattern, str]] = [
     # the signed-in user (permissions) and the roles.
     (re.compile(r"^/api/roles(?:/|$)"), "role"),
     (re.compile(r"^/api/approval-policies(?:/|$)"), "approval_policy"),
+    # Dashboard writes (create, replace, delete): clients refresh their list.
+    (re.compile(r"^/api/dashboards(?:/|$)"), "dashboard"),
 ]
 
 

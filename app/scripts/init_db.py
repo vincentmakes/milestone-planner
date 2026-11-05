@@ -322,7 +322,12 @@ async def apply_tenant_schema(settings):
     try:
         # Import and run the same schema used by tenant_provisioner
         from app.services.encryption import PasswordTooLongError, hash_user_password
-        from app.services.tenant_provisioner import get_tenant_schema_sql, run_seed_data
+        from app.services.tenant_provisioner import (
+            DASHBOARD_TABLES,
+            DASHBOARDS_PROBE_SQL,
+            get_tenant_schema_sql,
+            run_seed_data,
+        )
 
         # Seed data. The tenant admin is a tenant user: bcrypt, like every
         # tenant password (hashed before the schema runs, so a bad
@@ -342,10 +347,20 @@ async def apply_tenant_schema(settings):
                 "passwords cannot exceed. Choose a shorter password."
             ) from None
 
+        # The base dashboard and the dashboard key grants are written only in
+        # the run that creates the dashboards tables (a fresh install, or the
+        # first start of 2.3.0 on an older database), like the tenant
+        # auto-migration does: a later start never brings back a dashboard
+        # or a key an admin removed.
+        existing = {row[0] for row in await conn.fetch(DASHBOARDS_PROBE_SQL)}
+        creates_dashboards = not existing.issuperset(DASHBOARD_TABLES)
+
         schema_sql = get_tenant_schema_sql()
         await conn.execute(schema_sql)
 
-        await run_seed_data(conn, admin_email, admin_password_hash)
+        await run_seed_data(
+            conn, admin_email, admin_password_hash, seed_dashboards=creates_dashboards
+        )
 
         # Insert default settings
         await conn.execute("""

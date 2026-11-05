@@ -80,6 +80,8 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     const staffTeamIds = useAppStore(selectStaffTeamIds);
     const teamSiteById = useAppStore(selectTeamSiteById);
 
+    // Background tints are week/month only; the event strip sits in the
+    // header's events row (TimelineHeader)
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
     const renderWeekSeparators = showHighlighting && !showWeekends;
@@ -239,42 +241,6 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
               viewMode={viewMode}
             />
           </div>
-          
-          {/* Holiday and event tooltip layer - top strip only */}
-          {showHighlighting && (
-            <div className={styles.tooltipLayer}>
-              {cells.map((cell, index) => {
-                // Priority: bank holidays first, then company events
-                if (cell.isBankHoliday) {
-                  return (
-                    <div
-                      key={`tooltip-${index}`}
-                      className={`${styles.tooltipCell} ${styles.holiday}`}
-                      style={{ left: index * cellWidth, width: cellWidth }}
-                      data-tooltip={cell.bankHolidayName || 'Holiday'}
-                    />
-                  );
-                }
-                if (cell.isCompanyEvent) {
-                  return (
-                    <div
-                      key={`tooltip-${index}`}
-                      className={`${styles.tooltipCell} ${styles.event}`}
-                      style={{
-                        left: index * cellWidth,
-                        width: cellWidth,
-                        ...(cell.companyEventColor
-                          ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
-                          : {}),
-                      }}
-                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
-                    />
-                  );
-                }
-                return null;
-              })}
-            </div>
-          )}
         </div>
       </div>
     );

@@ -91,9 +91,11 @@ CATALOGUE = [
     ("Views and tools", "views.equipment", "a", "a"),
     ("Views and tools", "views.crosssite", "a", "a"),
     ("Views and tools", "views.archived", "a", "a"),
+    ("Views and tools", "views.dashboards", "a", "a"),
     ("Views and tools", "whatif.use", "a", "-"),
     ("Views and tools", "system.api_docs", "-", "-"),
     ("Views and tools", "system.ws_debug", "-", "-"),
+    ("Dashboards", "dashboards.manage", "a", "-"),
 ]
 
 
@@ -110,11 +112,12 @@ def test_catalogue_lists_every_key_in_order_with_its_group():
     assert [(p.group, p.key) for p in PERMISSIONS] == [(g, k) for g, k, _, _ in CATALOGUE]
 
 
-def test_catalogue_has_58_unique_keys():
+def test_catalogue_has_60_unique_keys():
     # 59 keys in 1.13.0 (the RBAC plan's table); 2.0.0 adds project_fields.manage
-    # and removes the two personal-todo keys (todos.manage_own / assign_others).
+    # and removes the two personal-todo keys (todos.manage_own / assign_others);
+    # 2.3.0 adds views.dashboards and dashboards.manage.
     keys = [p.key for p in PERMISSIONS]
-    assert len(keys) == 58
+    assert len(keys) == 60
     assert not any(key.startswith("todos.") for key in keys)
     assert len(set(keys)) == len(keys)
     assert frozenset(keys) == PERMISSION_KEYS
@@ -135,7 +138,7 @@ def test_groups_are_contiguous():
         if not seen or seen[-1] != permission.group:
             assert permission.group not in seen, permission.group
             seen.append(permission.group)
-    assert len(seen) == 17
+    assert len(seen) == 18
 
 
 def test_permission_is_immutable():

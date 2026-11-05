@@ -20,6 +20,13 @@ vi.mock('@/hooks/useDataLoader', () => ({ selectSite: vi.fn(async () => {}) }));
 vi.mock('../Header', () => ({ Header: () => <header>Header</header> }));
 vi.mock('@/components/gantt', () => ({ GanttContainer: () => <div>Gantt view</div> }));
 vi.mock('@/components/gantt/ShiftTooltip', () => ({ ShiftTooltip: () => null }));
+const dashboardsState = vi.hoisted(() => ({ fail: false }));
+vi.mock('@/components/views/DashboardsView', () => ({
+  DashboardsView: () => {
+    if (dashboardsState.fail) throw new Error('chart exploded');
+    return <div>Dashboards view</div>;
+  },
+}));
 vi.mock('@/components/views', () => ({
   KanbanView: () => <div>Kanban view</div>,
   WorkView: () => <div>Work view</div>,
@@ -30,6 +37,7 @@ vi.mock('@/components/views', () => ({
 }));
 
 beforeEach(() => {
+  dashboardsState.fail = false;
   vi.mocked(selectSite).mockClear();
   resetAllStores();
   useViewStore.getState().resetView();
@@ -58,10 +66,35 @@ describe('MainLayout', () => {
     expect(useKeyboardShortcuts).toHaveBeenCalled();
   });
 
+  it('loads the Dashboards view lazily', async () => {
+    useViewStore.setState({ currentView: 'dashboards' });
+    render(<MainLayout />);
+    expect(await screen.findByText('Dashboards view', undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveTextContent('Dashboards view');
+  });
+
+  it('catches a failing Dashboards view in its error boundary, with Retry', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const silence = (e: ErrorEvent) => e.preventDefault();
+    window.addEventListener('error', silence);
+    dashboardsState.fail = true;
+    useViewStore.setState({ currentView: 'dashboards' });
+    render(<MainLayout />);
+    expect(await screen.findByText('This view could not be shown.', undefined, { timeout: 5000 })).toBeInTheDocument();
+    // The rest of the app stays usable
+    expect(screen.getByRole('button', { name: 'Gantt Chart' })).toBeInTheDocument();
+
+    dashboardsState.fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Dashboards view')).toBeInTheDocument();
+    window.removeEventListener('error', silence);
+    vi.mocked(console.error).mockRestore();
+  });
+
   it('switches views from the sidebar navigation', async () => {
     render(<MainLayout />);
     expect(screen.getByRole('main')).toHaveTextContent('Gantt view');
-    fireEvent.click(screen.getByRole('button', { name: 'Staff Overview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Staff & Calendar' }));
     expect(useViewStore.getState().currentView).toBe('staff');
     expect(screen.getByRole('main')).toHaveTextContent('Staff view');
   });
@@ -70,7 +103,7 @@ describe('MainLayout', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'admin' }) });
     useWhatIfStore.getState().enterWhatIfMode([]);
     render(<MainLayout />);
-    fireEvent.click(screen.getByRole('button', { name: 'Staff Overview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Staff & Calendar' }));
     expect(useViewStore.getState().currentView).toBe('gantt');
     expect(screen.getByRole('main')).toHaveTextContent('Gantt view');
   });

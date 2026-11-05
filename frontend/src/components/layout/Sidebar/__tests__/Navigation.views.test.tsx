@@ -3,15 +3,17 @@
  * without its `views.*` key is hidden, Cross-site is hidden while only one
  * site is visible, and What-If blocks every view but the Gantt with its hint.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { Navigation } from '../Navigation';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
+import { useDashboardStore } from '@/stores/dashboardStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { setViewLeaveGuard } from '@/utils/viewLeaveGuard';
 import { makeApprovalRequest, makeSite, makeUser } from '@/test/factories';
 
 const twoSites = [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })];
@@ -20,6 +22,8 @@ beforeEach(() => {
   resetAllStores();
   useViewStore.getState().resetView();
   useAppStore.setState({ sites: twoSites });
+  // The Dashboards entry would load its list (Navigation.dashboards.test.tsx covers that).
+  useDashboardStore.setState({ listLoaded: true });
 });
 
 afterEach(async () => {
@@ -36,7 +40,7 @@ describe('Navigation views', () => {
     render(<Navigation />);
     expect(button('Gantt Chart')).toBeInTheDocument();
     expect(button('Kanban Board')).toBeInTheDocument();
-    for (const label of ['Staff Overview', 'Equipment', 'Cross-Site', 'Archived']) {
+    for (const label of ['Staff & Calendar', 'Equipment', 'Cross-Site', 'Archived']) {
       expect(button(label)).not.toBeInTheDocument();
     }
   });
@@ -54,7 +58,7 @@ describe('Navigation views', () => {
     render(<Navigation />);
     expect(button('Cross-Site')).not.toBeInTheDocument();
     // The other views stay enabled, without a tooltip while expanded
-    const staff = button('Staff Overview')!;
+    const staff = button('Staff & Calendar')!;
     expect(staff).toBeEnabled();
     expect(staff).not.toHaveAttribute('title');
   });
@@ -95,6 +99,69 @@ describe('Navigation views', () => {
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
     expect(labels.slice(0, 3)).toEqual(['Gantt Chart', 'Kanban Board', 'My Work']);
     expect(button('My Work')!.querySelector('[data-testid="AssignmentIndOutlinedIcon"]')).not.toBeNull();
+  });
+
+  it('lists Dashboards right after Equipment, with the dashboard icon, and opens it', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
+    render(<Navigation />);
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
+    expect(labels).toEqual([
+      'Gantt Chart',
+      'Kanban Board',
+      'My Work',
+      'Staff & Calendar',
+      'Equipment',
+      'Dashboards',
+      'Hide dashboards',
+      'Cross-Site',
+      'Archived',
+    ]);
+    const dashboards = button('Dashboards')!;
+    expect(dashboards.querySelector('[data-testid="DashboardOutlinedIcon"]')).not.toBeNull();
+    fireEvent.click(dashboards);
+    expect(useViewStore.getState().currentView).toBe('dashboards');
+  });
+
+  it('hides Dashboards without views.dashboards', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view', 'views.staff'], site_ids: [1, 2] }),
+    });
+    render(<Navigation />);
+    expect(button('Dashboards')).not.toBeInTheDocument();
+  });
+
+  it('keeps Dashboards out of reach while What-If is active', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin', site_ids: [1, 2] }) });
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    render(<Navigation />);
+    const dashboards = button('Dashboards')!;
+    expect(dashboards).toBeDisabled();
+    expect(dashboards).toHaveAttribute('title', whatIfUnavailableMessage('Switching views'));
+    fireEvent.click(dashboards);
+    expect(useViewStore.getState().currentView).toBe('gantt');
+  });
+
+  it('asks the view leave guard before switching, and stays when it refuses', async () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin', site_ids: [1, 2] }) });
+    useViewStore.setState({ currentView: 'dashboards' });
+    let answer = false;
+    const guard = vi.fn(async () => answer);
+    const unregister = setViewLeaveGuard(guard);
+    render(<Navigation />);
+    // The current view never asks
+    fireEvent.click(button('Dashboards')!);
+    expect(guard).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(button('Gantt Chart')!);
+    });
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(useViewStore.getState().currentView).toBe('dashboards');
+    answer = true;
+    await act(async () => {
+      fireEvent.click(button('Gantt Chart')!);
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    unregister();
   });
 
   it('badges My Work with the approvals to decide, in its accessible name', () => {

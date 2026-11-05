@@ -2,9 +2,9 @@
 Pydantic schemas for Users and Staff.
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
-from app.schemas.base import DateTimeJS
+from app.schemas.base import DateTimeJS, EmailAddress
 from app.schemas.team import TeamIds
 from app.services.permissions import ROLE_KEY_PATTERN
 
@@ -80,7 +80,7 @@ class StaffDetailResponse(BaseModel):
 class StaffCreate(BaseModel):
     """Request model for creating a staff member."""
 
-    email: EmailStr
+    email: EmailAddress
     # New and changed passwords only; existing logins are unaffected.
     password: str = Field(..., min_length=MIN_PASSWORD_LENGTH)
     first_name: str = Field(..., min_length=1, max_length=100)
@@ -99,7 +99,7 @@ class StaffCreate(BaseModel):
 class StaffUpdate(BaseModel):
     """Request model for updating a staff member."""
 
-    email: EmailStr | None = None
+    email: EmailAddress | None = None
     password: str | None = Field(None, min_length=MIN_PASSWORD_LENGTH)
     first_name: str | None = Field(None, min_length=1, max_length=100)
     last_name: str | None = Field(None, min_length=1, max_length=100)

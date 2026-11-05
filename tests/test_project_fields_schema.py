@@ -32,6 +32,12 @@ from app.models.project_field import (
 )
 from app.services import tenant_provisioner as tp
 from app.services.tenant_provisioner import (
+    DASHBOARD_SHARING_PROBE_SQL,
+    DASHBOARD_SHARING_TABLES,
+    DASHBOARD_TABLES,
+    DASHBOARD_VISIBILITY_CHECK_SQL,
+    DASHBOARD_WIDGET_KIND_CHECK_SQL,
+    DASHBOARDS_PROBE_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
     PROJECT_FIELD_DECIMALS_SQL,
     PROJECT_FIELD_OPTION_SITES_TABLE_SQL,
@@ -387,6 +393,14 @@ def _conn(tables=(), fail_on: str | None = None):
             result = MagicMock()
             result.scalar.return_value = False
             return result
+        if sql == DASHBOARDS_PROBE_SQL:  # the later dashboards step: up to date
+            return rows(DASHBOARD_TABLES)
+        if sql == DASHBOARD_SHARING_PROBE_SQL:  # the dashboard-sharing step: up to date
+            return rows(DASHBOARD_SHARING_TABLES)
+        if sql == DASHBOARD_VISIBILITY_CHECK_SQL:  # its self-gated block, committed
+            return MagicMock()
+        if sql == DASHBOARD_WIDGET_KIND_CHECK_SQL:  # the widget-kinds block, committed
+            return MagicMock()
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append(WIDEN)
             return MagicMock()
@@ -456,9 +470,19 @@ async def test_auto_migration_skips_a_converted_tenant():
 
     await _run_auto_migrations(conn)
 
-    # Only the decimals column step (its own gate) between the probe and the
-    # notification types.
-    assert log[log.index(PROBE) :] == [PROBE, DECIMALS, "COMMIT", WIDEN, "COMMIT"]
+    # Then only the decimals column step (its own gate), the dashboard-sharing
+    # step's two commits (its tables, its visibility block), the widget-kinds
+    # block's commit and the notification types.
+    assert log[log.index(PROBE) :] == [
+        PROBE,
+        DECIMALS,
+        "COMMIT",
+        "COMMIT",
+        "COMMIT",
+        "COMMIT",
+        WIDEN,
+        "COMMIT",
+    ]
     assert PROJECT_FIELDS_MIGRATION_SQL not in log
 
 
@@ -474,7 +498,11 @@ async def test_auto_migration_failure_rolls_back_and_never_raises():
         PROJECT_FIELDS_MIGRATION_SQL,
         "ROLLBACK",
     ]
-    assert log[-4:] == [DECIMALS, "COMMIT", WIDEN, "COMMIT"]  # the later steps still ran
+    # The later steps still ran: the decimals column (its own commit), the
+    # dashboard steps and the notification types.
+    failed = log.index(PROJECT_FIELDS_MIGRATION_SQL)
+    assert log[failed + 1 : failed + 4] == ["ROLLBACK", DECIMALS, "COMMIT"]
+    assert log[-2:] == [WIDEN, "COMMIT"]
 
 
 # ---------------------------------------------------------------------------

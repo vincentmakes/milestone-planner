@@ -31,18 +31,27 @@ The right side shows horizontal bars representing duration of each project, phas
 - A red vertical line marks today's date, and the current month is highlighted in the header
 - Week numbers follow **ISO 8601**: weeks start on Monday and week 1 is the week containing the first Thursday of the year, so 1–3 January 2027 show as week 53 (of 2026)
 - The timeline opens centred on today in every view
-- Bank holidays and company events are highlighted on the background; a company event marked as a [site closure](settings.md#site-closures) gets a stronger, hatched tint (tooltip *Site closed: &lt;name&gt;*)
+- Bank holidays and company events are highlighted on the background at week and month zoom; a company event marked as a [site closure](settings.md#site-closures) gets a stronger, hatched tint
+- A thin strip in the timeline header, under the day labels, names every holiday and company event of a day — see [Holidays and events on the timeline](#holidays-and-events-on-the-timeline)
 - Staff assignment bars are marked on days the person is away — an unavailable absence, or a closure of one of their sites
+
+### Holidays and Events on the Timeline
+
+Under the day labels, the timeline header holds a thin strip — its own row, above the project bars — with one coloured band per [company event](settings.md#company-events), in the event's own colour. Several events on the same days are stacked on up to **three lanes**; a bank holiday is the orange line on the top lane, the events go below it. When a day holds more than fits, a small **+N** marks how many are left out (a dot on narrow days). A site closure's band carries a thin outline. At **quarter** and **year** zoom each week or month with events gets one band, in the colour of its first event, and a count of its events.
+
+Hover the strip — or move the keyboard focus onto it with Tab — and a panel opens listing everything on that day, week or month: at week and month zoom the day's bank holiday first, then — at every zoom — each event with its colour, its dates and, when it applies, **Site closure**, **Closure for &lt;teams&gt;** (a closure limited to teams) or **Teams: &lt;teams&gt;** (a plain event limited to teams). Click the strip (tap on a phone) to keep the panel open; click again, click elsewhere or press Escape to close it. If you may manage company events, click an event's name to open it in [Settings → Company events](settings.md#company-events).
+
+The strip follows the header [team filter](settings.md#team-filter): an event limited to teams you have filtered out leaves the strip and the panel. The same strip is drawn on the Staff, Equipment, Cross-site and Archived timelines; the Staff and Equipment panels shown below the Gantt use the Gantt's own header strip.
 
 ## Resource Panels
 
-People who can edit any project (administrators and superusers by default) and project managers (users who manage at least one project) can dock the **Staff Overview** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
+People who can edit any project (administrators and superusers by default) and project managers (users who manage at least one project) can dock the **Staff & Calendar** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
 
 This is the fastest way to see scheduling and capacity together: changes you make in the Gantt are reflected in the panel below in real time.
 
 An administrator can choose a panel that opens every time the Gantt chart is opened, and default skills or equipment types for the panels' filters, in [Settings → Features & defaults](settings.md#features-defaults). You can still close the panel or change the filter; the default applies again the next time you open the Gantt chart.
 
-![Gantt chart with the Staff Overview panel docked below, showing assignments per person](../assets/screenshots/gantt-with-staff-panel.png){ loading=lazy }
+![Gantt chart with the Staff & Calendar panel docked below, showing assignments per person](../assets/screenshots/gantt-with-staff-panel.png){ loading=lazy }
 
 ![Gantt chart with the Equipment panel docked below, showing equipment availability](../assets/screenshots/gantt-with-equipment-panel.png){ loading=lazy }
 
@@ -108,6 +117,8 @@ Besides its name, dates and manager, a project carries **fields**. Four are buil
 - **Switch** — on or off
 
 No field is required. A dropdown item can be limited to some sites and to some [teams](settings.md#teams) of a site, so the dialog only offers the items that apply to the project's site and teams; unticking a project's last matching team removes such an item from the project when you save. People who can manage project fields (admins by default) see a **Manage fields…** link that opens Settings → Project fields.
+
+**Details on hover (Shift).** Hold Shift and point at a project bar to see its details. By default they show the customer, the PM, whether the project is confirmed (*Confirmed: Yes / No*, under the field's own name if it was renamed), the tags, the period, the completion, the work days, the total days and the assigned staff. An administrator chooses the rows with the **In Gantt details** switches in **Settings → Project fields**, which has a preview (see [Project fields](settings.md#project-fields)): Sales PM, Volume (in its format) and any custom project field can be added — a dropdown field shows its items as coloured pills — and any row can be left out. A row with no value for the project is not shown. Phases and subphases always show their own details.
 
 ## Tags
 

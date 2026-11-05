@@ -6,19 +6,28 @@ import { describe, it, expect } from 'vitest';
 import {
   BUILT_IN_FIELD_DEFAULTS,
   BUILT_IN_PROJECT_FIELDS,
+  DEFAULT_TOOLTIP_ROWS,
+  PROJECT_TOOLTIP_ROWS,
   builtInFieldLabel,
   fieldLabelsValue,
   ganttDefaultPanel,
   hiddenFieldsValue,
   isBuiltInFieldHidden,
   isSettingOn,
+  isTooltipRowShown,
   parseFieldLabels,
   parseHiddenFields,
   parseIdList,
   parseNameList,
+  parseTooltipRows,
+  tooltipRowGate,
+  tooltipRowLabel,
+  tooltipRowsValue,
   volumeDecimals,
   volumeDecimalsValue,
 } from '../instanceSettings';
+import type { TooltipRow } from '../instanceSettings';
+import { INSTANCE_SETTING_DEFAULTS } from '@/api/endpoints/settings';
 
 describe('parseIdList', () => {
   it('keeps the unique positive integers in order', () => {
@@ -161,5 +170,115 @@ describe('volume decimals', () => {
     expect(volumeDecimalsValue(null)).toBe('any');
     expect(volumeDecimalsValue(0)).toBe('0');
     expect(volumeDecimalsValue(3)).toBe('3');
+  });
+});
+
+describe('Gantt details rows (project_tooltip_rows)', () => {
+  it('lists the built-in rows in the backend order', () => {
+    expect(PROJECT_TOOLTIP_ROWS.map((r) => r.key)).toEqual([
+      'customer',
+      'pm',
+      'sales_pm',
+      'volume',
+      'confirmed',
+      'tags',
+      'period',
+      'completion',
+      'work_days',
+      'total_days',
+      'staff',
+    ]);
+  });
+
+  it('has the default rows as its default value, already canonical', () => {
+    const value = INSTANCE_SETTING_DEFAULTS.project_tooltip_rows;
+    expect(parseTooltipRows(value)).toEqual(DEFAULT_TOOLTIP_ROWS);
+    expect(tooltipRowsValue(DEFAULT_TOOLTIP_ROWS)).toBe(value);
+  });
+
+  it.each([undefined, null, '', 'not json', '{}', '"customer"', '3'])(
+    'reads %j as the default rows',
+    (value) => {
+      expect(parseTooltipRows(value)).toEqual(DEFAULT_TOOLTIP_ROWS);
+    }
+  );
+
+  it('reads [] as no row', () => {
+    expect(parseTooltipRows('[]')).toEqual([]);
+  });
+
+  it('keeps known keys in display order, then ids ascending, each once', () => {
+    expect(parseTooltipRows('[7,"staff","customer",3,7,"volume","staff"]')).toEqual([
+      'customer',
+      'volume',
+      'staff',
+      3,
+      7,
+    ]);
+  });
+
+  it('drops unknown keys and anything that is not a positive integer id', () => {
+    expect(parseTooltipRows('["name","Customer",0,-1,1.5,true,null,"4",[2],"pm",9]')).toEqual(['pm', 9]);
+  });
+
+  it('writes the canonical value the backend stores', () => {
+    expect(tooltipRowsValue(['staff', 12, 'customer', 5, 12, 'volume'])).toBe(
+      '["customer","volume","staff",5,12]'
+    );
+    expect(tooltipRowsValue([])).toBe('[]');
+  });
+
+  it('captions the built-in fields with their renamed labels, the other rows with the defaults', () => {
+    const settings = {
+      project_field_labels: '{"customer":"Client","sales_pm":"Seller","volume":"Budget","confirmed":"Won"}',
+    };
+    expect(PROJECT_TOOLTIP_ROWS.map((r) => tooltipRowLabel(settings, r.key))).toEqual([
+      'Client',
+      'PM',
+      'Seller',
+      'Budget',
+      'Won',
+      'Tags',
+      'Period',
+      'Completion',
+      'Work days',
+      'Total',
+      'Assigned staff',
+    ]);
+    expect(tooltipRowLabel(null, 'volume')).toBe('Volume');
+    expect(tooltipRowLabel(undefined, 'staff')).toBe('Assigned staff');
+  });
+
+  it('shows a row only when it is listed', () => {
+    const settings = { project_tooltip_rows: '["pm","volume",4]' };
+    expect(isTooltipRowShown(settings, 'pm')).toBe(true);
+    expect(isTooltipRowShown(settings, 'volume')).toBe(true);
+    expect(isTooltipRowShown(settings, 4)).toBe(true);
+    expect(isTooltipRowShown(settings, 'customer')).toBe(false);
+    expect(isTooltipRowShown(settings, 5)).toBe(false);
+  });
+
+  it('never shows a listed built-in field that is hidden (Confirmed cannot be hidden)', () => {
+    const settings = {
+      project_tooltip_rows: '["customer","sales_pm","volume","confirmed"]',
+      project_fields_hidden: '["customer","volume"]',
+    };
+    expect(isTooltipRowShown(settings, 'customer')).toBe(false);
+    expect(isTooltipRowShown(settings, 'volume')).toBe(false);
+    expect(isTooltipRowShown(settings, 'sales_pm')).toBe(true);
+    expect(isTooltipRowShown(settings, 'confirmed')).toBe(true);
+  });
+
+  it('reads unloaded settings as the default rows', () => {
+    expect(isTooltipRowShown(null, 'customer')).toBe(true);
+    expect(isTooltipRowShown(undefined, 'staff')).toBe(true);
+    expect(isTooltipRowShown(null, 'volume')).toBe(false);
+  });
+
+  it('builds one gate per settings value, the same answers as isTooltipRowShown', () => {
+    const settings = { project_tooltip_rows: '["customer","pm",4]', project_fields_hidden: '["customer"]' };
+    const shows = tooltipRowGate(settings);
+    expect((['customer', 'pm', 'volume', 4, 5] as TooltipRow[]).map((row) => shows(row))).toEqual([false, true, false, true, false]);
+    expect(tooltipRowGate(null)('staff')).toBe(true);
   });
 });

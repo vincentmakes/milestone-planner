@@ -134,6 +134,9 @@ same reason; use `run_migration.py` instead.
 | `add_project_comments` | Tenant | Lets a project carry its own comment thread: the `card_comments` entity-type CHECK gains `project` (2.0.0, also applied automatically on startup) — see below |
 | `add_project_field_decimals` | Tenant | Adds `project_fields.decimals`, the decimals of a number project field (2.1.0, also applied automatically on startup) — see below |
 | `add_equipment_assignment_note` | Tenant | Adds `equipment_assignments.note`, the optional note of an equipment booking (2.0.0, also applied automatically on startup) — see below |
+| `add_dashboard_sharing` | Tenant | Dashboard sharing by site, team and person: `dashboard_sites`, `dashboard_teams` and `dashboard_users`, and the visibility value `roles` renamed `shared` (2.3.0, also applied automatically on startup; requires `add_dashboards` and `add_teams`) — see below |
+| `add_dashboard_widget_kinds` | Tenant | The widget kinds `gauge`, `heatmap`, `treemap` and `sankey` added to `dashboard_widgets_kind_check` — only for databases created from a pre-release 2.3.0 build (2.3.0, also applied automatically on startup; requires `add_dashboards`) — see below |
+| `add_dashboards` | Tenant | Dashboards: `dashboards`, `dashboard_roles` and `dashboard_widgets` (2.3.0, also applied automatically on startup, which also creates the *Overview* and *Capacity and flows* dashboards and grants the two dashboard permissions; requires `add_rbac`) — see below, and **let the application upgrade the tenant rather than running it first** |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -262,8 +265,66 @@ python migrations/run_migration.py add_project_field_decimals
 python migrations/run_migration.py add_equipment_assignment_note
 ```
 
+### Dashboards (2.3.0)
+
+`add_dashboards` creates the three dashboard tables:
+
+| Table | Holds |
+|-------|-------|
+| `dashboards` | Name, description, owner (`owner_id`, set to NULL when the owner is deleted — their *private* dashboards are deleted with them), visibility `private` / `shared` / `everyone` (CHECK `dashboards_visibility_check`) and `is_default` (at most one default: partial unique index `dashboards_one_default`) |
+| `dashboard_roles` | The roles a dashboard is shared with (both foreign keys cascade: deleting a role or a dashboard removes the link) |
+| `dashboard_widgets` | One row per widget: kind `kpi` / `bar` / `line` / `pie` / `table` / `gauge` / `heatmap` / `treemap` / `sankey` (CHECK `dashboard_widgets_kind_check`), title, the metric query, display options and grid layout as JSON text, order; deleted with their dashboard |
+
+Dashboards are instance-wide (no site column), so the [site export](../user-guide/import-export.md#site-excel-export) has no dashboards sheet. The file also grants the tables and their sequences to the tenant's database user. The same statements run **automatically** when a tenant's connection pool is created (single-tenant: at start-up) and a dashboard table is missing (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)); in that same run, and only then, the application:
+
+- creates the two built-in dashboards, shared with everyone: the default **Overview** and **Capacity and flows**;
+- allows **Dashboards** (`views.dashboards`) for the Superuser and User roles and **Manage dashboards** (`dashboards.manage`) for the Superuser role, unless an administrator already set those permissions.
+
+A later start never repeats this, so a built-in dashboard an administrator deleted, or a permission they removed, stays that way. Custom roles get neither permission: allow them in **Settings → Roles** where wanted. Newly provisioned tenants and fresh installs (`AUTO_INIT_DB`) get both dashboards and the default permissions from their own seed, in the run that creates the tables.
+
+The rule is the same for every tenant: the dashboards are seeded once, by the run that creates the dashboard tables, and never afterwards. A tenant whose tables already exist — for example one upgraded with a pre-release 2.3.0 build — keeps the dashboards it has and does not get *Capacity and flows*; an administrator can build it by hand (a heatmap, a treemap and a sankey of booked weeks). *Capacity and flows* is inserted only while no dashboard bears that name.
+
+!!! warning "Run it by hand only after the application"
+    Running `add_dashboards` **by hand before 2.3.0 first starts** on a tenant creates the tables, so the automatic upgrade finds them and adds neither the two built-in dashboards nor the two permissions. Let the application upgrade the tenant; running the file afterwards changes nothing. If it already happened, an administrator can allow the permissions in Settings → Roles and build a dashboard by hand.
+
+    A database created by hand from `setup_databases.sql` or `scripts/sql/tenant_schema_template.sql` gets the tables and the default permissions, but no dashboard: the automatic upgrade finds the tables and seeds nothing. An administrator builds the first dashboard in the app.
+
+```bash
+python migrations/run_migration.py add_dashboards
+```
+
 !!! note "Pre-release databases"
     Personal tasks (My Todos) were removed before 2.0.0 shipped, so `add_rbac` no longer creates a `todos` table and no migration names a `todo_assigned` notification type. A database upgraded from a pre-release 2.0.0 build keeps its unused `todos` table and the wider notification CHECK; nothing writes either any more.
+
+#### Sharing by Site, Team and Person
+
+`add_dashboard_sharing` adds the three other kinds of target a `shared` dashboard can have, beside its roles. A `shared` dashboard opens for anyone matching **one** of them:
+
+| Table | Holds |
+|-------|-------|
+| `dashboard_sites` | The sites a dashboard is shared with — it opens for the site's **members** (`user_sites`); seeing every site is not membership |
+| `dashboard_teams` | The teams a dashboard is shared with — it opens for the team's members |
+| `dashboard_users` | The people a dashboard is shared with by name |
+
+Each link has the pair as its primary key, an index on the target column, and foreign keys that cascade both ways: deleting a dashboard, or the site, team or user it names, removes the link. The file also grants the three tables to the tenant's database user. Nothing is seeded.
+
+The file also holds a self-gated block for databases created from a **pre-release 2.3.0 build** (whose visibility CHECK still says `roles`): while `dashboards_visibility_check` does not allow `shared`, it drops the constraint, turns every `roles` row into `shared`, and adds the constraint back as `private` / `shared` / `everyone`. On any other database it does nothing.
+
+The same statements run **automatically** when a tenant's connection pool is created (single-tenant: at start-up), in their own step right after the dashboards step: the tables when one is missing, the visibility block every time (it gates itself). Because it is a separate step, it never re-runs the dashboards step's one-time dashboard seed. Running the file by hand is optional and changes nothing on an upgraded tenant.
+
+```bash
+python migrations/run_migration.py add_dashboard_sharing
+```
+
+#### Widget Kinds
+
+`add_dashboard_widget_kinds` holds one self-gated block for databases created from a **pre-release 2.3.0 build**, whose `dashboard_widgets_kind_check` allows only `kpi` / `bar` / `line` / `pie` / `table`: while the constraint does not allow `sankey`, it drops it and adds it back with the nine kinds (`gauge`, `heatmap`, `treemap` and `sankey` added). No row changes. On any other database — and on every fresh install, whose schema has the nine kinds from the start — it does nothing.
+
+The application runs the same block **automatically** on every tenant pool creation (single-tenant: at start-up), in its own step right after the visibility block. If that step fails (typically: the pool's database user does not own `dashboard_widgets`), the log shows an error naming this file, and saving a gauge, heatmap, treemap or sankey widget fails until it is applied:
+
+```bash
+python migrations/run_migration.py add_dashboard_widget_kinds
+```
 
 ### Writing New Migrations
 

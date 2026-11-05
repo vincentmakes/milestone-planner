@@ -119,7 +119,8 @@ export function Header() {
   // while it runs) so Apply/Discard can never disappear.
   const showWhatIf = canUseWhatIf && (isGanttView || whatIfMode);
   // Every view except Kanban renders a timeline, so date navigation, the view-mode
-  // switcher, undo/redo and zoom belong to all of them but the board.
+  // switcher and zoom belong to all of them but the board. Undo/redo act on the
+  // Gantt's edits only, so they are offered on the Gantt alone (like What-If).
   const isTimelineView = currentView !== 'kanban';
 
   const density = useHeaderDensity();
@@ -151,7 +152,7 @@ export function Header() {
         <ZoomControls />
       </OverflowRow>
     ),
-    isTimelineView && inMenu.has('undoRedo') && (
+    isGanttView && inMenu.has('undoRedo') && (
       <OverflowRow key="history" label="History">
         <UndoRedoControls />
       </OverflowRow>
@@ -204,7 +205,7 @@ export function Header() {
               </>
             )}
 
-            {!inMenu.has('undoRedo') && (
+            {isGanttView && !inMenu.has('undoRedo') && (
               <>
                 <UndoRedoControls />
                 <div className={styles.divider} />
@@ -249,7 +250,7 @@ export function Header() {
                     }}
                   >
                     <Icon icon={UsersIcon} size={18} />
-                    <span>Staff</span>
+                    <span>Staff & Calendar</span>
                   </button>
                   <button
                     className={`${styles.panelToggleBtn} ${styles.equipment} ${showEquipmentOverview ? styles.active : ''}`}
