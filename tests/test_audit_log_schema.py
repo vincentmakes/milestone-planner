@@ -14,6 +14,7 @@ run outside the repository.
 import logging
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -36,6 +37,7 @@ from app.database import Base
 from app.models.audit_log import AUDIT_LOG_CATEGORIES, AUDIT_LOG_OUTCOMES, AuditLog
 from app.models.rbac import Role
 from app.models.user import User
+from app.services import audit_log as audit_log_service
 from app.services.tenant_provisioner import (
     AUDIT_LOG_INDEX_STATEMENTS,
     AUDIT_LOG_PROBE_SQL,
@@ -48,7 +50,11 @@ from app.services.tenant_provisioner import (
     get_tenant_schema_sql,
 )
 from migrations.run_migration_master import split_sql_statements
+from tests.sqlite_support import AsyncSessionFacade
 from tests.support import audit_log_step
+
+# Route tests stub audit_log.record (an autouse fixture): the real one.
+REAL_RECORD = audit_log_service.record
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "add_audit_log.sql"
@@ -182,6 +188,9 @@ def test_probe_looks_up_the_table_in_pg_class():
 def test_the_model_constants_match_the_checks():
     assert AUDIT_LOG_CATEGORIES == ("auth", "admin", "access", "change")
     assert AUDIT_LOG_OUTCOMES == ("success", "failure")
+    # The service validates against the same tuples.
+    assert audit_log_service.CATEGORIES is AUDIT_LOG_CATEGORIES
+    assert audit_log_service.OUTCOMES is AUDIT_LOG_OUTCOMES
 
 
 # ---------------------------------------------------------------------------
@@ -506,7 +515,7 @@ def test_models_package_exports_the_model():
 
 
 # ---------------------------------------------------------------------------
-# The ORM on SQLite: defaults, checks, the actor's delete
+# The ORM on SQLite: defaults, checks, the actor's delete, a recorded row
 # ---------------------------------------------------------------------------
 
 
@@ -584,3 +593,34 @@ def test_the_row_outlives_its_actor(sqlite_session):
 
     assert sqlite_session.execute(text("SELECT actor_user_id FROM audit_log")).all() == [(None,)]
 
+
+async def test_a_recorded_row_round_trips(sqlite_session):
+    """The real ``record`` on a real session: the row is flushed (it has an
+    id), not committed -- the caller's commit persists it."""
+    db = AsyncSessionFacade(sqlite_session)
+    # The actor as get_current_user hands it over (a session snapshot).
+    actor = SimpleNamespace(id=7, email="ada@x", first_name="Ada", last_name="L")
+
+    entry = await REAL_RECORD(
+        db,
+        None,
+        action="admin.settings.updated",
+        category="admin",
+        actor=actor,
+        target=("setting", "instance_title", "instance_title"),
+        changes={"instance_title": {"old": "Milestone", "new": "R&D planner"}},
+    )
+
+    assert entry.id is not None
+    assert sqlite_session.in_transaction()
+    sqlite_session.rollback()
+    assert sqlite_session.execute(text("SELECT count(*) FROM audit_log")).scalar() == 0
+
+    entry = await REAL_RECORD(
+        db, None, action="admin.settings.updated", category="admin", actor=actor
+    )
+    await db.commit()
+    sqlite_session.expire_all()
+    loaded = sqlite_session.get(AuditLog, entry.id)
+    assert (loaded.actor_user_id, loaded.actor_email, loaded.actor_name) == (7, "ada@x", "Ada L")
+    assert (loaded.origin, loaded.outcome, loaded.details) == ("system", "success", None)
