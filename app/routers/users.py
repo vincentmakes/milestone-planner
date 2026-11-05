@@ -381,12 +381,7 @@ async def create_user(
     for team in teams:
         db.add(TeamMember(team_id=team.id, user_id=user.id))
 
-    await db.commit()
-    await db.refresh(user)
-    user.sites = sites
-    user.skills = skills
-    user.teams = teams
-    # After the commit (the id); get_db commits the row.
+    # In the create's own transaction (the id came from the flush above).
     await audit_log.record(
         db,
         request,
@@ -397,6 +392,11 @@ async def create_user(
         target=_user_target(user),
         context={"role": user.role},
     )
+    await db.commit()
+    await db.refresh(user)
+    user.sites = sites
+    user.skills = skills
+    user.teams = teams
 
     return build_user_list_response(user)
 

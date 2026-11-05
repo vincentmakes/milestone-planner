@@ -75,7 +75,7 @@ Audit rows: `admin.user.created` (context `role`), `admin.user.updated` (`change
 
 All holiday/event writes also require every site involved to be visible (`ensure_site_access` from `app/services/site_access.py`; `sites.view_all` holders any site), and the calendar reads 403 on a site outside the visible ones.
 
-Audit rows: `admin.site.created` / `updated` / `deleted`, target `("site", id, name)`, `changes` of name, location, city, country, region, timezone and active (nothing when unchanged). The holiday and event routes are recorded by `BroadcastMiddleware` (`admin.bank_holiday.*`, `admin.company_event.*`, target id = the last numeric path segment).
+Audit rows: `admin.site.created` / `updated` / `deleted`, target `("site", id, name)`, `changes` of name, location, city, country, region, timezone and active (nothing when unchanged). The holiday and event routes are recorded by `BroadcastMiddleware` (`admin.bank_holiday.*`, `admin.company_event.*`, target id = the trailing path segment when numeric, none for a create or import).
 
 ### Projects, phases & subphases (`projects.py`)
 

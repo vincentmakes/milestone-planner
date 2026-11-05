@@ -58,7 +58,7 @@ Every sign-in event is an `auth` row of the audit log (`app/routers/auth.py`, `a
 
 | Event | Action | Outcome | Reason / context |
 |-------|--------|---------|------------------|
-| Throttled `POST /auth/login` (the 429) | `auth.login.locked` | failure | `throttled`; `retry_after` (seconds); `subject_email` |
+| The failure that reaches the throttle limit (`record_login_failure` reports it) | `auth.login.locked` | failure | `throttled`; `retry_after` (seconds), `locked_until` (ISO UTC); `subject_email`; written once, right after that attempt's `auth.login.failed` — a refused attempt while locked (the 429) records **nothing**, so a locked-out client cannot grow the table |
 | Unknown e-mail | `auth.login.failed` | failure | `unknown_user`; `subject_email` |
 | Wrong password | `auth.login.failed` | failure | `bad_password`; actor = the account |
 | Disabled account | `auth.login.failed` | failure | `inactive`; actor = the account |

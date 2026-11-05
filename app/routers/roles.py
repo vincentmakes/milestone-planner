@@ -287,9 +287,14 @@ async def create_role(
         ],
     )
     db.add(role)
-    await _commit(db, f'A role with the key "{data.key}" or the name "{name}" already exists')
-    await _refresh_role(db, role)
-    # After the commit; get_db commits the row.
+    duplicate = f'A role with the key "{data.key}" or the name "{name}" already exists'
+    # The insert is flushed first (a lost key / name race is a 400, as at the
+    # commit), then the audit row joins the create's own transaction.
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=duplicate) from e
     await audit_log.record(
         db,
         request,
@@ -300,6 +305,8 @@ async def create_role(
         changes=audit_log.diff({}, _role_fields(role), keys=ROLE_AUDIT_FIELDS),
         context={"permissions": sorted(matrix)},
     )
+    await _commit(db, duplicate)
+    await _refresh_role(db, role)
 
     return _role_response(role, 0)
 

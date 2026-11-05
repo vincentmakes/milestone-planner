@@ -118,8 +118,11 @@ async def test_a_disabled_account_records_inactive(app_client, mock_db_session, 
     assert seen == [1]
 
 
-async def test_a_locked_login_records_the_throttle(app_client, mock_db_session, audit_calls):
-    seen = commits_after_rows(mock_db_session, audit_calls)
+async def test_a_request_refused_while_locked_records_nothing(
+    app_client, mock_db_session, audit_calls
+):
+    """The lock was recorded once, when it happened: a locked-out client must
+    not grow the table request by request."""
     locked = HTTPException(status_code=429, detail="Too many", headers={"Retry-After": "42"})
 
     with patch("app.routers.auth.check_login_allowed", side_effect=locked):
@@ -128,13 +131,46 @@ async def test_a_locked_login_records_the_throttle(app_client, mock_db_session, 
         )
 
     assert resp.status_code == 429
-    (row,) = rows(audit_calls)
-    assert row["action"] == "auth.login.locked"
-    assert (row["outcome"], row["reason"]) == ("failure", "throttled")
-    assert row["subject_email"] == "ada@example.com"
-    assert row["context"] == {"retry_after": 42}
-    assert seen == [1]
+    assert resp.headers["retry-after"] == "42"
+    assert audit_calls == []
+    mock_db_session.commit.assert_not_awaited()
     mock_db_session.execute.assert_not_awaited()  # no user lookup once locked
+
+
+async def test_the_failure_that_locks_records_failed_then_locked(
+    app_client, mock_db_session, audit_calls
+):
+    from app.services.login_throttle import MAX_FAILURES
+
+    mock_db_session.execute.return_value = scalar_result(None)
+    seen = commits_after_rows(mock_db_session, audit_calls)
+    body = {"email": "ghost@example.com", "password": "whatever1"}
+
+    for _ in range(MAX_FAILURES - 1):
+        assert (await app_client.post("/api/auth/login", json=body)).status_code == 401
+    assert [r["action"] for r in rows(audit_calls)] == ["auth.login.failed"] * (MAX_FAILURES - 1)
+    audit_calls.clear()
+    seen.clear()
+
+    resp = await app_client.post("/api/auth/login", json=body)  # the threshold failure
+
+    assert resp.status_code == 401
+    failed, locked = rows(audit_calls)
+    assert failed["action"] == "auth.login.failed"
+    assert locked["action"] == "auth.login.locked"
+    assert (locked["outcome"], locked["reason"], locked["subject_email"]) == (
+        "failure",
+        "throttled",
+        "ghost@example.com",
+    )
+    assert 0 < locked["context"]["retry_after"] <= 15 * 60 + 1
+    assert locked["context"]["locked_until"].endswith("Z")
+    assert seen == [2]  # both rows, then one commit, before the 401
+
+    # The next attempt is refused without a row.
+    audit_calls.clear()
+    assert (await app_client.post("/api/auth/login", json=body)).status_code == 429
+    assert audit_calls == []
 
 
 async def test_a_successful_login_records_the_sign_in(app_client, mock_db_session, audit_calls):
@@ -750,3 +786,30 @@ async def test_record_detached_outside_a_request_uses_the_default_database(audit
         await REAL_RECORD_DETACHED(None, action="project.updated", category="change")
 
     session.commit.assert_awaited_once()
+
+
+def test_record_login_failure_reports_the_lock_once():
+    from app.services import login_throttle as lt
+
+    request = MagicMock()
+    request.client.host = "10.0.0.5"  # private: only the (ip, e-mail) bucket
+    results = [lt.record_login_failure("tenant:a", request, "x@y") for _ in range(lt.MAX_FAILURES)]
+
+    assert results[:-1] == [None] * (lt.MAX_FAILURES - 1)
+    assert isinstance(results[-1], int) and results[-1] > 0
+    # One more failure (a race past the check) does not report it again.
+    assert lt.record_login_failure("tenant:a", request, "x@y") is None
+
+
+def test_the_public_ip_bucket_reports_its_lock_too():
+    from app.services import login_throttle as lt
+
+    request = MagicMock()
+    request.client.host = "8.8.8.8"  # a public address (TEST-NET counts as private)
+    results = [
+        lt.record_login_failure("tenant:a", request, f"u{i}@y")
+        for i in range(lt.MAX_FAILURES_PER_IP)
+    ]
+
+    assert results[:-1] == [None] * (lt.MAX_FAILURES_PER_IP - 1)
+    assert isinstance(results[-1], int)

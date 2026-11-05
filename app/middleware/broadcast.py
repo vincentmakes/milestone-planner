@@ -160,11 +160,14 @@ def audit_action_for(method: str, path: str) -> tuple[str, str, str] | None:
 
 
 def audit_target_id(path: str) -> str | None:
-    """The last numeric segment of ``path`` (``/api/sites/3/holidays/9`` -> ``"9"``)."""
-    for segment in reversed(path.rstrip("/").split("/")):
-        if _NUMERIC_SEGMENT.match(segment):
-            return segment
-    return None
+    """
+    The id the write targets: the **trailing** path segment when it is
+    numeric (``/api/sites/3/holidays/9`` -> ``"9"``), else None -- a create
+    or an import under a parent (``/api/sites/3/holidays``, ``.../import``,
+    ``.../refresh``) names the parent, not the row it writes.
+    """
+    segment = path.rstrip("/").rsplit("/", 1)[-1]
+    return segment if _NUMERIC_SEGMENT.match(segment) else None
 
 
 def _resolve_entity_type(path: str) -> str | None:

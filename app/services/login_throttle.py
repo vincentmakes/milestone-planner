@@ -97,8 +97,13 @@ def _record(bucket: dict[K, deque[float]], key: K, now: float) -> None:
     entries.append(now)
 
 
+def _retry_after(oldest: float, now: float) -> int:
+    """Seconds until the oldest failure of a full bucket ages out."""
+    return max(1, int(WINDOW_SECONDS - (now - oldest)) + 1)
+
+
 def _too_many(oldest: float, now: float) -> HTTPException:
-    retry_after = max(1, int(WINDOW_SECONDS - (now - oldest)) + 1)
+    retry_after = _retry_after(oldest, now)
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         detail="Too many failed sign-in attempts. Please try again later.",
@@ -117,13 +122,28 @@ def check_login_allowed(scope: str, request: Request, email: str) -> None:
         raise _too_many(_ip_failures[ip][0], now)
 
 
-def record_login_failure(scope: str, request: Request, email: str) -> None:
-    """Count one failed attempt for this (ip, e-mail) and, if public, this ip."""
+def record_login_failure(scope: str, request: Request, email: str) -> int | None:
+    """
+    Count one failed attempt for this (ip, e-mail) and, if public, this ip.
+
+    Returns the ``Retry-After`` seconds when **this** failure is the one that
+    locks the key (or the public ip) -- the bucket reaches its limit now --
+    and None otherwise. A locked key refuses further attempts before their
+    password is checked, so no later failure is counted and the lock is
+    reported once (the tenant login records ``auth.login.locked`` then, never
+    on each refused request).
+    """
     now = time.monotonic()
     key = _key(scope, request, email)
     _record(_failures, key, now)
+    locked: int | None = None
+    if _recent(_failures, key, now) == MAX_FAILURES:
+        locked = _retry_after(_failures[key][0], now)
     if not _ip_may_be_shared(key[1]):
         _record(_ip_failures, key[1], now)
+        if locked is None and _recent(_ip_failures, key[1], now) == MAX_FAILURES_PER_IP:
+            locked = _retry_after(_ip_failures[key[1]][0], now)
+    return locked
 
 
 def record_login_success(scope: str, request: Request, email: str) -> None:

@@ -8,6 +8,7 @@ Matches the Node.js API at /api/auth exactly.
 import logging
 import re
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from types import SimpleNamespace
 from urllib.parse import quote_plus, urlparse
 
@@ -69,6 +70,7 @@ from app.services.sso import (
 )
 from app.services.sso_errors import parse_entra_token_error
 from app.services.sso_test import SecretSource, SecretState, run_entra_test
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -156,22 +158,10 @@ async def login(
 
     # Failed-attempt throttle per (tenant, client ip, e-mail); 429 once exceeded.
     throttle_scope = f"tenant:{getattr(request.state, 'tenant_slug', None) or ''}"
-    try:
-        check_login_allowed(throttle_scope, request, data.email)
-    except HTTPException as exc:
-        retry_after = (exc.headers or {}).get("Retry-After")
-        await audit_log.record(
-            db,
-            request,
-            action="auth.login.locked",
-            category="auth",
-            outcome="failure",
-            subject_email=data.email,
-            reason="throttled",
-            context={"retry_after": int(retry_after)} if retry_after else None,
-        )
-        await db.commit()  # get_db rolls back on the raise
-        raise
+    # A refused (locked) attempt records nothing: the lock was recorded once,
+    # when the failure that caused it crossed the threshold (below), so a
+    # locked-out client cannot grow the audit log request by request.
+    check_login_allowed(throttle_scope, request, data.email)
 
     # Find user by email
     result = await db.execute(
@@ -184,7 +174,7 @@ async def login(
     if user is None:
         dummy_verify_user_password(data.password)
     if not user or not verify_user_password(data.password, user.password):
-        record_login_failure(throttle_scope, request, data.email)
+        locked_for = record_login_failure(throttle_scope, request, data.email)
         await audit_log.record(
             db,
             request,
@@ -195,6 +185,23 @@ async def login(
             subject_email=data.email,
             reason="unknown_user" if user is None else "bad_password",
         )
+        if locked_for is not None:
+            # This failure locked the (ip, e-mail) key or the ip: once.
+            locked_until = utcnow_naive() + timedelta(seconds=locked_for)
+            await audit_log.record(
+                db,
+                request,
+                action="auth.login.locked",
+                category="auth",
+                outcome="failure",
+                actor=user,
+                subject_email=data.email,
+                reason="throttled",
+                context={
+                    "retry_after": locked_for,
+                    "locked_until": locked_until.isoformat() + "Z",
+                },
+            )
         await db.commit()  # get_db rolls back on the raise
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

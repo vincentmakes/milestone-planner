@@ -102,6 +102,17 @@ async def _commit_team(db: AsyncSession, name: str) -> None:
         ) from e
 
 
+async def _flush_team(db: AsyncSession, name: str) -> None:
+    """Flush; like ``_commit_team``, a lost unique-name race is a 400."""
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_duplicate_name_detail(name)
+        ) from e
+
+
 async def _refresh_team(db: AsyncSession, team: Team) -> None:
     """
     Reload the team after a commit, members included.
@@ -202,9 +213,7 @@ async def create_team(
         members=members,
     )
     db.add(team)
-    await _commit_team(db, name)
-    await _refresh_team(db, team)
-    # After the commit (the id); get_db commits the row.
+    await _flush_team(db, name)  # the id, for the audit row of the same transaction
     await audit_log.record(
         db,
         request,
@@ -215,6 +224,8 @@ async def create_team(
         changes=audit_log.diff({}, _team_fields(team, members), keys=TEAM_AUDIT_FIELDS),
         context={"site_id": data.site_id},
     )
+    await _commit_team(db, name)
+    await _refresh_team(db, team)
 
     return TeamResponse.model_validate(team)
 

@@ -368,7 +368,7 @@ EXPLICIT_PATHS = [
 
 @pytest.mark.parametrize(("method", "path"), EXPLICIT_PATHS, ids=lambda v: str(v))
 def test_audit_action_for_skips_every_explicit_route(method, path):
-    assert any(p.match(path) for p in bmw.AUDIT_EXPLICIT_PATTERNS) or path.startswith("/api/auth")
+    assert any(p.match(path) for p in bmw.AUDIT_EXPLICIT_PATTERNS)
     assert bmw.audit_action_for(method, path) is None
 
 
@@ -434,7 +434,14 @@ def test_every_entity_is_classified():
         ("/api/skills", None),
         ("/api/skills/4", "4"),
         ("/api/equipment-types/Oven", None),
-        ("/api/sites/3/holidays/refresh", "3"),
+        # Only the trailing segment: a create or import under a site names
+        # the site, not the row it writes.
+        ("/api/sites/3/holidays", None),
+        ("/api/sites/3/holidays/import", None),
+        ("/api/sites/3/holidays/refresh", None),
+        ("/api/sites/3/events", None),
+        ("/api/sites/3/events/5", "5"),
+        ("/api/vacations/4/", "4"),
     ],
 )
 def test_audit_target_id(path, target):
