@@ -21,7 +21,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie. Throttled: 10 failures / 15 min per (tenant, IP, e-mail) → 429 + `Retry-After`; password > 72 bytes → 400. Audit: `auth.login.failed` per failure, capped per (tenant, IP) at 100 in the window (then one row with `context.suppressed`, then none) |
+| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie. Throttled: 10 failures / 15 min per (tenant, IP, e-mail) → 429 + `Retry-After`; password > 72 bytes → 400. Audit: `auth.login.failed` per failure, capped per (tenant, IP) at 100 in the window (then one row with `context.suppressed` at most once per window, then none) |
 | POST | `/auth/logout` | session | Destroy session, clear cookie |
 | GET | `/auth/me` | public | Current user (fresh from DB) with `roleName`, `permissions` (allow keys; admin: every key; feature-disabled keys left out — `effective_permission_set`), `approvalRequired` (keys in approval mode), `canSeeAllSites` and `isResource`, or `{user: null}` (login answers the same shape) |
 | POST | `/auth/change-password` | user | Change own password (verifies current; new ≥ 8 chars) |

@@ -681,6 +681,8 @@ async def _role_names_change(db: AsyncSession, change: dict) -> dict:
     """``{old, new}`` of a role change with each key replaced by the role's
     name (the key itself when the role is gone)."""
     keys = [k for k in (change.get("old"), change.get("new")) if k]
+    if not keys:
+        return change
     result = await db.execute(select(Role.key, Role.name).where(Role.key.in_(keys)))
     names = {key: name for key, name in result.all()}
     return {side: names.get(value, value) for side, value in change.items()}

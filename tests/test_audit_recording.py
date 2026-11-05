@@ -553,6 +553,16 @@ async def test_toggle_active_records_the_direction(
     assert (second["action"], second["context"]) == ("admin.user.activated", None)
 
 
+async def test_a_role_change_without_keys_reads_no_names():
+    from app.routers.users import _role_names_change
+
+    db = MagicMock()
+    db.execute = AsyncMock()
+
+    assert await _role_names_change(db, {"old": None, "new": None}) == {"old": None, "new": None}
+    db.execute.assert_not_awaited()
+
+
 async def test_a_role_change_to_a_role_without_a_row_keeps_its_key(
     authed_client, mock_db_session, audit_calls, revoked
 ):
@@ -1128,6 +1138,26 @@ def test_the_audit_bucket_counts_shared_addresses_and_reports_one_suppression():
     assert lt.audit_failure_mode("tenant:b", request) == "record"
 
 
+def test_a_steady_rate_past_the_cap_writes_one_suppressed_row_per_window(monkeypatch):
+    """101 failures per window keep the count at the cap + 1 (one old entry
+    ages out per new failure): one suppressed row per window, not per try."""
+    from app.services import login_throttle as lt
+
+    monkeypatch.setattr(lt, "WINDOW_SECONDS", 101)  # one failure a second
+    request = MagicMock()
+    request.client.host = "10.0.0.7"
+    clock = [0.0]
+    modes = []
+    with patch.object(lt.time, "monotonic", side_effect=lambda: clock[0]):
+        for second in range(4 * 101):  # four windows
+            clock[0] = float(second)
+            lt.record_login_failure("tenant:a", request, f"u{second}@y")
+            modes.append(lt.audit_failure_mode("tenant:a", request))
+
+    assert modes.count("record") == lt.MAX_FAILURES_PER_IP
+    assert [i for i, mode in enumerate(modes) if mode == "suppressed"] == [100, 201, 302, 403]
+
+
 def test_the_audit_bucket_slides_with_the_window():
     from app.services import login_throttle as lt
 
@@ -1135,9 +1165,10 @@ def test_the_audit_bucket_slides_with_the_window():
     request.client.host = "10.0.0.6"
     clock = [1000.0]
     with patch.object(lt.time, "monotonic", side_effect=lambda: clock[0]):
-        for i in range(lt.MAX_FAILURES_PER_IP + 2):
+        for i in range(lt.MAX_FAILURES_PER_IP + 2):  # as the route does: one query per failure
             lt.record_login_failure("tenant:a", request, f"u{i}@y")
-        assert lt.audit_failure_mode("tenant:a", request) == "silent"
+            mode = lt.audit_failure_mode("tenant:a", request)
+        assert mode == "silent"
         clock[0] += lt.WINDOW_SECONDS
         lt.record_login_failure("tenant:a", request, "later@y")
         assert lt.audit_failure_mode("tenant:a", request) == "record"

@@ -60,7 +60,7 @@ Action keys are past tense and built as `category.entity.verb`.
 | Action | Recorded when |
 |--------|---------------|
 | `auth.login.succeeded` | A user signs in with e-mail and password |
-| `auth.login.failed` | A password sign-in is refused. The reason says why (below). After 100 failed attempts from one address within 15 minutes, one more entry is written with `suppressed: true` in its details and further failures from that address are not recorded until the oldest ones are 15 minutes old; the sign-in lockout itself is unchanged |
+| `auth.login.failed` | A password sign-in is refused. The reason says why (below). After 100 failed attempts from one address within 15 minutes, one more entry is written with `suppressed: true` in its details (at most one such entry every 15 minutes) and further failures from that address are not recorded until fewer than 100 fall within 15 minutes; the sign-in lockout itself is unchanged |
 | `auth.login.locked` | A failure reaches the [login throttle](../developer-guide/auth-and-tenancy.md) limit. Written once, together with that attempt's `auth.login.failed`; the details carry `retry_after` and `locked_until`, and it names the account when it exists. Further refused attempts while locked record nothing |
 | `auth.logout` | A signed-in user signs out |
 | `auth.password.changed` | A user changes their own password; the details carry the number of sessions ended |

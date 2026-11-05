@@ -21,8 +21,9 @@ A third bucket caps the **audit rows** failed sign-ins write, not the
 attempts: per ``(scope, client ip)`` and regardless of whether the address may
 be shared, every failure is counted, and once ``MAX_FAILURES_PER_IP`` of them
 fall inside the window the tenant login writes one ``auth.login.failed`` row
-marked ``suppressed`` and then nothing more for that address until the window
-slides (``audit_failure_mode``). Without it a client behind a private address
+marked ``suppressed`` -- at most one per window, even at a steady rate just
+past the cap -- and nothing more for that address while the count stays past
+it (``audit_failure_mode``). Without it a client behind a private address
 could grow the audit log by one row per request with a fresh e-mail each time
 -- the per-ip lock never applies there and the per-e-mail one never fills.
 
@@ -62,6 +63,9 @@ _ip_failures: dict[str, deque[float]] = {}
 # than one entry past the cap ("suppressed" written, now "silent"), so it is
 # bounded: a flood keeps the newest entries and the window slides from them.
 _audit_failures: dict[tuple[str, str], deque[float]] = {}
+# When the last "suppressed" row was granted per (scope, ip): at most one per
+# window, even while the count hovers just past the cap.
+_audit_suppressed_at: dict[tuple[str, str], float] = {}
 _AUDIT_TRACKED = MAX_FAILURES_PER_IP + 2
 
 
@@ -179,17 +183,23 @@ def audit_failure_mode(scope: str, request: Request) -> AuditFailureMode:
     How the failure just counted by ``record_login_failure`` is audited.
 
     ``"record"`` while this (scope, ip) is within ``MAX_FAILURES_PER_IP``
-    failures in the window; ``"suppressed"`` for the one failure past it (the
-    caller writes a single row saying further ones are not recorded);
-    ``"silent"`` after that, until older failures age out of the window. The
+    failures in the window; past it, ``"suppressed"`` at most once per
+    ``WINDOW_SECONDS`` (the caller writes a single row saying further ones are
+    not recorded) and ``"silent"`` otherwise -- a steady rate that keeps the
+    count just past the cap must not earn a suppressed row per attempt. The
     throttle itself is unaffected: this only caps the rows.
     """
-    count = _recent(_audit_failures, (scope, _client_ip(request)), time.monotonic())
-    if count <= MAX_FAILURES_PER_IP:
+    key = (scope, _client_ip(request))
+    now = time.monotonic()
+    if _recent(_audit_failures, key, now) <= MAX_FAILURES_PER_IP:
         return "record"
-    if count == MAX_FAILURES_PER_IP + 1:
-        return "suppressed"
-    return "silent"
+    last = _audit_suppressed_at.get(key)
+    if last is not None and now - last < WINDOW_SECONDS:
+        return "silent"
+    if key not in _audit_suppressed_at and len(_audit_suppressed_at) >= MAX_TRACKED_KEYS:
+        _audit_suppressed_at.pop(next(iter(_audit_suppressed_at)))
+    _audit_suppressed_at[key] = now
+    return "suppressed"
 
 
 def record_login_success(scope: str, request: Request, email: str) -> None:
@@ -205,3 +215,4 @@ def reset_login_throttle() -> None:
     _failures.clear()
     _ip_failures.clear()
     _audit_failures.clear()
+    _audit_suppressed_at.clear()
