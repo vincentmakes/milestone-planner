@@ -64,6 +64,7 @@ from app.services.tenant_provisioner import (
 )
 from app.utils import utcnow_naive
 from migrations.run_migration_master import split_sql_statements
+from tests.support import audit_log_step
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "add_dashboards.sql"
@@ -384,6 +385,8 @@ def _conn(
 
     async def execute(clause, *args, **kwargs):
         sql = str(clause)
+        if (probe := audit_log_step(sql)) is not None:  # the audit-log step: up to date
+            return probe
         if sql == PROJECT_FIELDS_PROBE_SQL:
             log.append(FIELDS_PROBE)
             return rows(tp.PROJECT_FIELD_TABLES)

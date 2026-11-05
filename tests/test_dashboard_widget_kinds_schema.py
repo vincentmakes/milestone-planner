@@ -40,6 +40,7 @@ from app.services.tenant_provisioner import (
     get_tenant_schema_sql,
 )
 from migrations.run_migration_master import split_sql_statements
+from tests.support import audit_log_step
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "add_dashboard_widget_kinds.sql"
@@ -239,6 +240,8 @@ def _conn(fail_on: str | None = None):
 
     async def execute(clause, *args, **kwargs):
         sql = str(clause)
+        if (probe := audit_log_step(sql)) is not None:  # the audit-log step: up to date
+            return probe
         if sql == PROJECT_FIELDS_PROBE_SQL:
             return rows(tp.PROJECT_FIELD_TABLES)
         if sql == RBAC_NEEDS_MIGRATION_SQL:

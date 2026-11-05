@@ -13,6 +13,7 @@ from typing import Any
 import asyncpg
 
 from app.config import get_settings
+from app.models.audit_log import AUDIT_LOG_CATEGORIES, AUDIT_LOG_OUTCOMES
 from app.models.card_comment import COMMENT_ENTITY_TYPES
 from app.models.dashboard import DASHBOARD_WIDGET_KINDS
 from app.scripts.demo_data import build_demo
@@ -1586,6 +1587,72 @@ DASHBOARD_WIDGET_KIND_CHECK_SQL = f"""
     END $$"""
 
 
+# --- Audit log (add_audit_log.sql, 2.4.0) -----------------------------------
+# One immutable row per recorded action (app/services/audit_log.record): a
+# sign-in or failed attempt, an admin change, an export, a content change.
+# actor_user_id references users (SET NULL: actor_email / actor_name keep the
+# snapshot), so the table follows users in every DDL source; project_id has no
+# FK (the row outlives the project); details is JSON text, never JSONB. The
+# CHECKs are spelled from AUDIT_LOG_CATEGORIES / AUDIT_LOG_OUTCOMES
+# (app/models/audit_log.py). One statement per constant (asyncpg runs a single
+# statement per call); setup_databases.sql, the template and
+# migrations/add_audit_log.sql carry the same text
+# (tests/test_audit_log_schema.py).
+def _in_check(column: str, values: tuple[str, ...]) -> str:
+    """CHECK text ``column IN ('a', 'b')``, spelled as the ORM spells it."""
+    return f"{column} IN (" + ", ".join(f"'{v}'" for v in values) + ")"
+
+
+AUDIT_LOG_TABLE = "audit_log"
+
+AUDIT_LOG_TABLE_SQL = f"""
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id BIGSERIAL PRIMARY KEY,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      category VARCHAR(16) NOT NULL,
+      action VARCHAR(100) NOT NULL,
+      outcome VARCHAR(16) NOT NULL DEFAULT 'success',
+      actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      actor_email VARCHAR(255),
+      actor_name VARCHAR(255),
+      subject_email VARCHAR(255),
+      target_type VARCHAR(50),
+      target_id VARCHAR(100),
+      target_label VARCHAR(255),
+      project_id INTEGER,
+      ip VARCHAR(45),
+      user_agent VARCHAR(255),
+      origin VARCHAR(20) NOT NULL DEFAULT 'web',
+      details TEXT,
+      CONSTRAINT audit_log_category_check
+        CHECK ({_in_check("category", AUDIT_LOG_CATEGORIES)}),
+      CONSTRAINT audit_log_outcome_check
+        CHECK ({_in_check("outcome", AUDIT_LOG_OUTCOMES)})
+    )"""
+
+AUDIT_LOG_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_audit_log_created_at ON audit_log(created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_log_category_created_at "
+    "ON audit_log(category, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_log_action ON audit_log(action)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_log_actor_user_id ON audit_log(actor_user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_log_subject_email ON audit_log(subject_email)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_log_ip ON audit_log(ip)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_log_project_id ON audit_log(project_id)",
+)
+
+AUDIT_LOG_SCHEMA_STATEMENTS: tuple[str, ...] = (AUDIT_LOG_TABLE_SQL, *AUDIT_LOG_INDEX_STATEMENTS)
+
+AUDIT_LOG_SCHEMA_SQL = ";\n".join(AUDIT_LOG_SCHEMA_STATEMENTS) + ";"
+
+# Probe of the audit-log auto-migration step: the step creates the table (and
+# commits) only while this finds no ``public.audit_log`` table.
+AUDIT_LOG_PROBE_SQL = (
+    "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE n.nspname = 'public' AND c.relname = 'audit_log' AND c.relkind = 'r'"
+)
+
+
 def dashboard_seed_params(
     field_ids: dict[str, int] | None = None,
 ) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
@@ -2253,6 +2320,11 @@ def get_tenant_schema_sql() -> str:
     -- teams and users), with their indexes
     """
         + DASHBOARD_SHARING_SCHEMA_SQL
+        + """
+
+    -- The audit log (after users), with its indexes
+    """
+        + AUDIT_LOG_SCHEMA_SQL
         + """
 
     -- Approval policies (seeded: the project manager approves), approval

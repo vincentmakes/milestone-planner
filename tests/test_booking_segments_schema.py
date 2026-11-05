@@ -31,6 +31,7 @@ from app.services.tenant_provisioner import (
     get_tenant_schema_sql,
 )
 from migrations.run_migration_master import split_sql_statements
+from tests.support import audit_log_step
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "add_booking_segments.sql"
@@ -164,6 +165,8 @@ def _conn(fail: bool = False):
 
     async def execute(clause, *args, **kwargs):
         sql = str(clause)
+        if (probe := audit_log_step(sql)) is not None:  # the audit-log step: up to date
+            return probe
         if sql in BOOKING_SEGMENT_COLUMN_STATEMENTS:
             log.append(f"SEGMENT {BOOKING_SEGMENT_COLUMN_STATEMENTS.index(sql)}")
             if fail:

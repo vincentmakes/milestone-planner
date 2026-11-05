@@ -128,6 +128,8 @@ app/
     rbac.py            # Role, RolePermission, ApprovalPolicy, ApprovalPolicyRole, ApprovalRequest
     dashboard.py       # Dashboard (widgets, roles / sites / teams / users + their *_ids), DashboardRole,
                        #   DashboardSite, DashboardTeam, DashboardUser, DashboardWidget (2.3.0)
+    audit_log.py       # AuditLog — the tenant audit log (2.4.0): immutable rows, details as JSON text;
+                       #   AUDIT_LOG_CATEGORIES / AUDIT_LOG_OUTCOMES (the CHECKs)
     note.py            # Note — tablename is staff_notes
     settings.py        # Settings (KV), PredefinedPhase, SSOConfig (singleton)
     session.py         # Session (express-session compatible)

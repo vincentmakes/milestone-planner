@@ -65,6 +65,7 @@ from app.services.tenant_provisioner import (
     get_tenant_schema_sql,
 )
 from migrations.run_migration_master import split_sql_statements
+from tests.support import audit_log_step
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "add_rbac.sql"
@@ -394,6 +395,8 @@ def _rbac_conn(needed: bool, fail_on: str | None = None):
 
     async def execute(clause, *args, **kwargs):
         sql = str(clause)
+        if (probe := audit_log_step(sql)) is not None:  # the audit-log step: up to date
+            return probe
         if sql == RBAC_NEEDS_MIGRATION_SQL:
             log.append(RBAC_CHECK)
             result = MagicMock()

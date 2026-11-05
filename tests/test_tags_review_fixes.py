@@ -27,6 +27,7 @@ from app.schemas.tag import TagCreate, TagReorder, TagUpdate
 from app.services import tenant_provisioner as tp
 from app.services.tag_rules import validate_project_tags
 from tests.conftest import FakeUser
+from tests.support import audit_log_step
 from tests.test_tags_groups import (
     STAMP,
     _scalar_result,
@@ -363,6 +364,8 @@ def _migration_conn(tables=(), columns=(), fail_on: str | None = None):
 
     async def execute(clause, *args, **kwargs):
         sql = str(clause)
+        if (probe := audit_log_step(sql)) is not None:  # the audit-log step: up to date
+            return probe
         if "table_name IN ('tag_sites')" in sql:
             log.append(TABLES_CHECK)
             return rows(tables)
