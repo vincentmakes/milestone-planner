@@ -502,6 +502,18 @@ A result is `{unit, dimensions: [{kind, label}], rows: [{keys: [{key, label, col
 
 Booked time is planned time: approved bookings only, each clipped to its card, allocation × working days (Monday–Friday minus the bank holidays of the project's site) inside the period; absences and closures do not subtract from booked time. **Capacity** counts every active bookable person (`is_resource`) who is a member of a visible site (every one, site-less included, with `sites.view_all`): weekdays minus the bank holidays of any of their sites, their unavailable absences (a recurring `[R:…]` one on its weekdays only) and the closures that apply to them, × `max_capacity` / 100; the booked side counts only those people's bookings, on projects at the visible sites. **Equipment availability** is the weekdays of every active instrument linked to a visible site minus the bank holidays of its sites and its blocks; equipment booked days are whole working days of the project's site, overlapping bookings (and bookings inside a block) add up, so over 100 % is a conflict; like the capacity side, the booked side of `equipment_utilisation` counts only bookings of projects at the visible sites, so an instrument at a visible site booked by a project at a site the caller cannot see reads lower for them. Capacity and equipment facts load only when a widget of their family asks. Writes broadcast `change:dashboard`; `/query` and `/{id}/data` never broadcast. The routes are What-If-exempt.
 
+### Audit log
+
+The audit log (2.4.0) needs `system.audit_log` (administrators by default; 403 otherwise). Rows are immutable; there is no create, update or delete route.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/t/{slug}/api/audit-log` | Filtered page, newest first: `{items, total, page, page_size}`. Query: `category` (`auth`/`admin`/`access`/`change`), `action` (exact; a trailing `.` makes it a prefix), `outcome` (`success`/`failure`), `actor_user_id`, `q` (substring of actor email or name, subject email, target label; case-insensitive), `ip` (exact), `since` / `until` (`YYYY-MM-DD`, inclusive), `project_id`, `page` (≥ 1, default 1), `page_size` (1–200, default 50). An item is `{id, created_at, category, action, outcome, actor_user_id, actor_email, actor_name, subject_email, target_type, target_id, target_label, project_id, project_name, ip, user_agent, origin, details}` — `details` an object (`reason`, `changes`, `items`, `context`) or null. Rows older than the retention setting are purged first |
+| `GET` | `/t/{slug}/api/audit-log/actions` | `{"actions": [...]}`, the distinct action keys present, sorted |
+| `GET` | `/t/{slug}/api/audit-log/export` | The same filters as a CSV download (`audit-log.csv`, at most 50 000 rows); the export is itself recorded (`access.audit_log.exported`) |
+
+Retention is the instance setting `audit_log_retention_days` (`PUT /settings/audit_log_retention_days`, `settings.general`; `0`–`3650`, default `365`, `0` keeps every row).
+
 ### Real-Time Collaboration
 
 | Method | Endpoint | Description |

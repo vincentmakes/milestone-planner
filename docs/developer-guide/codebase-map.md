@@ -143,6 +143,8 @@ app/
     approvals.py       # Approval requests: list (mine / to_decide / all), detail, approve / reject /
                        #   cancel (the workflow lives in services/approvals.py)
     assignments.py     # Staff assignments (3 levels; own bookings may answer 202) + equipment assignments
+    audit_log.py       # Audit log read API (system.audit_log): filtered list (page/total), /actions,
+                       #   CSV /export (recorded, committed first); lazy retention purge on read
     auth.py            # Login/logout/me, password change, SSO config/login/callback
     custom_columns.py  # Custom column + value CRUD
     dashboards.py      # Dashboards CRUD (sharing targets + shared_with) + /shareable-users (people picker)
@@ -173,14 +175,17 @@ app/
                        #   project_field.py the field / item bodies; project.py carries field_values;
                        #   TagCreate / TagUpdate are extra="forbid", so a stale group_id is a 422;
                        #   sso.py the SSO test request/response shared by org and tenant tests;
-                       #   dashboard.py the MetricQuery spec + dashboard / widget bodies)
+                       #   dashboard.py the MetricQuery spec + dashboard / widget bodies;
+                       #   audit_log.py AuditLogEntryOut / AuditLogPage / AuditLogActions)
   services/
     approvals.py       # Own-booking approval workflow: submit_request (202), resolve_row_write,
                        #   plan_placement / apply_shrink (auto-placed second booking), approve / reject / cancel, approver_user_ids / can_decide (live),
                        #   expire_overtaken / cancel_for_entity hooks, publish (broadcast + pushes)
     audit_log.py       # The one write path into audit_log: record (adds + flushes, never commits),
                        #   diff / redact / validate_details, change_action; one JSON line per row
-                       #   on the milestone.audit logger
+                       #   on the milestone.audit logger (ship it like any log; the table is the record);
+                       #   record_detached (derived tiers), retention_days / purge_old
+                       #   (audit_log_retention_days, default 365, 0 = forever)
     auth.py            # Shared admin-session validation
     card_access.py     # require_card_status_write: kanban.move_any, or an approved assignee
     card_status.py     # apply_status / apply_completion — the only writers of status/completion
