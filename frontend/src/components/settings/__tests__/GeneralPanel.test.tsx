@@ -93,4 +93,91 @@ describe('GeneralPanel', () => {
     expect(await screen.findByText('Settings saved successfully')).toBeInTheDocument();
     expect(updateSetting).toHaveBeenCalledTimes(1);
   });
+
+  describe('audit log retention (Data management)', () => {
+    const field = () => screen.findByLabelText('Retention period (days)');
+    const keepForever = () => screen.getByRole('switch', { name: 'Keep audit entries indefinitely' });
+    const save = () => screen.getByRole('button', { name: 'Save Changes' });
+
+    it('loads the stored value, with its limits and help', async () => {
+      setRole('admin');
+      getSetting.mockImplementation(async (key: string) =>
+        key === 'audit_log_retention_days' ? { value: '90' } : { value: null }
+      );
+      render(<GeneralPanel onDirtyChange={vi.fn()} />);
+
+      const input = await field();
+      expect(getSetting).toHaveBeenCalledWith('audit_log_retention_days');
+      expect(screen.getByRole('heading', { name: 'Data management' })).toBeInTheDocument();
+      expect(screen.getByText('Audit log retention')).toBeInTheDocument();
+      expect(input).toHaveValue(90);
+      expect(input).toHaveAttribute('type', 'number');
+      expect(input).toHaveAttribute('min', '0');
+      expect(input).toHaveAttribute('max', '3650');
+      expect(input).toHaveAttribute('step', '1');
+      expect(screen.getByText('0 = keep indefinitely. Maximum 3650 days.')).toBeInTheDocument();
+      expect(keepForever()).not.toBeChecked();
+    });
+
+    it('defaults to 365 days and saves a change with Save, updating the store', async () => {
+      setRole('admin');
+      useAppStore.setState({ instanceSettings: { audit_log_retention_days: '365' } });
+      const onDirtyChange = vi.fn();
+      render(<GeneralPanel onDirtyChange={onDirtyChange} />);
+
+      const input = await field();
+      expect(input).toHaveValue(365);
+      fireEvent.change(input, { target: { value: '30' } });
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+      expect(updateSetting).not.toHaveBeenCalled();
+
+      fireEvent.click(save());
+      expect(await screen.findByText('Settings saved successfully')).toBeInTheDocument();
+      expect(updateSetting).toHaveBeenCalledTimes(1);
+      expect(updateSetting).toHaveBeenCalledWith('audit_log_retention_days', '30');
+      expect(useAppStore.getState().instanceSettings?.audit_log_retention_days).toBe('30');
+    });
+
+    it('turns the switch on for 0 and off back to 365', async () => {
+      setRole('admin');
+      render(<GeneralPanel onDirtyChange={vi.fn()} />);
+      const input = await field();
+
+      fireEvent.click(keepForever());
+      expect(input).toHaveValue(0);
+      expect(keepForever()).toBeChecked();
+
+      fireEvent.click(keepForever());
+      expect(input).toHaveValue(365);
+      expect(keepForever()).not.toBeChecked();
+
+      fireEvent.change(input, { target: { value: '0' } });
+      expect(keepForever()).toBeChecked();
+
+      fireEvent.click(save());
+      expect(await screen.findByText('Settings saved successfully')).toBeInTheDocument();
+      expect(updateSetting).toHaveBeenCalledWith('audit_log_retention_days', '0');
+    });
+
+    it('refuses 3651 and an empty value: an error, and Save stays disabled', async () => {
+      setRole('admin');
+      render(<GeneralPanel onDirtyChange={vi.fn()} />);
+      const input = await field();
+
+      fireEvent.change(input, { target: { value: '3651' } });
+      expect(screen.getByText('Enter a whole number of days from 0 to 3650.')).toBeInTheDocument();
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+      expect(keepForever()).not.toBeChecked();
+      expect(save()).toBeDisabled();
+      fireEvent.click(save());
+      expect(updateSetting).not.toHaveBeenCalled();
+
+      fireEvent.change(input, { target: { value: '' } });
+      expect(save()).toBeDisabled();
+
+      fireEvent.change(input, { target: { value: '3650' } });
+      expect(screen.queryByText('Enter a whole number of days from 0 to 3650.')).not.toBeInTheDocument();
+      expect(save()).toBeEnabled();
+    });
+  });
 });

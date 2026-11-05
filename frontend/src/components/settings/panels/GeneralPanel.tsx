@@ -37,6 +37,8 @@ interface SettingsData {
   auto_expand_projects: string;
   header_logo_dark: string;
   header_logo_light: string;
+  /** Days the audit log keeps its entries, '0' = indefinitely */
+  audit_log_retention_days: string;
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -47,7 +49,20 @@ const DEFAULT_SETTINGS: SettingsData = {
   auto_expand_projects: 'false',
   header_logo_dark: '',
   header_logo_light: '',
+  audit_log_retention_days: '365',
 };
+
+/** The longest audit log retention the server accepts (`MAX_RETENTION_DAYS`). */
+const MAX_RETENTION_DAYS = 3650;
+/** What turning "Keep audit entries indefinitely" off restores. */
+const DEFAULT_RETENTION_DAYS = '365';
+
+/** Why a retention value would be refused, or null: a whole number from 0 to 3650. */
+function retentionError(value: string): string | null {
+  const text = value.trim();
+  if (/^\d+$/.test(text) && Number(text) <= MAX_RETENTION_DAYS) return null;
+  return `Enter a whole number of days from 0 to ${MAX_RETENTION_DAYS}.`;
+}
 
 const VIEW_OPTIONS = [
   { value: 'week', label: 'Week' },
@@ -187,6 +202,9 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
   
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   
+  const retentionProblem = retentionError(settings.audit_log_retention_days);
+  const keepForever = retentionProblem === null && Number(settings.audit_log_retention_days.trim()) === 0;
+
   const handleSave = async () => {
     if (!beginSave()) return; // a save is already running
     setError(null);
@@ -196,7 +214,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
       // Save changed settings
       for (const key of Object.keys(settings) as (keyof SettingsData)[]) {
         if (settings[key] !== originalSettings[key]) {
-          await updateSetting(key, settings[key]);
+          await updateSetting(key, key === 'audit_log_retention_days' ? settings[key].trim() : settings[key]);
         }
       }
       
@@ -205,6 +223,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
         ...instanceSettings,
         instance_title: settings.instance_title,
         show_weekends: settings.show_weekends,
+        audit_log_retention_days: settings.audit_log_retention_days.trim(),
       };
       setInstanceSettings(newInstanceSettings);
       
@@ -381,6 +400,47 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
             </div>
           </section>
           
+          {/* Data management: audit log retention */}
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>Data management</h3>
+
+            <div className={styles.field}>
+              <span className={styles.label}>Audit log retention</span>
+              <div className={styles.retentionRow}>
+                <Input
+                  className={styles.retentionInput}
+                  fullWidth
+                  label="Retention period (days)"
+                  hint="0 = keep indefinitely. Maximum 3650 days."
+                  error={retentionProblem ?? undefined}
+                  id="audit-log-retention-days"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={MAX_RETENTION_DAYS}
+                  step={1}
+                  value={settings.audit_log_retention_days}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSettings(prev => ({ ...prev, audit_log_retention_days: value }));
+                    setSuccess(null);
+                  }}
+                />
+                <ToggleSwitch
+                  label="Keep audit entries indefinitely"
+                  checked={keepForever}
+                  onChange={(on) => {
+                    setSettings(prev => ({
+                      ...prev,
+                      audit_log_retention_days: on ? '0' : DEFAULT_RETENTION_DAYS,
+                    }));
+                    setSuccess(null);
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
           {/* Messages */}
           {error && (
             <Notice tone="error">{error}</Notice>
@@ -403,7 +463,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
               )}
               <Button 
                 onClick={handleSave} 
-                disabled={!hasChanges || isSaving}
+                disabled={!hasChanges || isSaving || retentionProblem !== null}
                 loading={isSaving}
               >
                 Save Changes
