@@ -2,6 +2,8 @@
 
 The **Audit log** in **Settings → General → Audit log** answers the two questions a security review asks of a planning instance: *what changed in it*, and *who signed in and how*. Every sign-in, failed attempt and lockout, every administrative change, every export and every project, booking or comment change is one entry, newest first, with the account, the IP address and the origin of the request. Entries cannot be edited or deleted; only the [retention](#retention) setting removes them.
 
+![Settings → Audit log: the count and retention chips, Refresh and Export CSV, the search, category, outcome, action, actor, IP address and date filters, and the newest entries with their time, category, action, outcome, actor, account, target and IP address](../assets/screenshots/settings-audit-log.png){ loading=lazy }
+
 ## Who can see it
 
 The section needs the **`system.audit_log`** permission, which only the **Admin** role holds by default. To give a security or compliance officer read access without making them an administrator, create a role that carries `system.audit_log` under **Settings → Roles** (see [Roles & Permissions](../user-guide/settings.md#roles-permissions)) and assign it to them. Superusers do not see the section by default. Without the permission every `/api/audit-log` route answers 403.
@@ -43,6 +45,8 @@ Click a row (or focus it and press Enter) to open the **Entry detail** dialog. I
 - **Context**: facts that frame the action without being part of it, such as how many rows an export held or how many sessions a password change ended.
 
 An entry without any of these reads "No further details recorded." The dialog has no actions.
+
+![Entry detail of a User updated entry: the action with its raw key, the category, outcome and origin chips, when, actor, target, IP address and user agent, and a Changes table with the field's Before and After values](../assets/screenshots/settings-audit-log-entry.png){ loading=lazy }
 
 ## Export CSV
 

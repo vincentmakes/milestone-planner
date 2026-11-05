@@ -68,7 +68,9 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 
 ### Audit Log Retention
 
-**Audit log retention** (under *Data management*) sets how long [audit log](../admin-guide/audit-log.md#retention) entries are kept: a whole number of days from 0 to 3 650, default 365. The **Keep audit entries indefinitely** switch sets it to 0. Like the other General settings it is saved with **Save**.
+**Audit log retention** (under *Data management*) sets how long [audit log](../admin-guide/audit-log.md#retention) entries are kept: a whole number of days from 0 to 3 650, default 365. The **Keep audit entries indefinitely** switch sets it to 0. Like the other General settings it is saved with **Save Changes**.
+
+![Settings → General, Data management: the Retention period (days) field set to 365 with its hint, and the Keep audit entries indefinitely switch](../assets/screenshots/settings-general-retention.png){ loading=lazy }
 
 ---
 
