@@ -340,7 +340,7 @@ def entra(
 
     async def get(self, url, *args, **kwargs):
         # Only the Graph hop: the test client itself also calls get().
-        if "graph.microsoft.com" in str(url):
+        if httpx.URL(str(url)).host == "graph.microsoft.com":
             return profile
         return await real_get(self, url, *args, **kwargs)
 
