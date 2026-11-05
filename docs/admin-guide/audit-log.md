@@ -1,12 +1,12 @@
 # Audit Log
 
-The **Audit log** in **Settings → General → Audit log** answers the two questions a security review asks of a planning instance: *what changed in it*, and *who signed in and how*. Every sign-in, failed attempt and lockout, every administrative change, every export and every project, booking or comment change is one entry, newest first, with the account, the IP address and the origin of the request. Entries cannot be edited or deleted; only the [retention](#retention) setting removes them.
+The **Audit log** — **Settings → General → Data management → Open audit log** — answers the two questions a security review asks of a planning instance: *what changed in it*, and *who signed in and how*. Every sign-in, failed attempt and lockout, every administrative change, every export and every project, booking or comment change is one entry, newest first, with the account, the IP address and the origin of the request. Entries cannot be edited or deleted; only the [retention](#retention) setting removes them.
 
-![Settings → Audit log: the count and retention chips, Refresh and Export CSV, the search, category, outcome, action, actor, IP address and date filters, and the newest entries with their time, category, action, outcome, actor, account, target and IP address](../assets/screenshots/settings-audit-log.png){ loading=lazy }
+![The audit log in Settings → General: the Back to General link, the count and retention chips, Refresh and Export CSV, the search, category, outcome, action, actor, IP address and date filters, and the newest entries with their time, category, action, outcome, actor, account, target and IP address](../assets/screenshots/settings-audit-log.png){ loading=lazy }
 
 ## Who can see it
 
-The section needs the **`system.audit_log`** permission, which only the **Admin** role holds by default. To give a security or compliance officer read access without making them an administrator, create a role that carries `system.audit_log` under **Settings → Roles** (see [Roles & Permissions](../user-guide/settings.md#roles-permissions)) and assign it to them. Superusers do not see the section by default. Without the permission every `/api/audit-log` route answers 403.
+The log needs the **`system.audit_log`** permission, which only the **Admin** role holds by default. Holders see an **Audit log** row under **Data management** in **Settings → General**, with the current retention (*Kept 365 days*, *Kept indefinitely*) and an **Open audit log** button; the log then replaces the General form, and **Back to General** returns to it (unsaved General changes are kept meanwhile). It has no entry of its own in the Settings list. To give a security or compliance officer read access without making them an administrator, create a role that carries `system.audit_log` under **Settings → Roles** (see [Roles & Permissions](../user-guide/settings.md#roles-permissions)) and assign it to them. Superusers do not see the row by default. Without the permission every `/api/audit-log` route answers 403.
 
 ## Columns
 
@@ -144,7 +144,7 @@ A change entry names the project when it has one. Entries for absences, notes an
 
 ## Retention
 
-Entries are kept for **365 days** by default. Change it in **Settings → General → Audit log retention**: any whole number of days up to **3 650**, or **0** (the "Keep audit entries indefinitely" switch) to keep them forever. Entries past the window are purged when the log is opened or exported, and the setting is re-read each time, so a change applies without a restart. Purging is the only thing that ever deletes an entry. There is no edit or delete action in the interface or the API, for any role.
+Entries are kept for **365 days** by default. Change it in **Settings → General → Data management → Audit log retention**: any whole number of days up to **3 650**, or **0** (the "Keep audit entries indefinitely" switch) to keep them forever. Entries past the window are purged when the log is opened or exported, and the setting is re-read each time, so a change applies without a restart. Purging is the only thing that ever deletes an entry. There is no edit or delete action in the interface or the API, for any role.
 
 ## The JSON audit stream
 

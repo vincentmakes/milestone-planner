@@ -11,10 +11,9 @@ All administration happens in one **Settings** window. Open it from the **Settin
 
 | Group | Section | What it manages | Who sees it (default roles) |
 |-------|---------|-----------------|-------------|
-| General | [General](#general) | Instance title, theme, logos, display defaults | Admin (Superuser: theme only) |
+| General | [General](#general) | Instance title, theme, logos, display defaults; the [audit log](#audit-log) and its retention under *Data management* | Admin (Superuser: theme only) |
 | | [Features & defaults](#features-defaults) | What the Gantt opens with, the panels' default filters, the Kanban board, the bank-holiday import, phase pre-selection | Admin |
 | | [Roles](#roles-permissions) | Roles and their permissions; who approves own bookings ([Approvals](#approvals)) | Admin |
-| | [Audit log](#audit-log) | Who signed in and how, and what changed, with CSV export | Admin |
 | Sites & calendar | [Sites](#sites) | Locations, country/region, site Excel export | Admin |
 | | [Teams](#teams) | Teams per site, their members; the header team filter | Admin, Superuser |
 | | [Bank holidays](#bank-holidays) | Public and custom holidays per site | Admin, Superuser |
@@ -68,9 +67,9 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 
 ### Audit Log Retention
 
-**Audit log retention** (under *Data management*) sets how long [audit log](../admin-guide/audit-log.md#retention) entries are kept: a whole number of days from 0 to 3 650, default 365. The **Keep audit entries indefinitely** switch sets it to 0. Like the other General settings it is saved with **Save Changes**.
+**Audit log retention** (under *Data management*, below the [Audit log](#audit-log) row) sets how long [audit log](../admin-guide/audit-log.md#retention) entries are kept: a whole number of days from 0 to 3 650, default 365. The **Keep audit entries indefinitely** switch sets it to 0. Like the other General settings it is saved with **Save Changes**.
 
-![Settings → General, Data management: the Retention period (days) field set to 365 with its hint, and the Keep audit entries indefinitely switch](../assets/screenshots/settings-general-retention.png){ loading=lazy }
+![Settings → General, Data management: the Audit log row with its Kept 365 days hint and Open audit log button, the Retention period (days) field set to 365 with its hint, and the Keep audit entries indefinitely switch](../assets/screenshots/settings-general-retention.png){ loading=lazy }
 
 ---
 
@@ -153,7 +152,7 @@ Some permissions worth knowing:
 | **Kanban board**, **Dashboards**, **Staff & Calendar**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden. **Dashboards** (Superuser and User by default) opens the [Dashboards](dashboards.md) view with the dashboards shared with the role or with everyone |
 | **Manage dashboards** | Create, edit, share and delete your own [dashboards](dashboards.md#building-a-dashboard). Superuser by default; administrators may change or delete any dashboard |
 | **What-If mode** | Show the What-If toggle on the Gantt chart |
-| **Audit log** | Open [Settings → Audit log](../admin-guide/audit-log.md). Administrators only, by default; grant it to a compliance role without making anyone an administrator |
+| **Audit log** | Open the [audit log](../admin-guide/audit-log.md) from **Settings → General → Data management**. Administrators only, by default; grant it to a compliance role without making anyone an administrator |
 
 ### Who Sees Which Sites
 
@@ -198,7 +197,7 @@ A request also closes on its own when it can no longer apply — the card or pro
 
 ## Audit Log
 
-**Settings → Audit log** lists every sign-in, failed attempt, administrative change, export and project or booking change, with who did it, from which IP address and where. Filter by category, outcome, action, actor, IP address and dates, open an entry for its before/after changes, and export the filtered list to CSV. It needs the `system.audit_log` permission (admins by default; grant it to a role in **Settings → Roles**). The full description is in the [Audit log](../admin-guide/audit-log.md) admin guide.
+The audit log is not in the section list: open **Settings → General**, scroll to **Data management** and click **Open audit log** on the **Audit log** row (it shows the current retention, *Kept 365 days* or *Kept indefinitely*). The log takes the place of the General form; **Back to General** returns to it, with any unsaved General changes still there. It lists every sign-in, failed attempt, administrative change, export and project or booking change, with who did it, from which IP address and where. Filter by category, outcome, action, actor, IP address and dates, open an entry for its before/after changes, and export the filtered list to CSV. The row needs the `system.audit_log` permission (admins by default; grant it to a role in **Settings → Roles** — a role holding only that permission still opens Settings, at General). The full description is in the [Audit log](../admin-guide/audit-log.md) admin guide.
 
 ---
 

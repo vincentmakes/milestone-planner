@@ -1144,7 +1144,8 @@ def _canned_audit_rows() -> list[dict]:
 
 
 def _open_audit_log(page: Page, needs: str | None = None) -> None:
-    """Settings -> Audit log; serves a canned page (nothing written) when the
+    """Settings -> General -> Data management -> Open audit log (the log has
+    no section of its own); serves a canned page (nothing written) when the
     newest 12 rows cover fewer than three categories, as on a fresh seed, or
     when the first page holds no `needs` action."""
     resp = page.request.get(f"{URL}api/audit-log?page_size=50")
@@ -1159,13 +1160,19 @@ def _open_audit_log(page: Page, needs: str | None = None) -> None:
         page.route(re.compile(r".*/api/audit-log/actions$"),
                    lambda route: route.fulfill(status=200, content_type="application/json", body=actions_body))
         log("  (audit log: canned rows)")
-    open_settings_section(page, "Audit log")
+    open_settings_section(page, "General")
+    page.get_by_label("Retention period (days)").wait_for(timeout=8000)
+    page.get_by_role("heading", name="Data management").evaluate(
+        "el => el.scrollIntoView({block: 'start'})"
+    )
+    page.get_by_role("button", name="Open audit log").click()
+    page.get_by_role("button", name="Back to General").wait_for(timeout=5000)
     page.get_by_role("table").locator("tbody tr").first.wait_for(timeout=10000)
     page.wait_for_timeout(800)
 
 
 def shot_settings_audit_log(context: BrowserContext) -> None:
-    """Settings -> Audit log: the newest entries (sign-ins, a failed sign-in,
+    """The audit log sub-view of Settings -> General: the newest entries (sign-ins, a failed sign-in,
     user and settings changes, a phase, approval requests, an export)."""
     page = context.new_page()
     login(page)
@@ -1176,7 +1183,7 @@ def shot_settings_audit_log(context: BrowserContext) -> None:
 
 
 def shot_settings_audit_log_entry(context: BrowserContext) -> None:
-    """Settings -> Audit log, the Entry detail dialog of the newest
+    """The audit log sub-view, the Entry detail dialog of the newest
     'User updated' row with its Changes table (Field / Before / After)."""
     page = context.new_page()
     login(page)
@@ -1191,8 +1198,9 @@ def shot_settings_audit_log_entry(context: BrowserContext) -> None:
 
 
 def shot_settings_general_retention(context: BrowserContext) -> None:
-    """Settings -> General scrolled to Data management: the audit log
-    retention field and its 'Keep audit entries indefinitely' switch."""
+    """Settings -> General scrolled to Data management: the Audit log row
+    (retention hint, Open audit log), the retention field and its 'Keep audit
+    entries indefinitely' switch."""
     page = context.new_page()
     login(page)
     open_settings_section(page, "General")

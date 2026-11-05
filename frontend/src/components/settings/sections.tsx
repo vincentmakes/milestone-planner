@@ -12,7 +12,7 @@ import { can } from '@/utils/permissions';
 import type { UserLike } from '@/utils/permissions';
 import type { PermissionKey } from '@/types/permissions';
 import type { SettingsSection, SettingsSectionId } from './types';
-import { Icon, LockIcon, HashIcon, ProjectFieldsIcon, ListIcon, LabelIcon, BriefcaseIcon, UmbrellaIcon, StarIcon, UserPlusIcon, FlagIcon, CalendarIcon, UsersIcon, MapPinIcon, ShieldIcon, TuneIcon, GearIcon, AdminPanelSettingsIcon } from '@/components/common/Icon';
+import { Icon, LockIcon, HashIcon, ProjectFieldsIcon, ListIcon, LabelIcon, BriefcaseIcon, UmbrellaIcon, StarIcon, UserPlusIcon, FlagIcon, CalendarIcon, UsersIcon, MapPinIcon, ShieldIcon, TuneIcon, GearIcon } from '@/components/common/Icon';
 
 const GeneralPanel = lazy(() =>
   import('./panels/GeneralPanel').then((m) => ({ default: m.GeneralPanel }))
@@ -22,9 +22,6 @@ const DefaultsPanel = lazy(() =>
 );
 const RolesPanel = lazy(() =>
   import('./panels/RolesPanel').then((m) => ({ default: m.RolesPanel }))
-);
-const AuditLogPanel = lazy(() =>
-  import('./panels/audit-log/AuditLogPanel').then((m) => ({ default: m.AuditLogPanel }))
 );
 const SitesPanel = lazy(() =>
   import('./panels/SitesPanel').then((m) => ({ default: m.SitesPanel }))
@@ -97,16 +94,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: 'What each role may do, custom roles, and who approves own-booking changes.',
     Panel: RolesPanel,
     icon: <Icon icon={ShieldIcon} size={16} />,
-  },
-  {
-    group: 'General',
-    id: 'audit-log',
-    label: 'Audit log',
-    // Every /audit-log route needs system.audit_log (admins only by default).
-    permission: 'system.audit_log',
-    description: 'Who signed in, what changed and who exported what.',
-    Panel: AuditLogPanel,
-    icon: <Icon icon={AdminPanelSettingsIcon} size={16} />,
   },
   {
     group: 'Sites & calendar',
@@ -239,10 +226,15 @@ function sectionListed(section: SettingsSection, user: UserLike | null | undefin
 
 /**
  * Whether the user has anything to configure: at least one section gated by a
- * key they hold. General alone (appearance) does not open the hub.
+ * key they hold, or the audit log (`system.audit_log`), which has no section of
+ * its own — General → Data management opens it. General alone (appearance)
+ * does not open the hub.
  */
 export function canOpenSettings(user: UserLike | null | undefined): boolean {
-  return SETTINGS_SECTIONS.some((section) => section.permission !== null && sectionListed(section, user));
+  return (
+    can(user, 'system.audit_log') ||
+    SETTINGS_SECTIONS.some((section) => section.permission !== null && sectionListed(section, user))
+  );
 }
 
 /** Sections the user may open, in registry order; none without a gated one. */

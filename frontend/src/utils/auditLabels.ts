@@ -1,5 +1,5 @@
 /**
- * Readable labels of the audit log (Settings → General → Audit log).
+ * Readable labels of the audit log (Settings → General → Data management → Open audit log).
  *
  * The sign-in, export and reason labels are turbo-ea's English strings
  * (`securityLog.actionLabels.*`, `securityLog.reasons.*`). Every other action

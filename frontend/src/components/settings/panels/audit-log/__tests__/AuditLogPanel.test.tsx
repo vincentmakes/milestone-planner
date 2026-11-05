@@ -193,7 +193,7 @@ describe('AuditLogPanel', () => {
     const chip = screen.getByText('Kept 365 days');
     expect(chip).toHaveAttribute(
       'title',
-      'Entries older than the retention window are deleted. Change the window under Settings → General.'
+      'Entries older than the retention window are deleted. Change the window in General → Data management.'
     );
 
     act(() => useAppStore.setState({ instanceSettings: { audit_log_retention_days: '0' } }));

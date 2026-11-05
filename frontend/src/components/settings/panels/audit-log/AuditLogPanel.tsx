@@ -58,7 +58,7 @@ const AUDIT_LOG_DESCRIPTION =
   'Sign-ins and sign-outs, failed and locked-out attempts, user and settings changes, project and booking changes and exports, with the account, IP address and origin of each. Entries cannot be edited or deleted; only the retention purge removes them.';
 
 const RETENTION_TITLE =
-  'Entries older than the retention window are deleted. Change the window under Settings → General.';
+  'Entries older than the retention window are deleted. Change the window in General → Data management.';
 
 /** How long the search and IP fields wait for the typing to stop. */
 const FILTER_DEBOUNCE_MS = 300;

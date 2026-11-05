@@ -1,5 +1,5 @@
 /**
- * Audit log API (Settings → General → Audit log; every route needs
+ * Audit log API (Settings → General → Data management → Open audit log; every route needs
  * `system.audit_log`).
  *
  * `list` is one numbered page of the filtered log, newest first; `actions`
