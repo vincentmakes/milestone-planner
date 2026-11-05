@@ -4,9 +4,12 @@
  * Save and the unsaved-changes report to the hub.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { GeneralPanel } from '../panels/GeneralPanel';
+import styles from '../panels/GeneralPanel.module.css';
 import { useAppStore } from '@/stores/appStore';
 import type { User, UserRole } from '@/types';
 import { asSignedIn } from '@/test/permissionFixtures';
@@ -92,6 +95,35 @@ describe('GeneralPanel', () => {
     await act(async () => finish({}));
     expect(await screen.findByText('Settings saved successfully')).toBeInTheDocument();
     expect(updateSetting).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Default View and Week Starts On toggles', () => {
+    it('marks the selected option and moves the mark on click', async () => {
+      setRole('admin');
+      render(<GeneralPanel onDirtyChange={vi.fn()} />);
+      await screen.findByLabelText('Application Title');
+
+      expect(screen.getByRole('button', { name: 'Month' })).toHaveClass(styles.selected);
+      expect(screen.getByRole('button', { name: 'Year' })).not.toHaveClass(styles.selected);
+      expect(screen.getByRole('button', { name: 'Monday' })).toHaveClass(styles.selected);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Year' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Sunday' }));
+      expect(screen.getByRole('button', { name: 'Year' })).toHaveClass(styles.selected);
+      expect(screen.getByRole('button', { name: 'Month' })).not.toHaveClass(styles.selected);
+      expect(screen.getByRole('button', { name: 'Sunday' })).toHaveClass(styles.selected);
+      expect(screen.getByRole('button', { name: 'Monday' })).not.toHaveClass(styles.selected);
+    });
+
+    it('fills the selected option with the accent and its on-accent text (readable in every theme)', () => {
+      // jsdom cannot compute colours, so the rule itself is the contract: the
+      // selected text was a fixed white on the pale --accent-blue-alpha tint,
+      // near-invisible in the light themes.
+      const css = readFileSync(join(__dirname, '..', 'panels', 'GeneralPanel.module.css'), 'utf8');
+      const rule = /\.optionButton\.selected\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+      expect(rule).toMatch(/background:\s*var\(--accent-blue\);/);
+      expect(rule).toMatch(/color:\s*var\(--text-on-accent\);/);
+    });
   });
 
   describe('audit log retention (Data management)', () => {

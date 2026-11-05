@@ -78,9 +78,9 @@
 }
 
 .optionButton.selected {
-  background: var(--accent-blue-alpha);
-  border-color: var(--accent-primary);
-  color: #ffffff;
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: var(--text-on-accent);
 }
 
 /* Theme Options */

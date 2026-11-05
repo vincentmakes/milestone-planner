@@ -53,7 +53,7 @@
   "components/settings/panels/CalendarPanel.module.css": 3,
   "components/settings/panels/EquipmentPanel.module.css": 6,
   "components/settings/panels/EquipmentTypesPanel.module.css": 6,
-  "components/settings/panels/GeneralPanel.module.css": 8,
+  "components/settings/panels/GeneralPanel.module.css": 7,
   "components/settings/panels/PredefinedPhasesPanel.module.css": 6,
   "components/settings/panels/SSOPanel.module.css": 5,
   "components/settings/panels/SiteForm.module.css": 2,

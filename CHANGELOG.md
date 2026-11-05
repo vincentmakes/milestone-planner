@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Audit log can be filtered by search text, category, outcome, action, actor, IP address and dates, shows an entry's reason, changes and context in a detail dialog, and exports the filtered list to CSV (up to 50 000 rows; the export is itself recorded). Every entry is also written as a JSON line on the `milestone.audit` logger for log collectors.
 - Settings → General → Audit log retention: how long audit entries are kept (default 365 days, 0 keeps them indefinitely, at most 3 650).
 
+### Fixed
+- Settings → General: the selected Default view and Week starts on options are readable again.
+
 ## [2.3.0] - 2026-10-30
 
 ### Added
