@@ -94,6 +94,7 @@ CATALOGUE = [
     ("Views and tools", "views.dashboards", "a", "a"),
     ("Views and tools", "whatif.use", "a", "-"),
     ("Views and tools", "system.api_docs", "-", "-"),
+    ("Views and tools", "system.audit_log", "-", "-"),
     ("Views and tools", "system.ws_debug", "-", "-"),
     ("Dashboards", "dashboards.manage", "a", "-"),
 ]
@@ -112,12 +113,12 @@ def test_catalogue_lists_every_key_in_order_with_its_group():
     assert [(p.group, p.key) for p in PERMISSIONS] == [(g, k) for g, k, _, _ in CATALOGUE]
 
 
-def test_catalogue_has_60_unique_keys():
+def test_catalogue_has_61_unique_keys():
     # 59 keys in 1.13.0 (the RBAC plan's table); 2.0.0 adds project_fields.manage
     # and removes the two personal-todo keys (todos.manage_own / assign_others);
-    # 2.3.0 adds views.dashboards and dashboards.manage.
+    # 2.3.0 adds views.dashboards and dashboards.manage; 2.4.0 system.audit_log.
     keys = [p.key for p in PERMISSIONS]
-    assert len(keys) == 60
+    assert len(keys) == 61
     assert not any(key.startswith("todos.") for key in keys)
     assert len(set(keys)) == len(keys)
     assert frozenset(keys) == PERMISSION_KEYS

@@ -62,7 +62,7 @@ All tenant routes are prefixed with `/t/{slug}/api/`.
 
 ### Access levels
 
-Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (60 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
+Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (61 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
 
 The **Auth** column used below names the key; the label says who holds it with the shipped roles:
 

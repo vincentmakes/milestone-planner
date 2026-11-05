@@ -550,6 +550,14 @@ PERMISSIONS: tuple[Permission, ...] = (
     ),
     _p(
         "Views and tools",
+        "system.audit_log",
+        "Audit log",
+        "Open the audit log: sign-ins, user and settings changes, project and booking "
+        "changes and exports.",
+        _NONE,
+    ),
+    _p(
+        "Views and tools",
         "system.ws_debug",
         "WebSocket debug",
         "Use the WebSocket diagnostics endpoints.",
