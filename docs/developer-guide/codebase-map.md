@@ -292,7 +292,8 @@ frontend/
                        #   sites, skills, staff, tags, projectFields (projectFieldsApi), teams, users,
                        #   vacations, roles
                        #   (rolesApi), health (getAppVersion), importChunks (postInChunks), kanban,
-                       #   notifications, approvals (approvalsApi, isPendingResponse), mentionableCache
+                       #   notifications, approvals (approvalsApi, isPendingResponse), auditLog
+                       #   (auditLogApi: list / actions / exportCsv), mentionableCache
                        #   (the @-mention list per site for the session), sso (testTenantSSOConfig,
                        #   SSOTestResult — re-exported by admin for the organization test)
     components/
@@ -326,7 +327,9 @@ frontend/
                        #   defaults), Roles (RolesPanel + RoleForm, PermissionMatrix, ApprovalPoliciesForm),
                        #   Sites, Teams, BankHolidays,
                        #   CompanyEvents, Users, Skills, AbsenceTypes, Equipment, EquipmentTypes,
-                       #   PredefinedPhases, ProjectFields (+ ProjectFieldsPreview), Tags, SSO + helpers ColorSwatchPicker, SiteChecklist,
+                       #   PredefinedPhases, ProjectFields (+ ProjectFieldsPreview), Tags, SSO,
+                       #   audit-log/ (AuditLogPanel + AuditLogEntryModal, AuditChip, auditFilters,
+                       #   auditDetails) + helpers ColorSwatchPicker, SiteChecklist,
                        #   SiteForm, TeamForm, TeamScope, calendarUtils, useDragReorder)
       modals/          # ModalContainer (lazy) + dialogs: Project/Phase/Subphase, Assignment
                        #   (Staff/Equipment), EquipmentBlock, KanbanCardModal, TagPicker
@@ -352,6 +355,8 @@ frontend/
                        #   DateRangeField/ (DateRangeField + DateField on one react-day-picker
                        #   calendar panel, DatePickerPopover, dateRangeLogic click rules),
                        #   ErrorBoundary/ (Notice + Retry; wraps the lazy Dashboards view),
+                       #   FilterChips/ (segmented aria-pressed filter chips: My Work, audit log),
+                       #   Pagination/ (First / Previous / "Page n of m" / Next / Last),
                        #   useSubmitGuard.ts (double-submit guard)
       layout/          # MainLayout, Header/ (density tiers + HeaderOverflowMenu, SyncStatus
                        #   "Offline" badge, WhatIfToggle + Apply-failure banner, UserMenu, …),
@@ -374,7 +379,7 @@ frontend/
                        #   projectFilters,
                        #   kanbanCards, mentions, equipmentOverlap, subphaseUtils, persistFailure,
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
-                       #   roles, pendingBookings (+ assignmentLock), myAssignments, metrics, viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
+                       #   roles, pendingBookings (+ assignmentLock), myAssignments, auditLabels, metrics, viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
                        #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel /
                        #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals / tooltipRowGate),
                        #   projectFieldsPreview (the Project fields preview's sample project)
