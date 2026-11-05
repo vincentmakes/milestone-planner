@@ -108,7 +108,7 @@ from app.services.project_access import (
     resolve_self_booking,
 )
 from app.services.site_access import site_is_visible, visible_site_ids, visible_sites_clause
-from app.utils import utcnow_naive
+from app.utils import display_name, utcnow_naive  # display_name: re-exported
 from app.websocket.broadcast import broadcast_change, send_notification, send_user_event
 
 if TYPE_CHECKING:
@@ -748,12 +748,6 @@ async def load_context(
         target_start=row[5],
         target_end=row[6],
     )
-
-
-def display_name(user: Any) -> str:
-    """``First Last`` of a user (or SessionUser), falling back to the email."""
-    name = f"{getattr(user, 'first_name', '') or ''} {getattr(user, 'last_name', '') or ''}"
-    return name.strip() or getattr(user, "email", None) or "Someone"
 
 
 def describe_change(

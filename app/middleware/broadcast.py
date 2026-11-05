@@ -18,11 +18,13 @@ upgrade path (BaseHTTPMiddleware would).
 
 import logging
 import re
+from types import SimpleNamespace
 
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.middleware.auth import get_current_user_from_session
+from app.services import audit_log
 from app.utils import utcnow_naive
 from app.websocket.manager import manager
 
@@ -87,6 +89,82 @@ ENTITY_PATTERNS: list[tuple[re.Pattern, str]] = [
     # Dashboard writes (create, replace, delete): clients refresh their list.
     (re.compile(r"^/api/dashboards(?:/|$)"), "dashboard"),
 ]
+
+
+# Writes whose routers record their own, diff-carrying audit row
+# (app/services/audit_log.record): the middleware never records them again.
+# Anchored on purpose: /api/sites/{id}/holidays... and /api/sites/{id}/events...
+# stay with the middleware (bank_holiday, company_event).
+AUDIT_EXPLICIT_PATTERNS: list[re.Pattern] = [
+    re.compile(r"^/api/users(?:/\d+)?(?:/toggle-active)?$"),
+    re.compile(r"^/api/sites(?:/\d+)?$"),
+    re.compile(r"^/api/teams(?:/\d+)?$"),
+    re.compile(r"^/api/roles(?:/\d+)?$"),
+    re.compile(r"^/api/approval-policies/[^/]+$"),
+    re.compile(r"^/api/settings/[^/]+$"),
+    re.compile(r"^/api/(?:auth/)?sso/config$"),
+    re.compile(r"^/api/auth/sso/test$"),
+]
+
+# How the middleware's audit row reads, per ENTITY_PATTERNS entity: the
+# Settings entities are ``admin`` rows (``admin.<entity>.<verb>``), user
+# content ``change`` rows (``<entity>.<verb>``). Every entity is listed, so a
+# new one has to be classified here (tests/test_broadcast_middleware.py). The
+# last six are recorded explicitly by their routers (AUDIT_EXPLICIT_PATTERNS)
+# and reach this table only through a path those patterns do not cover.
+# ``staff`` has no write routes.
+AUDIT_ENTITY_CATEGORIES: dict[str, str] = {
+    "skill": "admin",
+    "absence_type": "admin",
+    "equipment": "admin",
+    "bank_holiday": "admin",
+    "company_event": "admin",
+    "predefined_phase": "admin",
+    "project_field": "admin",
+    "tag": "admin",
+    "role": "admin",
+    "approval_policy": "admin",
+    "site": "admin",
+    "team": "admin",
+    "user": "admin",
+    "settings": "admin",
+    "vacation": "change",
+    "equipment_block": "change",
+    "note": "change",
+    "custom_column": "change",
+    "dashboard": "change",
+    "staff": "change",
+}
+
+_NUMERIC_SEGMENT = re.compile(r"^\d+$")
+
+
+def audit_action_for(method: str, path: str) -> tuple[str, str, str] | None:
+    """
+    ``(category, action, entity)`` of the audit row the middleware writes for
+    a successful write to ``path``, or None: a read, a path with rich
+    broadcasting (SKIP_PATTERNS: the routers' ``broadcast_change`` records
+    those), a path whose router records its own row
+    (AUDIT_EXPLICIT_PATTERNS), or no known entity.
+    """
+    if method not in WRITE_METHODS:
+        return None
+    if any(pat.match(path) for pat in AUDIT_EXPLICIT_PATTERNS):
+        return None
+    entity = _resolve_entity_type(path)
+    if entity is None:
+        return None
+    category = AUDIT_ENTITY_CATEGORIES[entity]
+    action = audit_log.change_action(entity, _action_for_method(method))
+    return category, (f"admin.{action}" if category == "admin" else action), entity
+
+
+def audit_target_id(path: str) -> str | None:
+    """The last numeric segment of ``path`` (``/api/sites/3/holidays/9`` -> ``"9"``)."""
+    for segment in reversed(path.rstrip("/").split("/")):
+        if _NUMERIC_SEGMENT.match(segment):
+            return segment
+    return None
 
 
 def _resolve_entity_type(path: str) -> str | None:
@@ -185,3 +263,21 @@ class BroadcastMiddleware:
             )
         except Exception as e:
             logger.warning("BroadcastMiddleware: broadcast failed: %s", e)
+
+        # Derived audit tier 2b: awaited inline (the response is already
+        # sent), on a session of its own; record_detached never raises.
+        audit = audit_action_for(method, path)
+        if audit is not None:
+            category, action, entity = audit
+            await audit_log.record_detached(
+                Request(scope=scope, receive=receive),
+                action=action,
+                category=category,
+                actor=SimpleNamespace(
+                    id=user_id,
+                    email=user_data.get("email"),
+                    first_name=first_name,
+                    last_name=last_name,
+                ),
+                target=(entity, audit_target_id(path), None),
+            )

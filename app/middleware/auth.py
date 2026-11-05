@@ -242,6 +242,7 @@ async def get_current_user(
     if isinstance(state, dict):
         state["current_user"] = {
             "id": user.id,
+            "email": getattr(user, "email", None),
             "first_name": getattr(user, "first_name", "") or "",
             "last_name": getattr(user, "last_name", "") or "",
         }

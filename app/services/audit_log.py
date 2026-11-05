@@ -86,7 +86,7 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AUDIT_LOG_CATEGORIES, AUDIT_LOG_OUTCOMES, AuditLog
-from app.utils import utcnow_naive
+from app.utils import display_name, utcnow_naive
 
 AUDIT_LOGGER = logging.getLogger("milestone.audit")
 
@@ -408,9 +408,6 @@ def request_context(request: Request | None) -> tuple[str | None, str | None, st
 def _actor_name(actor: Any) -> str | None:
     if actor is None:
         return None
-    # Lazily: approvals imports the broadcast layer, which records rows.
-    from app.services.approvals import display_name
-
     return _clip(display_name(actor), _WIDTHS["name"])
 
 
@@ -530,3 +527,59 @@ async def record(
     await db.flush()
     AUDIT_LOGGER.info(log_line(entry))
     return entry
+
+
+_logger = logging.getLogger(__name__)
+
+
+async def record_detached(
+    request: Request | None,
+    *,
+    action: str,
+    category: str,
+    outcome: str = "success",
+    actor: Any = None,
+    subject_email: str | None = None,
+    target: tuple[Any, ...] | None = None,
+    project_id: int | None = None,
+    reason: str | None = None,
+    changes: Mapping[str, Any] | None = None,
+    items: Iterable[Mapping[str, Any]] | None = None,
+    context: Mapping[str, Any] | None = None,
+) -> None:
+    """``record`` on a session of its own, committed at once -- the derived
+    tiers (``broadcast_change``, ``BroadcastMiddleware``), which run after the
+    change was committed and hold no session.
+
+    The session is the request's database, resolved as ``get_db`` does
+    (``resolve_tenant_session_factory(request) or get_session_factory()``;
+    the ``change_notifications.deliver`` precedent). **Never raises**: a
+    tenant without a pool (the 503), a refused connection or a rejected row
+    is logged at warning level and dropped -- a failed audit row never fails
+    the change it describes, which is already committed.
+    """
+    from app.database import get_session_factory, resolve_tenant_session_factory
+
+    try:
+        factory = (
+            resolve_tenant_session_factory(request) if request is not None else None
+        ) or get_session_factory()
+        async with factory() as session:
+            await record(
+                session,
+                request,
+                action=action,
+                category=category,
+                outcome=outcome,
+                actor=actor,
+                subject_email=subject_email,
+                target=target,
+                project_id=project_id,
+                reason=reason,
+                changes=changes,
+                items=items,
+                context=context,
+            )
+            await session.commit()
+    except Exception as e:  # never fail the change because its audit row failed
+        _logger.warning("Audit row %s could not be written: %s", action, e)

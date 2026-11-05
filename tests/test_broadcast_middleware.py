@@ -7,11 +7,12 @@ routers broadcast richly (SKIP_PATTERNS) and non-HTTP scopes pass straight
 through without touching the WebSocket manager.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.middleware import broadcast as bmw
+from tests.conftest import FakeUser
 
 
 def inner_app(status: int = 200, body: bytes = b"{}"):
@@ -267,3 +268,194 @@ async def test_broadcast_failure_never_breaks_the_response(broadcast):
 
     assert sent[0]["status"] == 201
     broadcast.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Derived audit tier 2b
+# ---------------------------------------------------------------------------
+
+
+def _detached(audit_calls):
+    return [kwargs for kind, kwargs in audit_calls if kind == "record_detached"]
+
+
+async def test_a_successful_settings_write_records_an_admin_row(broadcast, audit_calls):
+    state = {"current_user": {**USER, "email": "ada@example.com"}}
+    await run(bmw.BroadcastMiddleware(inner_app(201)), http_scope("POST", "/api/skills", state))
+
+    (row,) = _detached(audit_calls)
+    assert (row["category"], row["action"]) == ("admin", "admin.skill.created")
+    assert row["target"] == ("skill", None, None)
+    actor = row["actor"]
+    assert (actor.id, actor.email, actor.first_name, actor.last_name) == (
+        7,
+        "ada@example.com",
+        "Ada",
+        "Lovelace",
+    )
+    # After the response went out (the broadcast too).
+    broadcast.assert_awaited_once()
+
+
+async def test_the_target_is_the_last_numeric_segment(broadcast, audit_calls):
+    state = {"current_user": USER}
+    await run(
+        bmw.BroadcastMiddleware(inner_app()), http_scope("DELETE", "/api/sites/3/holidays/9", state)
+    )
+
+    (row,) = _detached(audit_calls)
+    assert row["action"] == "admin.bank_holiday.deleted"
+    assert row["target"] == ("bank_holiday", "9", None)
+
+
+async def test_user_content_is_a_change_row(broadcast, audit_calls):
+    await run(
+        bmw.BroadcastMiddleware(inner_app()),
+        http_scope("PUT", "/api/vacations/4", {"current_user": USER}),
+    )
+
+    (row,) = _detached(audit_calls)
+    assert (row["category"], row["action"], row["target"]) == (
+        "change",
+        "vacation.updated",
+        ("vacation", "4", None),
+    )
+
+
+@pytest.mark.parametrize("status", [400, 403, 404, 422, 500])
+async def test_a_failed_write_records_nothing(broadcast, audit_calls, status):
+    await run(
+        bmw.BroadcastMiddleware(inner_app(status)),
+        http_scope("POST", "/api/skills", {"current_user": USER}),
+    )
+
+    assert audit_calls == []
+
+
+async def test_an_explicit_route_is_never_recorded_twice(broadcast, audit_calls):
+    await run(
+        bmw.BroadcastMiddleware(inner_app()),
+        http_scope("PUT", "/api/users/7", {"current_user": USER}),
+    )
+
+    broadcast.assert_awaited_once()  # the coarse broadcast still goes out
+    assert audit_calls == []
+
+
+# Sample write paths of every route that records its own audit row.
+EXPLICIT_PATHS = [
+    ("POST", "/api/users"),
+    ("PUT", "/api/users/7"),
+    ("DELETE", "/api/users/7"),
+    ("PUT", "/api/users/7/toggle-active"),
+    ("POST", "/api/sites"),
+    ("PUT", "/api/sites/3"),
+    ("DELETE", "/api/sites/3"),
+    ("POST", "/api/teams"),
+    ("PUT", "/api/teams/2"),
+    ("DELETE", "/api/teams/2"),
+    ("POST", "/api/roles"),
+    ("PUT", "/api/roles/4"),
+    ("DELETE", "/api/roles/4"),
+    ("PUT", "/api/approval-policies/assignments.self_create"),
+    ("PUT", "/api/settings/instance_title"),
+    ("PUT", "/api/settings/sso"),
+    ("PUT", "/api/sso/config"),
+    ("PUT", "/api/auth/sso/config"),
+    ("POST", "/api/auth/sso/test"),
+]
+
+
+@pytest.mark.parametrize(("method", "path"), EXPLICIT_PATHS, ids=lambda v: str(v))
+def test_audit_action_for_skips_every_explicit_route(method, path):
+    assert any(p.match(path) for p in bmw.AUDIT_EXPLICIT_PATTERNS) or path.startswith("/api/auth")
+    assert bmw.audit_action_for(method, path) is None
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "expected"),
+    [
+        ("POST", "/api/sites/3/holidays", ("admin", "admin.bank_holiday.created", "bank_holiday")),
+        (
+            "POST",
+            "/api/sites/3/holidays/refresh",
+            ("admin", "admin.bank_holiday.created", "bank_holiday"),
+        ),
+        ("PUT", "/api/events/5", ("admin", "admin.company_event.updated", "company_event")),
+        (
+            "DELETE",
+            "/api/sites/3/events/5",
+            ("admin", "admin.company_event.deleted", "company_event"),
+        ),
+        ("POST", "/api/equipment-types", ("admin", "admin.equipment.created", "equipment")),
+        ("PUT", "/api/absence-types/2", ("admin", "admin.absence_type.updated", "absence_type")),
+        ("PUT", "/api/project-fields/1", ("admin", "admin.project_field.updated", "project_field")),
+        ("DELETE", "/api/tags/1", ("admin", "admin.tag.deleted", "tag")),
+        (
+            "POST",
+            "/api/predefined-phases",
+            ("admin", "admin.predefined_phase.created", "predefined_phase"),
+        ),
+        ("POST", "/api/notes", ("change", "note.created", "note")),
+        ("PUT", "/api/custom-columns/values", ("change", "custom_column.updated", "custom_column")),
+        ("DELETE", "/api/dashboards/3", ("change", "dashboard.deleted", "dashboard")),
+        ("POST", "/api/equipment-blocks", ("change", "equipment_block.created", "equipment_block")),
+    ],
+)
+def test_audit_action_for_classifies(method, path, expected):
+    assert bmw.audit_action_for(method, path) == expected
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/skills"),
+        ("POST", "/api/projects/1"),
+        ("PUT", "/api/projects/1"),
+        ("POST", "/api/dashboards/query"),
+        ("POST", "/api/kanban/move"),
+        ("POST", "/api/unknown"),
+    ],
+)
+def test_audit_action_for_leaves_the_rest_alone(method, path):
+    assert bmw.audit_action_for(method, path) is None
+
+
+def test_every_entity_is_classified():
+    entities = {entity for _, entity in bmw.ENTITY_PATTERNS}
+    assert entities == set(bmw.AUDIT_ENTITY_CATEGORIES)
+    assert set(bmw.AUDIT_ENTITY_CATEGORIES.values()) == {"admin", "change"}
+
+
+@pytest.mark.parametrize(
+    ("path", "target"),
+    [
+        ("/api/sites/3/holidays/9", "9"),
+        ("/api/skills", None),
+        ("/api/skills/4", "4"),
+        ("/api/equipment-types/Oven", None),
+        ("/api/sites/3/holidays/refresh", "3"),
+    ],
+)
+def test_audit_target_id(path, target):
+    assert bmw.audit_target_id(path) == target
+
+
+async def test_get_current_user_stashes_the_email():
+    from app.middleware.auth import get_current_user
+
+    request = MagicMock()
+    request.scope = {"state": {}}
+    user = FakeUser(7, "user")
+    with patch(
+        "app.middleware.auth.load_live_user",
+        AsyncMock(return_value=(True, "user", user.permissions)),
+    ):
+        await get_current_user(request, user=user, session_id="sid", db=MagicMock())
+
+    assert request.scope["state"]["current_user"] == {
+        "id": 7,
+        "email": "user7@example.com",
+        "first_name": "Test",
+        "last_name": "User7",
+    }

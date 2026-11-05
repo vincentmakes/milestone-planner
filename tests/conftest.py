@@ -42,6 +42,36 @@ def change_intents():
         yield calls
 
 
+@pytest.fixture(autouse=True)
+def audit_calls():
+    """
+    Records audit-log writes instead of writing them.
+
+    ``app.services.audit_log.record`` (the routes' explicit rows) and
+    ``record_detached`` (the derived tiers, which open a session of their
+    own) are replaced for every test, so a route's mocked session sees no
+    extra ``add`` / ``flush`` and no test opens a real engine. Each call is
+    appended as ``(name, kwargs)`` -- ``"record"`` or ``"record_detached"``,
+    the keywords as passed (``action``, ``category``, ``outcome``, ...).
+    tests/test_audit_log_service.py and tests/test_audit_log_schema.py call
+    the real functions, captured at import time (before any fixture runs).
+    """
+    calls: list[tuple[str, dict]] = []
+
+    async def record(_db, _request, **kwargs):
+        calls.append(("record", kwargs))
+        return SimpleNamespace(id=None, **kwargs)
+
+    async def record_detached(_request, **kwargs):
+        calls.append(("record_detached", kwargs))
+
+    with (
+        patch("app.services.audit_log.record", side_effect=record),
+        patch("app.services.audit_log.record_detached", side_effect=record_detached),
+    ):
+        yield calls
+
+
 @pytest.fixture
 def test_settings():
     """Settings configured for testing (no real DB connection needed)."""
