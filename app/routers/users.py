@@ -31,7 +31,7 @@ from app.schemas.user import (
     UserDetailResponse,
     UserResponse,
 )
-from app.services import approvals
+from app.services import approvals, audit_log
 from app.services.encryption import PasswordTooLongError, hash_user_password
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
@@ -282,6 +282,40 @@ async def get_user(
     return build_user_detail_response(user)
 
 
+# The fields of a user the audit row compares (sites, teams and skills as
+# sorted id lists).
+USER_AUDIT_FIELDS: tuple[str, ...] = (
+    "first_name",
+    "last_name",
+    "email",
+    "job_title",
+    "role",
+    "max_capacity",
+    "is_resource",
+    "active",
+    "site_ids",
+    "team_ids",
+    "skill_ids",
+)
+
+
+def _user_audit_snapshot(user: User, sites=None, teams=None, skills=None) -> dict:
+    """The audited view of ``user``; ``sites`` / ``teams`` / ``skills`` override
+    the loaded relationships (the lists a PUT is about to write)."""
+    snapshot = {field: getattr(user, field, None) for field in USER_AUDIT_FIELDS[:8]}
+    for field, rows in (
+        ("site_ids", user.sites if sites is None else sites),
+        ("team_ids", user.teams if teams is None else teams),
+        ("skill_ids", user.skills if skills is None else skills),
+    ):
+        snapshot[field] = sorted(row.id for row in rows or [])
+    return snapshot
+
+
+def _user_target(user: User) -> tuple[str, int, str]:
+    return ("user", user.id, approvals.display_name(user))
+
+
 @router.post("/users", response_model=UserResponse, status_code=201)
 async def create_user(
     data: StaffCreate,
@@ -352,6 +386,17 @@ async def create_user(
     user.sites = sites
     user.skills = skills
     user.teams = teams
+    # After the commit (the id); get_db commits the row.
+    await audit_log.record(
+        db,
+        request,
+        action="admin.user.created",
+        category="admin",
+        actor=admin,
+        subject_email=user.email,
+        target=_user_target(user),
+        context={"role": user.role},
+    )
 
     return build_user_list_response(user)
 
@@ -398,6 +443,7 @@ async def update_user(
         raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
     await _ensure_target_visible(request, db, current_user, user_id)
 
+    before = _user_audit_snapshot(user)
     permissions = current_user.permissions
     is_self = user.id == current_user.id
     target_is_admin = user.role == ADMIN_ROLE_KEY
@@ -551,8 +597,9 @@ async def update_user(
         for skill in skills:
             db.add(UserSkill(user_id=user_id, skill_id=skill.id))
 
+    revoked: int | None = None
     if role_changed or deactivated or password_changed:
-        await SessionService(db).destroy_user_sessions(
+        revoked = await SessionService(db).destroy_user_sessions(
             user_id, except_session_id=session_id, commit=False
         )
     # A deactivated requester's pending approval requests expire.
@@ -560,6 +607,9 @@ async def update_user(
         await approvals.expire_for_requester(db, current_user, user_id) if deactivated else None
     )
 
+    await _record_user_update(
+        db, request, current_user, user, before, (sites, teams, skills), revoked, password_changed
+    )
     await db.commit()
     if expired is not None:
         await approvals.publish(request, current_user, expired)
@@ -569,6 +619,51 @@ async def update_user(
     user.teams = teams
 
     return build_user_list_response(user)
+
+
+async def _record_user_update(
+    db: AsyncSession,
+    request: Request,
+    actor: User,
+    user: User,
+    before: dict,
+    links: tuple[list, list, list],
+    revoked: int | None,
+    password_set: bool,
+) -> None:
+    """``admin.user.updated`` with the changed fields (nothing when none
+    changed) and ``admin.user.password_set`` when the body set a password
+    (never a diff of it). ``sessions_revoked`` goes on the first row
+    recorded."""
+    sites, teams, skills = links
+    changes = audit_log.diff(
+        before, _user_audit_snapshot(user, sites, teams, skills), keys=USER_AUDIT_FIELDS
+    )
+    context = {"sessions_revoked": revoked} if revoked is not None else None
+    if changes:
+        await audit_log.record(
+            db,
+            request,
+            action="admin.user.updated",
+            category="admin",
+            actor=actor,
+            subject_email=user.email,
+            target=_user_target(user),
+            changes=changes,
+            context=context,
+        )
+        context = None
+    if password_set:
+        await audit_log.record(
+            db,
+            request,
+            action="admin.user.password_set",
+            category="admin",
+            actor=actor,
+            subject_email=user.email,
+            target=_user_target(user),
+            context=context,
+        )
 
 
 @router.delete("/users/{user_id}")
@@ -621,6 +716,16 @@ async def delete_user(
     )
     await db.execute(update(Dashboard).where(Dashboard.owner_id == user_id).values(owner_id=None))
 
+    await audit_log.record(
+        db,
+        request,
+        action="admin.user.deleted",
+        category="admin",
+        actor=admin,
+        subject_email=user.email,
+        target=_user_target(user),
+    )
+
     # Delete user
     await db.delete(user)
     await db.commit()
@@ -668,12 +773,24 @@ async def toggle_user_active(
     user.active = 0 if user.active == 1 else 1
 
     expired = None
+    context = None
     if user.active == 0:
         # A deactivated user's existing sessions must stop working now
-        await SessionService(db).destroy_user_sessions(user_id, commit=False)
+        revoked = await SessionService(db).destroy_user_sessions(user_id, commit=False)
+        context = {"sessions_revoked": revoked}
         # ... and their pending approval requests expire.
         expired = await approvals.expire_for_requester(db, admin, user_id)
 
+    await audit_log.record(
+        db,
+        request,
+        action="admin.user.activated" if user.active == 1 else "admin.user.deactivated",
+        category="admin",
+        actor=admin,
+        subject_email=user.email,
+        target=_user_target(user),
+        context=context,
+    )
     await db.commit()
     if expired is not None:
         await approvals.publish(request, admin, expired)

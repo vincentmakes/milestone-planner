@@ -482,6 +482,62 @@ def _reject_if_org_sso_active(data: "SSOConfigUpdate", org_sso: dict | None) -> 
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
+# The fields of an SSO configuration change the audit row reports. The client
+# secret is reported as set / not set only (``"set"`` / None, then masked as
+# ``***`` by audit_log): never its plaintext, never the stored ciphertext.
+SSO_AUDIT_FIELDS: tuple[str, ...] = (
+    "enabled",
+    "tenant_id",
+    "client_id",
+    "redirect_uri",
+    "auto_create_users",
+    "default_role",
+    "client_secret",
+)
+
+
+def sso_audit_snapshot(config: SSOConfig | None) -> dict:
+    """The audited view of the tenant SSO row (None: no row yet)."""
+    if config is None:
+        return dict.fromkeys(SSO_AUDIT_FIELDS)
+    return {
+        "enabled": bool(config.enabled),
+        "tenant_id": config.tenant_id or None,
+        "client_id": config.client_id or None,
+        "redirect_uri": config.redirect_uri or None,
+        "auto_create_users": bool(config.auto_create_users),
+        "default_role": config.default_role,
+        "client_secret": "set" if config.client_secret else None,
+    }
+
+
+async def record_sso_update(
+    db: AsyncSession,
+    request: Request,
+    actor: User,
+    before: dict,
+    config: SSOConfig,
+    key_replaced: bool,
+) -> None:
+    """Record ``admin.sso.updated`` with what changed, before the route's
+    commit; nothing when nothing changed. A replaced client secret is a
+    change even when one was set before (``***`` -> ``***``)."""
+    changes = audit_log.diff(before, sso_audit_snapshot(config), keys=SSO_AUDIT_FIELDS)
+    if key_replaced and "client_secret" not in changes:
+        changes["client_secret"] = {"old": audit_log.MASK, "new": audit_log.MASK}
+    if not changes:
+        return
+    await audit_log.record(
+        db,
+        request,
+        action="admin.sso.updated",
+        category="admin",
+        actor=actor,
+        target=("sso", "tenant", "SSO configuration"),
+        changes=changes,
+    )
+
+
 @router.get("/sso/config")
 async def get_sso_config_public(
     request: Request,
@@ -622,6 +678,7 @@ async def update_sso_config_new(
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
 
+    before = sso_audit_snapshot(config)
     if not config:
         logger.info("Creating new SSO config record")
         config = SSOConfig(id=1)
@@ -635,7 +692,7 @@ async def update_sso_config_new(
         config.client_id = data.client_id or ""
 
     # Omitted or masked (****abcd) keeps the stored secret; stored encrypted.
-    apply_secret_update(config, data.client_secret)
+    key_replaced = apply_secret_update(config, data.client_secret)
 
     if data.redirect_uri is not None:
         config.redirect_uri = data.redirect_uri or ""
@@ -644,6 +701,7 @@ async def update_sso_config_new(
     if data.default_role is not None:
         config.default_role = await ensure_sso_default_role(db, data.default_role)
 
+    await record_sso_update(db, request, admin, before, config, key_replaced)
     await db.commit()
 
     logger.info("SSO config saved: enabled=%s, tenant_id=%s", config.enabled, config.tenant_id)
@@ -708,6 +766,7 @@ async def update_sso_config(
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
 
+    before = sso_audit_snapshot(config)
     if not config:
         # Create new config
         config = SSOConfig(id=1)
@@ -721,7 +780,7 @@ async def update_sso_config(
     if data.client_id is not None:
         config.client_id = data.client_id
     # Omitted or masked (****abcd) keeps the stored secret; stored encrypted.
-    apply_secret_update(config, data.client_secret)
+    key_replaced = apply_secret_update(config, data.client_secret)
     if data.redirect_uri is not None:
         config.redirect_uri = data.redirect_uri
     if data.auto_create_users is not None:
@@ -729,6 +788,7 @@ async def update_sso_config(
     if data.default_role is not None:
         config.default_role = await ensure_sso_default_role(db, data.default_role)
 
+    await record_sso_update(db, request, admin, before, config, key_replaced)
     await db.commit()
     await db.refresh(config)
 
@@ -1111,6 +1171,23 @@ async def run_tenant_sso_test(
         user.id,
         value_origin,
         response.credentials_ok,
+    )
+    # The checks' names are our own fixed labels ("Client secret", "Microsoft
+    # sign-in", ...); the reason is the first failed one as a snake_case kind.
+    failed = [check.name for check in response.checks if check.status == "fail"]
+    reason = None
+    if not response.credentials_ok:
+        reason = failed[0].lower().replace(" ", "_").replace("-", "_") if failed else "rejected"
+    await audit_log.record(
+        db,
+        request,
+        action="admin.sso.tested",
+        category="admin",
+        outcome="success" if response.credentials_ok else "failure",
+        actor=user,
+        target=("sso", "tenant", "SSO configuration"),
+        reason=reason,
+        context={"stored_value": value_origin == "stored", "failed_checks": failed},
     )
     return response
 

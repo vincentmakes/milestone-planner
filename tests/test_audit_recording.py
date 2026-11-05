@@ -366,6 +366,290 @@ async def test_a_successful_sso_sign_in_is_committed(app_client, mock_db_session
 
 
 # ---------------------------------------------------------------------------
+# Admin: users
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def revoked():
+    with patch.object(SessionService, "destroy_user_sessions", AsyncMock(return_value=3)) as mock:
+        yield mock
+
+
+async def test_a_user_update_records_only_the_changed_fields(
+    authed_client, mock_db_session, audit_calls, revoked
+):
+    client, set_user = authed_client
+    admin = FakeUser(1, "admin")
+    set_user(admin)
+    target = make_user(7)
+    route_db(mock_db_session, target)
+
+    resp = await client.put(
+        "/api/users/7", json={"first_name": "Grace", "last_name": "Last7", "role": "superuser"}
+    )
+
+    assert resp.status_code == 200
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.user.updated"
+    assert row["changes"] == {
+        "first_name": {"old": "First", "new": "Grace"},
+        "role": {"old": "user", "new": "superuser"},
+    }
+    assert row["context"] == {"sessions_revoked": 3}
+    assert row["subject_email"] == "u7@example.com"
+    assert row["target"] == ("user", 7, "Grace Last7")
+    assert row["actor"] is admin
+
+
+async def test_an_unchanged_user_update_records_nothing(
+    authed_client, mock_db_session, audit_calls, revoked
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    route_db(mock_db_session, make_user(7))
+
+    resp = await client.put("/api/users/7", json={"first_name": "First", "job_title": "Engineer"})
+
+    assert resp.status_code == 200
+    assert audit_calls == []
+
+
+async def test_a_password_set_is_its_own_row_without_a_diff(
+    authed_client, mock_db_session, audit_calls, revoked
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    route_db(mock_db_session, make_user(7))
+
+    resp = await client.put("/api/users/7", json={"password": "brand-new-pass"})
+
+    assert resp.status_code == 200
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.user.password_set"
+    assert "changes" not in row
+    assert row["context"] == {"sessions_revoked": 3}
+
+
+async def test_toggle_active_records_the_direction(
+    authed_client, mock_db_session, audit_calls, revoked
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    target = make_user(7)
+    lookup = MagicMock()
+    lookup.scalar_one_or_none.return_value = target
+    mock_db_session.execute = AsyncMock(return_value=lookup)
+
+    with patch("app.services.approvals.expire_for_requester", AsyncMock(return_value=None)):
+        await client.put("/api/users/7/toggle-active")
+        await client.put("/api/users/7/toggle-active")
+
+    first, second = rows(audit_calls)
+    assert (first["action"], first["context"]) == (
+        "admin.user.deactivated",
+        {"sessions_revoked": 3},
+    )
+    assert (second["action"], second["context"]) == ("admin.user.activated", None)
+
+
+# ---------------------------------------------------------------------------
+# Admin: settings and SSO configuration
+# ---------------------------------------------------------------------------
+
+
+async def test_a_setting_change_records_old_and_new(authed_client, mock_db_session, audit_calls):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(
+        SettingRow(key="instance_title", value="Milestone")
+    )
+
+    resp = await client.put("/api/settings/instance_title", json={"value": "R&D planner"})
+
+    assert resp.status_code == 200
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.settings.updated"
+    assert row["target"] == ("setting", "instance_title", "instance_title")
+    assert row["changes"] == {"instance_title": {"old": "Milestone", "new": "R&D planner"}}
+
+
+async def test_an_unchanged_setting_records_nothing(authed_client, mock_db_session, audit_calls):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(
+        SettingRow(key="instance_title", value="Milestone")
+    )
+
+    await client.put("/api/settings/instance_title", json={"value": "Milestone"})
+
+    assert audit_calls == []
+
+
+async def test_a_logo_setting_is_recorded_by_its_length(
+    authed_client, mock_db_session, audit_calls
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(None)
+    logo = "data:image/png;base64," + "A" * 400
+
+    await client.put("/api/settings/custom_logo", json={"value": logo})
+
+    (row,) = rows(audit_calls)
+    assert row["changes"] == {
+        "custom_logo": {"old": None, "new": {"changed": True, "length": len(logo)}}
+    }
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/sso/config", "/api/auth/sso/config", "/api/settings/sso"], ids=str
+)
+async def test_an_sso_config_change_never_carries_the_plaintext_secret(
+    authed_client, mock_db_session, audit_calls, path
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    stored = SSOConfig(
+        id=1,
+        enabled=0,
+        tenant_id="t-old",
+        client_id="c",
+        redirect_uri="https://x",
+        auto_create_users=0,
+        default_role="user",
+    )
+    mock_db_session.execute.return_value = scalar_result(stored)
+
+    with (
+        patch("app.routers.auth._active_org_sso", AsyncMock(return_value=None)),
+        patch("app.routers.settings._active_org_sso", AsyncMock(return_value=None)),
+        patch("app.services.sso.store_tenant_client_secret") as store,
+    ):
+        store.side_effect = lambda config, value: setattr(config, "client_secret", "iv:tag:ct")
+        resp = await client.put(
+            path, json={"enabled": True, "tenant_id": "t-new", "client_secret": "s3cr3t-value"}
+        )
+
+    assert resp.status_code == 200
+    (row,) = rows(audit_calls)
+    assert row["action"] == "admin.sso.updated"
+    assert row["target"] == ("sso", "tenant", "SSO configuration")
+    changes = row["changes"]
+    assert changes["enabled"] == {"old": False, "new": True}
+    assert changes["tenant_id"] == {"old": "t-old", "new": "t-new"}
+    assert changes["client_secret"] == {"old": None, "new": "***"}
+    assert "s3cr3t-value" not in repr(row) and "iv:tag:ct" not in repr(row)
+
+
+async def test_a_replaced_sso_secret_is_a_change(authed_client, mock_db_session, audit_calls):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    stored = SSOConfig(id=1, enabled=1, client_secret="iv:tag:old", default_role="user")
+    mock_db_session.execute.return_value = scalar_result(stored)
+
+    with (
+        patch("app.routers.auth._active_org_sso", AsyncMock(return_value=None)),
+        patch("app.services.sso.store_tenant_client_secret") as store,
+    ):
+        store.side_effect = lambda config, value: setattr(config, "client_secret", "iv:tag:new")
+        await client.put("/api/sso/config", json={"client_secret": "another-value"})
+
+    (row,) = rows(audit_calls)
+    assert row["changes"] == {"client_secret": {"old": "***", "new": "***"}}
+
+
+async def test_an_sso_test_records_its_outcome(authed_client, mock_db_session, audit_calls):
+    from app.schemas.sso import SSOTestCheck, SSOTestResponse
+
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    result = SSOTestResponse(
+        credentials_ok=False,
+        summary="no",
+        checks=[
+            SSOTestCheck(name="Tenant ID", status="pass", message="ok"),
+            SSOTestCheck(name="Microsoft sign-in", status="fail", message="AADSTS7000215"),
+        ],
+    )
+    with (
+        patch("app.routers.auth._active_org_sso", AsyncMock(return_value=None)),
+        patch("app.routers.auth.run_entra_test", AsyncMock(return_value=result)),
+    ):
+        resp = await client.post(
+            "/api/auth/sso/test",
+            json={
+                "tenant_id": "t",
+                "client_id": "c",
+                "client_secret": "typed-value",
+                "redirect_uri": "https://example.test/api/auth/sso/callback",
+            },
+        )
+
+    assert resp.status_code == 200
+    (row,) = rows(audit_calls)
+    assert (row["action"], row["outcome"], row["reason"]) == (
+        "admin.sso.tested",
+        "failure",
+        "microsoft_sign_in",
+    )
+    assert row["context"] == {"stored_value": False, "failed_checks": ["Microsoft sign-in"]}
+    assert "typed-value" not in repr(row)
+
+
+# ---------------------------------------------------------------------------
+# Exports
+# ---------------------------------------------------------------------------
+
+
+async def test_a_project_export_records_its_row(authed_client, audit_calls):
+    client, set_user = authed_client
+    user = FakeUser(1, "admin")
+    set_user(user)
+    project = SimpleNamespace(id=12, name="Apollo")
+
+    with (
+        patch("app.routers.export.get_project_with_hierarchy", AsyncMock(return_value=project)),
+        patch("app.routers.export.build_task_list", return_value=[{}, {}, {}]),
+        patch("app.routers.export.generate_xml", return_value="<xml/>"),
+        patch("app.routers.export.generate_csv", return_value="a,b"),
+    ):
+        await client.post("/api/export/mpp/12")
+        await client.post("/api/export/csv/12")
+        await client.get("/api/export/csv/12")
+
+    assert [r["action"] for r in rows(audit_calls)] == [
+        "access.export.msproject",
+        "access.export.csv",
+        "access.export.csv",
+    ]
+    for row in rows(audit_calls):
+        assert row["category"] == "access"
+        assert row["target"] == ("project", 12, "Apollo")
+        assert (row["project_id"], row["context"]) == (12, {"rows": 3})
+
+
+async def test_a_site_export_records_its_row(authed_client, mock_db_session, audit_calls):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.get = AsyncMock(return_value=SimpleNamespace(name="Basel Lab"))
+
+    with patch(
+        "app.routers.export.build_site_export_workbook",
+        AsyncMock(return_value=(b"xlsx", "site.xlsx")),
+    ):
+        resp = await client.get("/api/export/site/1/excel")
+
+    assert resp.status_code == 200
+    (row,) = rows(audit_calls)
+    assert (row["action"], row["category"], row["target"]) == (
+        "access.export.site",
+        "access",
+        ("site", 1, "Basel Lab"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Derived tier 2a: broadcast_change
 # ---------------------------------------------------------------------------
 

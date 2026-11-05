@@ -14,7 +14,7 @@ own-booking keys, and no change to a locked key (422). Writes are
 coarse-broadcast as ``change:role`` by BroadcastMiddleware.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,7 @@ from app.schemas.role import (
     RoleResponse,
     RoleUpdate,
 )
+from app.services import audit_log
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
     APPROVABLE_KEYS,
@@ -147,6 +148,27 @@ async def _refresh_role(db: AsyncSession, role: Role) -> None:
     await db.refresh(role, attribute_names=["permissions"])
 
 
+ROLE_AUDIT_FIELDS: tuple[str, ...] = ("name", "description", "sort_order")
+
+
+def _role_target(role: Role) -> tuple[str, str, str]:
+    return ("role", role.key, role.name)
+
+
+def _role_fields(role: Role) -> dict:
+    return {field: getattr(role, field) for field in ROLE_AUDIT_FIELDS}
+
+
+def _matrix_changes(old: dict[str, str], new: dict[str, str]) -> dict[str, dict]:
+    """``{permission: {"old": mode, "new": mode}}`` for the keys whose mode
+    moved (``allow`` / ``approval``; ``None`` = not granted)."""
+    return {
+        key: {"old": old.get(key), "new": new.get(key)}
+        for key in sorted(set(old) | set(new))
+        if old.get(key) != new.get(key)
+    }
+
+
 def _apply_matrix(role: Role, matrix: dict[str, Mode]) -> None:
     """
     Make the role's rows equal ``matrix``, in place: changed modes are updated,
@@ -225,6 +247,7 @@ async def get_role(
 @router.post("/roles", response_model=RoleResponse, status_code=status.HTTP_201_CREATED)
 async def create_role(
     data: RoleCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -266,6 +289,17 @@ async def create_role(
     db.add(role)
     await _commit(db, f'A role with the key "{data.key}" or the name "{name}" already exists')
     await _refresh_role(db, role)
+    # After the commit; get_db commits the row.
+    await audit_log.record(
+        db,
+        request,
+        action="admin.role.created",
+        category="admin",
+        actor=admin,
+        target=_role_target(role),
+        changes=audit_log.diff({}, _role_fields(role), keys=ROLE_AUDIT_FIELDS),
+        context={"permissions": sorted(matrix)},
+    )
 
     return _role_response(role, 0)
 
@@ -274,6 +308,7 @@ async def create_role(
 async def update_role(
     role_id: int,
     data: RoleUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -304,6 +339,8 @@ async def update_role(
     matrix = _validated_matrix(data.permissions) if data.permissions is not None else None
 
     # Every check passed: apply.
+    before = _role_fields(role)
+    before_matrix = dict(role.permission_modes)
     if name is not None:
         role.name = name
     if "description" in data.model_fields_set:
@@ -313,6 +350,28 @@ async def update_role(
     if matrix is not None:
         _apply_matrix(role, matrix)
 
+    changes = audit_log.diff(before, _role_fields(role), keys=ROLE_AUDIT_FIELDS)
+    if changes:
+        await audit_log.record(
+            db,
+            request,
+            action="admin.role.updated",
+            category="admin",
+            actor=admin,
+            target=_role_target(role),
+            changes=changes,
+        )
+    matrix_changes = _matrix_changes(before_matrix, matrix) if matrix is not None else {}
+    if matrix_changes:
+        await audit_log.record(
+            db,
+            request,
+            action="admin.role.permissions_updated",
+            category="admin",
+            actor=admin,
+            target=_role_target(role),
+            changes=matrix_changes,
+        )
     await _commit(db, _duplicate_name_detail(role.name))
     await _refresh_role(db, role)
 
@@ -322,6 +381,7 @@ async def update_role(
 @router.delete("/roles/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_role(
     role_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -341,6 +401,14 @@ async def delete_role(
             status_code=status.HTTP_409_CONFLICT, detail=_role_in_use_detail(holders)
         )
 
+    await audit_log.record(
+        db,
+        request,
+        action="admin.role.deleted",
+        category="admin",
+        actor=admin,
+        target=_role_target(role),
+    )
     await db.delete(role)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
