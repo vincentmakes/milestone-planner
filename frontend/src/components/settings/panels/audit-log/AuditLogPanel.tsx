@@ -12,14 +12,16 @@
  *   chips, action and actor pickers, From / To days, Clear filters. Any
  *   change goes back to page 1.
  * - Numbered paging (`Pagination`) with a Per page select; a row click (or
- *   Enter on a focused row) opens the Entry detail dialog.
+ *   Enter / Space on the When cell's button) opens the Entry detail dialog.
+ *   The table fits the hub without a sideways scroll: fixed columns, the
+ *   free-text ones cut with an ellipsis (full text in `title`), and the
+ *   origin left to the dialog.
  *
  * Local state only: nothing else reads the log. Every call is a GET, so
  * What-If never queues one.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
 import { Button } from '@/components/common/Button';
 import { DateField } from '@/components/common/DateRangeField';
 import { FilterChips } from '@/components/common/FilterChips';
@@ -36,7 +38,7 @@ import { auditLogApi } from '@/api/endpoints/auditLog';
 import { getUsers } from '@/api/endpoints/users';
 import { useHasPermission } from '@/hooks/useCan';
 import { useAppStore } from '@/stores/appStore';
-import { actionLabel, categoryLabel, originLabel, outcomeLabel } from '@/utils/auditLabels';
+import { actionLabel, categoryLabel, outcomeLabel } from '@/utils/auditLabels';
 import type { AuditLogEntry, AuditLogPage, User } from '@/types';
 import { PanelToolbar } from '../../PanelToolbar';
 import { AuditChip } from './AuditChip';
@@ -60,6 +62,10 @@ const RETENTION_TITLE =
 
 /** How long the search and IP fields wait for the typing to stop. */
 const FILTER_DEBOUNCE_MS = 300;
+
+/** The server's caps on `q` and `ip` (longer is a 422). */
+const SEARCH_MAX_LENGTH = 200;
+const IP_MAX_LENGTH = 45;
 
 const CATEGORY_OPTIONS: ReadonlyArray<FilterChipOption<CategoryFilter>> = [
   { value: 'all', label: 'All' },
@@ -121,13 +127,14 @@ export function AuditLogPanel() {
 
   // The typed search and IP address apply once the typing stops.
   useEffect(() => {
-    if (searchDraft === filters.q && ipDraft === filters.ip) return;
+    // The query trims both: a change of surrounding spaces only is no change (no page reset).
+    if (searchDraft.trim() === filters.q.trim() && ipDraft.trim() === filters.ip.trim()) return;
     const timer = window.setTimeout(() => updateFilters({ q: searchDraft, ip: ipDraft }), FILTER_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [searchDraft, ipDraft, filters.q, filters.ip, updateFilters]);
 
-  const query = useMemo(() => auditLogQuery(filters, { page, pageSize }), [filters, page, pageSize]);
-  const queryKey = JSON.stringify(query);
+  // The string is the effect's key: a new query object with the same params refetches nothing.
+  const queryKey = JSON.stringify(auditLogQuery(filters, { page, pageSize }));
 
   // One page per query; an overtaken answer is dropped.
   useEffect(() => {
@@ -187,7 +194,8 @@ export function AuditLogPanel() {
 
   // Past the last page (rows purged, a smaller total): show the last one.
   useEffect(() => {
-    if (result && result.total > 0 && page > pageCount) setPage(pageCount);
+    // `pageCount` is at least 1: an emptied log goes back to "Page 1 of 1".
+    if (result && page > pageCount) setPage(pageCount);
   }, [result, page, pageCount]);
 
   const actionOptions = useMemo<SearchableOption[]>(() => {
@@ -235,13 +243,6 @@ export function AuditLogPanel() {
     }
   };
 
-  const openOnEnter = (event: KeyboardEvent<HTMLTableRowElement>, entry: AuditLogEntry) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      setSelected(entry);
-    }
-  };
-
   const days = retentionDays(retentionSetting);
   const start = total === 0 ? 0 : (Math.min(page, pageCount) - 1) * pageSize + 1;
   const end = Math.min(start + rows.length - 1, total);
@@ -259,6 +260,18 @@ export function AuditLogPanel() {
   } else {
     body = (
       <table className={`${styles.table} ${loading ? styles.busy : ''}`} aria-busy={loading || undefined}>
+        {/* Fixed columns; Actor, Account and Target share the rest and cut with an ellipsis.
+            The origin is in the entry detail only (web / system). */}
+        <colgroup>
+          <col className={styles.colWhen} />
+          <col className={styles.colCategory} />
+          <col className={styles.colAction} />
+          <col className={styles.colOutcome} />
+          <col />
+          <col />
+          <col />
+          <col className={styles.colIp} />
+        </colgroup>
         <thead>
           <tr>
             <th scope="col">When</th>
@@ -269,41 +282,58 @@ export function AuditLogPanel() {
             <th scope="col">Account</th>
             <th scope="col">Target</th>
             <th scope="col">IP address</th>
-            <th scope="col">Origin</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((entry) => (
-            <tr
-              key={entry.id}
-              className={styles.row}
-              tabIndex={0}
-              onClick={() => setSelected(entry)}
-              onKeyDown={(event) => openOnEnter(event, entry)}
-            >
-              <td className={styles.nowrap}>{formatWhen(entry.created_at)}</td>
-              <td>
-                <AuditChip tone={categoryTone(entry.category)} variant="outlined">
-                  {categoryLabel(entry.category)}
-                </AuditChip>
-              </td>
-              <td title={entry.action}>{actionLabel(entry.action)}</td>
-              <td>
-                <AuditChip tone={outcomeTone(entry.outcome)} variant="filled">
-                  {outcomeLabel(entry.outcome)}
-                </AuditChip>
-              </td>
-              <td className={styles.truncate}>{entry.actor_name || entry.actor_email || EMPTY_VALUE}</td>
-              <td className={styles.truncate}>{entry.subject_email || EMPTY_VALUE}</td>
-              <td className={styles.truncate}>{targetText(entry)}</td>
-              <td className={styles.nowrap}>{entry.ip ? <code className={styles.code}>{entry.ip}</code> : EMPTY_VALUE}</td>
-              <td>
-                <AuditChip tone="neutral" variant="outlined">
-                  {originLabel(entry.origin)}
-                </AuditChip>
-              </td>
-            </tr>
-          ))}
+          {rows.map((entry) => {
+            const when = formatWhen(entry.created_at);
+            const action = actionLabel(entry.action);
+            const actor = entry.actor_name || entry.actor_email || EMPTY_VALUE;
+            const account = entry.subject_email || EMPTY_VALUE;
+            const target = targetText(entry);
+            return (
+              // The whole row opens the entry on a click; the keyboard reaches it through the
+              // When cell's button (Enter / Space), which keeps the row a table row for readers.
+              <tr key={entry.id} className={styles.row} onClick={() => setSelected(entry)}>
+                <td className={styles.nowrap}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={styles.rowButton}
+                    aria-haspopup="dialog"
+                    aria-label={`Open entry detail: ${action}, ${when}`}
+                  >
+                    {when}
+                  </Button>
+                </td>
+                <td>
+                  <AuditChip tone={categoryTone(entry.category)} variant="outlined">
+                    {categoryLabel(entry.category)}
+                  </AuditChip>
+                </td>
+                <td className={styles.truncate} title={entry.action}>
+                  {action}
+                </td>
+                <td>
+                  <AuditChip tone={outcomeTone(entry.outcome)} variant="filled">
+                    {outcomeLabel(entry.outcome)}
+                  </AuditChip>
+                </td>
+                <td className={styles.truncate} title={actor}>
+                  {actor}
+                </td>
+                <td className={styles.truncate} title={account}>
+                  {account}
+                </td>
+                <td className={styles.truncate} title={target}>
+                  {target}
+                </td>
+                <td className={styles.truncate} title={entry.ip ?? undefined}>
+                  {entry.ip ? <code className={styles.code}>{entry.ip}</code> : EMPTY_VALUE}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     );
@@ -361,6 +391,7 @@ export function AuditLogPanel() {
           label="Search"
           fullWidth
           placeholder="Email, name or target…"
+          maxLength={SEARCH_MAX_LENGTH}
           value={searchDraft}
           autoComplete="off"
           onChange={(e) => setSearchDraft(e.target.value)}
@@ -412,6 +443,7 @@ export function AuditLogPanel() {
           label="IP address"
           fullWidth
           placeholder="e.g. 203.0.113.7"
+          maxLength={IP_MAX_LENGTH}
           value={ipDraft}
           autoComplete="off"
           onChange={(e) => setIpDraft(e.target.value)}

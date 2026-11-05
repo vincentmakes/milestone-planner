@@ -73,6 +73,8 @@ const REASON_LABELS: Readonly<Record<string, string>> = {
   group_denied: 'Not a member of an allowed group',
   no_email: 'Identity provider returned no email',
   no_account: 'No account exists and accounts are not created automatically',
+  tenant_id: 'The directory (tenant) ID check failed',
+  client_id: 'The application (client) ID check failed',
   client_secret: 'The client secret check failed',
   redirect_uri: 'The redirect URI check failed',
   outbound_network: 'The outbound network check failed',

@@ -9,6 +9,7 @@
  */
 
 import { entityLabel } from '@/utils/auditLabels';
+import { formatDateTime } from '@/utils/date';
 import type { AuditLogChange, AuditLogEntry } from '@/types';
 
 export const EMPTY_VALUE = '—';
@@ -57,7 +58,8 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   region_code: 'Region',
 };
 
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+// A whole ISO timestamp (seconds and fraction optional), with or without a zone.
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -73,10 +75,15 @@ export function isLongValue(value: unknown): value is { changed: true; length: n
   return isPlainObject(value) && value.changed === true && typeof value.length === 'number';
 }
 
-/** A recorded timestamp in the browser's local date and time. */
+/** A recorded timestamp in the browser's local date and time (`formatDateTime`, no seconds). */
 export function formatWhen(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  return formatDateTime(iso) || iso;
+}
+
+/** A timestamp found in `details`: one without a zone was written in UTC (the server's clock). */
+function formatDetailTimestamp(value: string): string {
+  const zone = ISO_TIMESTAMP.exec(value)?.[1];
+  return formatWhen(zone ? value : `${value}Z`);
 }
 
 /** "First name" for `first_name`; a dotted key (a permission) as recorded. */
@@ -94,7 +101,7 @@ export function formatAuditValue(value: unknown): string {
   if (isMasked(value)) return 'Secret value';
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'number') return String(value);
-  if (typeof value === 'string') return ISO_TIMESTAMP.test(value) ? formatWhen(value) : value;
+  if (typeof value === 'string') return ISO_TIMESTAMP.test(value) ? formatDetailTimestamp(value) : value;
   if (Array.isArray(value)) return value.length === 0 ? EMPTY_VALUE : value.map(formatAuditValue).join(', ');
   if (isLongValue(value)) return `changed (${value.length.toLocaleString()} characters)`;
   return JSON.stringify(value);

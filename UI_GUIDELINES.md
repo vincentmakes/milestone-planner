@@ -1024,6 +1024,10 @@ has no fixed height).
   and two full numeric formats (`SiteForm`, `KanbanCardModal`).
 - A date field shows `formatMediumDate` (`22 Oct 2026` or `Oct 22, 2026`, by locale; `''` for no
   date), the `YYYY-MM-DD` wrapper over `formatDateDisplay`.
+- A timestamp with its time (`created_at`, `decided_at`) shows `formatDateTime` (`22 Oct 2026,
+  14:05`, by locale, no seconds; `''` when not a timestamp, the caller picks the placeholder) —
+  the History's decision time and the audit log's When. Not `toLocaleString()` (numeric month,
+  seconds).
 - Allocations are whole percentages from 1 to 100 (the slider steps by 5); capacity is a
   percentage too. Counts in toolbars read `12 users`, `3 of 8 cards`.
 

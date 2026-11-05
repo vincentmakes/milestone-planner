@@ -12,7 +12,7 @@ import { useAppStore } from '@/stores/appStore';
 import { makeUser } from '@/test/factories';
 import { pickDate } from '@/test/datePicker';
 import { optionLabel, pickerOptions, pickOption } from '@/test/searchableSelect';
-import { formatDateISO } from '@/utils/date';
+import { formatDateISO, formatDateTime } from '@/utils/date';
 import type { AuditLogEntry, AuditLogPage } from '@/types';
 import { AuditLogPanel } from '../AuditLogPanel';
 
@@ -164,23 +164,27 @@ describe('AuditLogPanel', () => {
       'Account',
       'Target',
       'IP address',
-      'Origin',
     ]);
+    // Eight columns, fixed widths: the origin is in the entry detail only.
+    expect(table.querySelectorAll('colgroup col')).toHaveLength(8);
     const [, failedRow, updatedRow, bookingRow] = within(table).getAllByRole('row');
     expect(within(failedRow).getByText('Sign-in failed')).toHaveAttribute('title', 'auth.login.failed');
     expect(within(failedRow).getByText('Authentication')).toBeInTheDocument();
     expect(within(failedRow).getByText('Failure')).toBeInTheDocument();
     expect(within(failedRow).getByText('Grace Hopper')).toBeInTheDocument();
     expect(within(failedRow).getByText('203.0.113.7').tagName).toBe('CODE');
-    expect(within(failedRow).getByText('Web')).toBeInTheDocument();
-    expect(within(failedRow).getByText(new Date(LOGIN_FAILED.created_at).toLocaleString())).toBeInTheDocument();
+    expect(within(failedRow).queryByText('Web')).not.toBeInTheDocument();
+    // When, without seconds; the free-text cells carry their full text as a title.
+    expect(within(failedRow).getByText(formatDateTime(LOGIN_FAILED.created_at))).toBeInTheDocument();
+    expect(within(failedRow).getByTitle('Grace Hopper')).toHaveTextContent('Grace Hopper');
+    expect(within(failedRow).getByTitle('203.0.113.7')).toBeInTheDocument();
     expect(within(updatedRow).getByText('User updated')).toBeInTheDocument();
     expect(within(updatedRow).getByText('Administration')).toBeInTheDocument();
     expect(within(updatedRow).getByText('User · Bob Brown')).toBeInTheDocument();
     expect(within(bookingRow).getByText('Booking deleted')).toBeInTheDocument();
     expect(within(bookingRow).getByText('Changes')).toBeInTheDocument();
     expect(within(bookingRow).getByText('Booking · #12')).toBeInTheDocument();
-    expect(within(bookingRow).getByText('System')).toBeInTheDocument();
+    expect(within(bookingRow).queryByText('System')).not.toBeInTheDocument();
     expect(within(bookingRow).getAllByText('—')).toHaveLength(3); // actor, account, IP
   });
 
@@ -257,6 +261,17 @@ describe('AuditLogPanel', () => {
     await waitFor(() => expect(lastParams().page).toBe('2'));
   });
 
+  it('goes back to "Page 1 of 1" when every entry is gone', async () => {
+    page = { items: [LOGIN_FAILED], total: 120, page: 1, page_size: 50 };
+    await renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Last page' }));
+    await waitFor(() => expect(lastParams().page).toBe('3'));
+    page = { items: [], total: 0, page: 3, page_size: 50 };
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(lastParams().page).toBe('1'));
+    expect(screen.getByRole('navigation', { name: 'Pagination' })).toHaveTextContent('Page 1 of 1');
+  });
+
   it('filters by category and outcome, back on page 1', async () => {
     await renderOnPageTwo();
     fireEvent.click(within(screen.getByRole('group', { name: 'Category' })).getByRole('button', { name: 'Authentication' }));
@@ -307,6 +322,26 @@ describe('AuditLogPanel', () => {
     fireEvent.change(screen.getByLabelText('IP address'), { target: { value: ' 203.0.113.7 ' } });
     expect(screen.getByLabelText('IP address')).toHaveAttribute('placeholder', 'e.g. 203.0.113.7');
     await waitFor(() => expect(lastParams()).toMatchObject({ q: 'grace', ip: '203.0.113.7', page: '1' }));
+  });
+
+  it('ignores a change of surrounding spaces only, and caps the two fields at the server limits', async () => {
+    await renderOnPageTwo();
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'grace' } });
+    await waitFor(() => expect(lastParams()).toMatchObject({ q: 'grace', page: '1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await waitFor(() => expect(lastParams().page).toBe('2'));
+    const before = listUrls().length;
+
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'grace  ' } });
+    fireEvent.change(screen.getByLabelText('IP address'), { target: { value: '   ' } });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400)); // past the debounce
+    });
+    expect(listUrls()).toHaveLength(before); // no reload, still on page 2
+    expect(lastParams().page).toBe('2');
+
+    expect(screen.getByLabelText('Search')).toHaveAttribute('maxlength', '200');
+    expect(screen.getByLabelText('IP address')).toHaveAttribute('maxlength', '45');
   });
 
   it('filters From / To days, and Clear filters resets everything', async () => {
@@ -392,11 +427,18 @@ describe('AuditLogPanel', () => {
     expect(screen.queryByRole('dialog', { name: 'Entry detail' })).not.toBeInTheDocument();
   });
 
-  it('shows the changes with a masked and a long value, and the context, on Enter', async () => {
+  it('shows the changes with a masked and a long value, and the context, from the row button', async () => {
     await renderPanel();
     const row = screen.getByText('User updated').closest('tr') as HTMLElement;
-    row.focus();
-    fireEvent.keyDown(row, { key: 'Enter' });
+    // The keyboard path: a native button (Enter and Space press it), named for the dialog it opens.
+    const open = within(row).getByRole('button', {
+      name: `Open entry detail: User updated, ${formatDateTime(USER_UPDATED.created_at)}`,
+    });
+    expect(open.tagName).toBe('BUTTON');
+    expect(open).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(row).not.toHaveAttribute('tabindex'); // one tab stop per row: the button
+    open.focus();
+    fireEvent.click(open);
 
     const dialog = screen.getByRole('dialog', { name: 'Entry detail' });
     expect(within(dialog).getByText('admin.user.updated')).toBeInTheDocument();
@@ -423,10 +465,8 @@ describe('AuditLogPanel', () => {
     expect(within(dialog).getByText('Yes')).toBeInTheDocument();
     expect(within(dialog).queryByText('No further details recorded.')).not.toBeInTheDocument();
 
-    // Another key does nothing; Escape closes.
+    // Escape closes; one click (the button's, bubbling to the row) opened one dialog.
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Entry detail' })).not.toBeInTheDocument();
-    fireEvent.keyDown(row, { key: 'ArrowDown' });
     expect(screen.queryByRole('dialog', { name: 'Entry detail' })).not.toBeInTheDocument();
   });
 

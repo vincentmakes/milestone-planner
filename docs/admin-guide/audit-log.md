@@ -38,7 +38,7 @@ The toolbar above the table narrows the list by:
 
 ## Reading an entry
 
-Click a row (or focus it and press Enter) to open the **Entry detail** dialog. It shows when, who, the account, the target, the project when there is one, the IP address, the origin, the browser (user agent) and, for a failure, the **reason**, written out ("Wrong password (`bad_password`)"). Under **Details**:
+Click a row (or, from the keyboard, tab to its time and press Enter or Space) to open the **Entry detail** dialog. It shows when, who, the account, the target, the project when there is one, the IP address, the origin, the browser (user agent) and, for a failure, the **reason**, written out ("Wrong password (`bad_password`)"). Under **Details**:
 
 - **Changes**: a Field / Before / After table, one row per changed field. A credential is never stored: a password, token or client secret is replaced before the entry is written and shown as **Secret value**. A very long value shows as "changed (n characters)".
 - **Context**: facts that frame the action without being part of it, such as how many rows an export held or how many sessions a password change ended.

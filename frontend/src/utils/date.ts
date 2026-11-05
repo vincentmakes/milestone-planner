@@ -66,6 +66,26 @@ export function formatDateDisplay(date: Date): string {
   return formatter.format(date);
 }
 
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+/**
+ * A real timestamp (`created_at`, `decided_at`: an ISO string with its zone)
+ * as local date and time without seconds, in the browser locale with a short
+ * month like `formatDateDisplay` — `22 Oct 2026, 14:05` / `Oct 22, 2026, 02:05 PM`.
+ * `''` for a value that is not a timestamp; the caller picks the placeholder.
+ * Never for a model date (`YYYY-MM-DD`): `new Date` reads those as UTC.
+ */
+export function formatDateTime(iso: string): string {
+  const when = new Date(iso);
+  return Number.isNaN(when.getTime()) ? '' : DATE_TIME_FORMAT.format(when);
+}
+
 /**
  * A model date (`YYYY-MM-DD`, or the midnight ISO form) in the browser locale
  * with a short month — `22 Oct 2026` / `Oct 22, 2026`; `''` for no date.

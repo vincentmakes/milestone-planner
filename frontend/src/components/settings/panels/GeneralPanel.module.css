@@ -281,7 +281,13 @@
   gap: 0.75rem;
 }
 
+/* The field (label, hint, error) spans the block; only the number box is narrow,
+   so "0 = keep indefinitely. Maximum 3650 days." reads on one line. */
 .retentionInput {
+  width: 100%;
+}
+
+.retentionInput input {
   width: 14rem;
   max-width: 100%;
 }

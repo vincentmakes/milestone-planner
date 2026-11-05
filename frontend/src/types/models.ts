@@ -1252,10 +1252,10 @@ export interface AuditLogEntry {
   id: number;
   /** UTC timestamp, `toISOString()` form */
   created_at: string;
-  category: AuditCategory | string;
+  category: AuditCategory;
   /** Dotted, past-tense key (`auth.login.failed`, `admin.user.updated`, `project.created`) */
   action: string;
-  outcome: AuditOutcome | string;
+  outcome: AuditOutcome;
   /** Null once the actor is deleted (the email and name are snapshots) */
   actor_user_id: number | null;
   actor_email: string | null;

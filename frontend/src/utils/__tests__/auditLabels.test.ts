@@ -30,6 +30,8 @@ describe('actionLabel', () => {
     expect(actionLabel('admin.user.updated')).toBe('User updated');
     expect(actionLabel('admin.role.permissions_updated')).toBe('Role permissions updated');
     expect(actionLabel('admin.user.password_set')).toBe('User password set');
+    expect(actionLabel('admin.user.activated')).toBe('User activated');
+    expect(actionLabel('admin.user.deactivated')).toBe('User deactivated');
     expect(actionLabel('admin.approval_policy.updated')).toBe('Approval policy updated');
     expect(actionLabel('admin.predefined_phase.created')).toBe('Phase template created');
     expect(actionLabel('admin.sso.tested')).toBe('SSO tested');
@@ -85,6 +87,20 @@ describe('reasonLabel', () => {
     expect(reasonLabel('no_email')).toBe('Identity provider returned no email');
     expect(reasonLabel('no_account')).toBe('No account exists and accounts are not created automatically');
     expect(reasonLabel('client_secret')).toBe('The client secret check failed');
+    // Every fixed SSO-test check kind (app/services/sso_test.py SSO_CHECK_KINDS) has a label.
+    for (const kind of [
+      'tenant_id',
+      'client_id',
+      'client_secret',
+      'redirect_uri',
+      'outbound_network',
+      'microsoft_directory',
+      'client_credentials',
+      'microsoft_sign_in',
+    ]) {
+      expect(reasonLabel(kind)).toMatch(/ check failed$/);
+    }
+    expect(reasonLabel('tenant_id')).toBe('The directory (tenant) ID check failed');
     expect(reasonLabel('rejected')).toBe('The credentials were rejected');
   });
 

@@ -11,6 +11,7 @@ import {
   outcomeTone,
   targetText,
 } from '../auditDetails';
+import { formatDateTime } from '@/utils/date';
 
 describe('formatAuditValue', () => {
   it('reads empty, booleans, numbers, lists and text', () => {
@@ -30,7 +31,14 @@ describe('formatAuditValue', () => {
     expect(formatAuditValue({ changed: true, length: 250 })).toBe('changed (250 characters)');
     expect(formatAuditValue('***')).toBe('Secret value');
     const iso = '2026-11-03T08:00:00.000Z';
-    expect(formatAuditValue(iso)).toBe(new Date(iso).toLocaleString());
+    expect(formatAuditValue(iso)).toBe(formatDateTime(iso));
+  });
+
+  it('reads a timestamp without a zone as UTC, and leaves text that only starts like one', () => {
+    expect(formatAuditValue('2026-11-03T08:00:00')).toBe(formatDateTime('2026-11-03T08:00:00Z'));
+    expect(formatAuditValue('2026-11-03T08:00:00.123456')).toBe(formatDateTime('2026-11-03T08:00:00.123456Z'));
+    expect(formatAuditValue('2026-11-03T08:00+02:00')).toBe(formatDateTime('2026-11-03T08:00+02:00'));
+    expect(formatAuditValue('2026-11-03T08:00 kick-off')).toBe('2026-11-03T08:00 kick-off');
   });
 
   it('tells a masked and a long value apart', () => {
@@ -46,7 +54,7 @@ describe('formatAuditValue', () => {
 describe('formatWhen', () => {
   it('reads a timestamp in local time and keeps a malformed one', () => {
     const iso = '2026-11-03T08:00:00.000Z';
-    expect(formatWhen(iso)).toBe(new Date(iso).toLocaleString());
+    expect(formatWhen(iso)).toBe(formatDateTime(iso));
     expect(formatWhen('not a date')).toBe('not a date');
   });
 });
