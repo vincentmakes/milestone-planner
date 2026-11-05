@@ -46,12 +46,14 @@ vi.mock('../panels/PredefinedPhasesPanel', () => ({ PredefinedPhasesPanel: () =>
 vi.mock('../panels/SSOPanel', () => ({ SSOPanel: () => <div>SSO panel</div> }));
 vi.mock('../panels/RolesPanel', () => ({ RolesPanel: () => <div>Roles panel</div> }));
 vi.mock('../panels/DefaultsPanel', () => ({ DefaultsPanel: () => <div>Defaults panel</div> }));
+vi.mock('../panels/audit-log/AuditLogPanel', () => ({ AuditLogPanel: () => <div>Audit log panel</div> }));
 vi.mock('../panels/ProjectFieldsPanel', () => ({ ProjectFieldsPanel: () => <div>Project fields panel</div> }));
 
 const ALL_SECTIONS = [
   'General',
   'Features & defaults',
   'Roles',
+  'Audit log',
   'Sites',
   'Teams',
   'Bank holidays',
@@ -67,7 +69,7 @@ const ALL_SECTIONS = [
 // Keys only admins hold by default. General is listed for everyone who opens
 // the hub (per-browser appearance; the panel keeps the instance-wide settings
 // for settings.general), and superusers see Sites for its export control.
-const ADMIN_ONLY = ['Features & defaults', 'Absence types', 'SSO', 'Roles'];
+const ADMIN_ONLY = ['Features & defaults', 'Absence types', 'SSO', 'Roles', 'Audit log'];
 
 /** The hub as mounted in the app, next to the global keyboard shortcuts */
 function HubWithShortcuts() {
@@ -401,5 +403,29 @@ describe('canOpenSettings / getVisibleSections', () => {
     act(() => useUIStore.getState().openSettings('roles'));
     render(<SettingsHub />);
     expect(await screen.findByText('Roles panel')).toBeInTheDocument();
+  });
+
+  it('lists the Audit log with system.audit_log only, after Roles, and opens its panel', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['system.audit_log'])).toEqual(['general', 'audit-log']);
+    expect(canOpenSettings(makeUser({ role: 'x', permissions: ['system.audit_log'] }))).toBe(true);
+    expect(ids(['settings.general', 'roles.manage', 'users.view'])).not.toContain('audit-log');
+    expect(getVisibleSections(makeUser({ role: 'superuser' })).map((s) => s.id)).not.toContain('audit-log');
+    const adminIds = getVisibleSections(makeUser({ role: 'admin' })).map((s) => s.id);
+    expect(adminIds.slice(0, 4)).toEqual(['general', 'defaults', 'roles', 'audit-log']);
+    const section = getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'audit-log');
+    expect(section).toMatchObject({
+      group: 'General',
+      label: 'Audit log',
+      permission: 'system.audit_log',
+      description: 'Who signed in, what changed and who exported what.',
+    });
+
+    setRole('x', ['system.audit_log']);
+    act(() => useUIStore.getState().openSettings('audit-log'));
+    render(<SettingsHub />);
+    expect(await screen.findByText('Audit log panel')).toBeInTheDocument();
+    expect(sectionTitle()).toBe('Audit log');
   });
 });

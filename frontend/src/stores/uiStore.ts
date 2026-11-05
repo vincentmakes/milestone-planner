@@ -66,6 +66,7 @@ export type SettingsSectionId =
   | 'general'
   | 'defaults'
   | 'roles'
+  | 'audit-log'
   | 'sites'
   | 'teams'
   | 'bank-holidays'
