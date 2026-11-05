@@ -14,6 +14,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | General | [General](#general) | Instance title, theme, logos, display defaults | Admin (Superuser: theme only) |
 | | [Features & defaults](#features-defaults) | What the Gantt opens with, the panels' default filters, the Kanban board, the bank-holiday import, phase pre-selection | Admin |
 | | [Roles](#roles-permissions) | Roles and their permissions; who approves own bookings ([Approvals](#approvals)) | Admin |
+| | [Audit log](#audit-log) | Who signed in and how, and what changed, with CSV export | Admin |
 | Sites & calendar | [Sites](#sites) | Locations, country/region, site Excel export | Admin |
 | | [Teams](#teams) | Teams per site, their members; the header team filter | Admin, Superuser |
 | | [Bank holidays](#bank-holidays) | Public and custom holidays per site | Admin, Superuser |
@@ -64,6 +65,10 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 | Week Starts On | Monday or Sunday |
 | Show Weekends | Toggle weekend columns on/off |
 | Auto-expand Projects | Automatically expand all projects on load |
+
+### Audit Log Retention
+
+**Audit log retention** (under *Data management*) sets how long [audit log](../admin-guide/audit-log.md#retention) entries are kept: a whole number of days from 0 to 3 650, default 365. The **Keep audit entries indefinitely** switch sets it to 0. Like the other General settings it is saved with **Save**.
 
 ---
 
@@ -146,6 +151,7 @@ Some permissions worth knowing:
 | **Kanban board**, **Dashboards**, **Staff & Calendar**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden. **Dashboards** (Superuser and User by default) opens the [Dashboards](dashboards.md) view with the dashboards shared with the role or with everyone |
 | **Manage dashboards** | Create, edit, share and delete your own [dashboards](dashboards.md#building-a-dashboard). Superuser by default; administrators may change or delete any dashboard |
 | **What-If mode** | Show the What-If toggle on the Gantt chart |
+| **Audit log** | Open [Settings → Audit log](../admin-guide/audit-log.md). Administrators only, by default; grant it to a compliance role without making anyone an administrator |
 
 ### Who Sees Which Sites
 
@@ -185,6 +191,12 @@ If neither the project's manager nor any role is set, a warning says that only a
 4. The requester is notified of the decision and sees the outcome under **My requests**. Until then they can **Cancel request**
 
 A request also closes on its own when it can no longer apply — the card or project was deleted, the requester's account was deactivated or lost the right to book themself there, someone changed the booking in the meantime, or the person is already booked there. The requester sees why under **My requests**.
+
+---
+
+## Audit Log
+
+**Settings → Audit log** lists every sign-in, failed attempt, administrative change, export and project or booking change, with who did it, from which IP address and where. Filter by category, outcome, action, actor, IP address and dates, open an entry for its before/after changes, and export the filtered list to CSV. It needs the `system.audit_log` permission (admins by default; grant it to a role in **Settings → Roles**). The full description is in the [Audit log](../admin-guide/audit-log.md) admin guide.
 
 ---
 
