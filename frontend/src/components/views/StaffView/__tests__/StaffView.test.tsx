@@ -382,11 +382,12 @@ describe('StaffView panel', () => {
       teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
     });
     render(<StaffView />);
-    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
-    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+    // The header's event strip names each event in its button's label
+    expect(screen.getAllByRole('button', { name: /Site audit/ }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('button', { name: /Team B review/ })).toHaveLength(0);
 
     act(() => useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [2], noTeam: false } } }));
-    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Team B review/ }).length).toBeGreaterThan(0);
   });
 });
 

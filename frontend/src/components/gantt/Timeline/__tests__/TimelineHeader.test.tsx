@@ -1,13 +1,15 @@
 /**
  * The header's day cells take the colour of their first company event
- * (`--event-color` on the background and the label) and name every event of
- * the cell in the label's title, the bank holiday first. The label's text
- * mixes that colour with the text colour, so a pale event stays legible.
- * Below the labels, the events row holds the strip (TimelineMarkers) at
- * every zoom, for the current site.
+ * (`--event-color` on the background and the label). The label's text mixes
+ * that colour with the text colour, so a pale event stays legible. Below the
+ * labels, the events row holds the strip (TimelineMarkers) at every zoom, for
+ * the current site. Hovering a label with something in the strip opens the
+ * strip's panel (150 ms), so those labels carry no native title; a quarter
+ * week whose only mark is a holiday (the strip lists events only there)
+ * keeps the holiday's name as its title.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TimelineHeader } from '../TimelineHeader';
@@ -82,17 +84,17 @@ describe('TimelineHeader company events', () => {
     expect(label('2026-04-09').style.getPropertyValue('--event-color')).toBe('');
   });
 
-  it('names the holiday first, then every event, with the count when several', () => {
+  it('gives a label with a holiday and events no native title (its hover opens the panel)', () => {
     const { label } = renderHeader();
-    expect(label(HOLIDAY).title).toBe('Easter Monday · ISO 9001 audit · Lab safety walk-through (2 events)');
+    expect(label(HOLIDAY).hasAttribute('title')).toBe(false);
     // The holiday still wins the cell's class
     expect(label(HOLIDAY).className).toContain('holidayText');
   });
 
-  it('joins several events without a holiday, and names a single event alone', () => {
+  it('gives labels with one or several events no native title', () => {
     const { label } = renderHeader();
-    expect(label('2026-04-10').title).toBe('Review · Workshop (2 events)');
-    expect(label('2026-04-08').title).toBe('Instrument calibration day');
+    expect(label('2026-04-10').hasAttribute('title')).toBe(false);
+    expect(label('2026-04-08').hasAttribute('title')).toBe(false);
   });
 
   it('has no title on a day without holiday or event', () => {
@@ -101,20 +103,26 @@ describe('TimelineHeader company events', () => {
     expect(label('2026-04-07').style.getPropertyValue('--event-color')).toBe('');
   });
 
-  it('names a holiday alone', () => {
+  it('gives a holiday alone on a day cell no native title (the strip shows it)', () => {
     const list = generateTimelineCells(new Date(2026, 3, 6), 'month', new Set([HOLIDAY]), [{ date: HOLIDAY, name: 'Easter Monday' }]);
     const { container } = render(
       <TimelineHeader headers={generateTimelineHeaders(list, 'month')} cells={list} cellWidth={20} totalWidth={list.length * 20} viewMode="month" />
     );
+    expect(container.querySelector<HTMLElement>(`[data-date="${HOLIDAY}"]`)!.hasAttribute('title')).toBe(false);
+  });
+
+  it('names a holiday alone on a quarter week label (the strip lists events only there)', () => {
+    const list = generateTimelineCells(new Date(2026, 3, 6), 'quarter', new Set([HOLIDAY]), [{ date: HOLIDAY, name: 'Easter Monday' }]);
+    const { container } = render(
+      <TimelineHeader headers={generateTimelineHeaders(list, 'quarter')} cells={list} cellWidth={20} totalWidth={list.length * 20} viewMode="quarter" />
+    );
     expect(container.querySelector<HTMLElement>(`[data-date="${HOLIDAY}"]`)!.title).toBe('Easter Monday');
   });
 
-  it('names every event of a quarter week on its label, without the background layer', () => {
+  it('colours a quarter week with events, without a title or the background layer', () => {
     const { label, container } = renderHeader('quarter');
     // Week of Monday 6 April: the Monday is the holiday (first-day rule)
-    expect(label(HOLIDAY).title).toBe(
-      'Easter Monday · ISO 9001 audit · Lab safety walk-through · Instrument calibration day · Supplier visit · Review · Workshop (6 events)'
-    );
+    expect(label(HOLIDAY).hasAttribute('title')).toBe(false);
     expect(label(HOLIDAY).style.getPropertyValue('--event-color')).toBe('#f59e0b');
     expect(container.querySelector('[class*="bgLayer"]')).toBeNull();
   });
@@ -157,6 +165,70 @@ describe('TimelineHeader events row', () => {
     );
     const spacer = container.querySelector('[class*="customColumnSpacer"]')!;
     expect(spacer.previousElementSibling?.className).toContain('eventsRow');
+  });
+
+  describe('hovering a day label', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('opens the same dialog as the strip after 150 ms', () => {
+      vi.useFakeTimers();
+      const { label, container } = renderHeader('month');
+      const index = cells('month').findIndex((c) => c.dateStr === '2026-04-08');
+      fireEvent.mouseEnter(label('2026-04-08'));
+      act(() => vi.advanceTimersByTime(149));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      act(() => vi.advanceTimersByTime(1));
+      const panel = screen.getByRole('dialog');
+      expect(within(panel).getByText('Instrument calibration day')).toBeInTheDocument();
+      // Anchored to (and controlled by) the strip's button of the same cell
+      const button = container.querySelector(`[class*="markerBadge"][data-cell-index="${index}"]`)!;
+      expect(button).toHaveAttribute('aria-expanded', 'true');
+      expect(button).toHaveAttribute('aria-controls', panel.id);
+    });
+
+    it('closes it 150 ms after leaving, and keeps it when the pointer moves down to the strip', () => {
+      vi.useFakeTimers();
+      const { label, container } = renderHeader('month');
+      const index = cells('month').findIndex((c) => c.dateStr === '2026-04-08');
+      const button = container.querySelector(`[class*="markerBadge"][data-cell-index="${index}"]`)!;
+      fireEvent.mouseEnter(label('2026-04-08'));
+      act(() => vi.advanceTimersByTime(150));
+      // From the label to the strip below it: the same panel stays
+      fireEvent.mouseLeave(label('2026-04-08'));
+      fireEvent.mouseEnter(button);
+      act(() => vi.advanceTimersByTime(500));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      // Back to the label, then away
+      fireEvent.mouseLeave(button);
+      fireEvent.mouseEnter(label('2026-04-08'));
+      fireEvent.mouseLeave(label('2026-04-08'));
+      act(() => vi.advanceTimersByTime(149));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(1));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('opens nothing on a label without holiday or event', () => {
+      vi.useFakeTimers();
+      const { label } = renderHeader('month');
+      fireEvent.mouseEnter(label('2026-04-07'));
+      act(() => vi.advanceTimersByTime(500));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      fireEvent.mouseLeave(label('2026-04-07'));
+    });
+
+    it('opens nothing on a quarter week whose only mark is a holiday', () => {
+      vi.useFakeTimers();
+      const list = generateTimelineCells(new Date(2026, 3, 6), 'quarter', new Set([HOLIDAY]), [{ date: HOLIDAY, name: 'Easter Monday' }]);
+      const { container } = render(
+        <TimelineHeader headers={generateTimelineHeaders(list, 'quarter')} cells={list} cellWidth={20} totalWidth={list.length * 20} viewMode="quarter" />
+      );
+      fireEvent.mouseEnter(container.querySelector<HTMLElement>(`[data-date="${HOLIDAY}"]`)!);
+      act(() => vi.advanceTimersByTime(500));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
   });
 
   it('names the teams of the current site in the panel', () => {
