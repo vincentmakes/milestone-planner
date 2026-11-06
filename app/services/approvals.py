@@ -67,7 +67,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -2324,6 +2324,52 @@ def _row_can_decide(
     )
 
 
+BEFORE_ID_NEEDS_HISTORY_DETAIL = "before_id requires scope=decided or closed=true"
+UNKNOWN_BEFORE_ID_DETAIL = "Unknown before_id"
+
+
+def history_key() -> Any:
+    """
+    The history ordering key: when the request closed. ``_close()`` stamps
+    ``decided_at`` for every status, but the orphan cleanup
+    (``APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL``) expires rows without it -- they
+    fall back to ``updated_at`` (NOT NULL), so the key is never NULL and
+    ``DESC`` cannot put such rows first and break the cursor.
+    """
+    return func.coalesce(ApprovalRequest.decided_at, ApprovalRequest.updated_at)
+
+
+def _filter_clauses(
+    scope: str,
+    *,
+    project_id: int | None,
+    requester_id: int | None,
+    decided_by: int | None,
+) -> list[Any]:
+    """The optional list filters; ``mine`` fixes the requester and
+    ``decided`` the decider to the caller, so those two are ignored there."""
+    clauses: list[Any] = []
+    if project_id is not None:
+        clauses.append(ApprovalRequest.project_id == project_id)
+    if requester_id is not None and scope != "mine":
+        clauses.append(ApprovalRequest.requester_id == requester_id)
+    if decided_by is not None and scope != "decided":
+        clauses.append(ApprovalRequest.decided_by == decided_by)
+    return clauses
+
+
+async def _history_cursor(db: AsyncSession, before_id: int) -> Any:
+    """``(key, id)`` of the cursor row, or 422 when the id is unknown."""
+    cursor = (
+        await db.execute(
+            select(history_key(), ApprovalRequest.id).where(ApprovalRequest.id == before_id)
+        )
+    ).first()
+    if cursor is None:
+        raise HTTPException(status_code=422, detail=UNKNOWN_BEFORE_ID_DETAIL)
+    return cursor
+
+
 async def list_requests(
     db: AsyncSession,
     http: Request,
@@ -2332,34 +2378,79 @@ async def list_requests(
     scope: str = "mine",
     status_filter: str | None = None,
     limit: int = 200,
+    closed: bool = False,
+    project_id: int | None = None,
+    requester_id: int | None = None,
+    decided_by: int | None = None,
+    before_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     ``mine``: the caller's own requests; ``to_decide``: pending requests the
     caller may decide (at visible sites, never their own); ``all``: every
-    request at the visible sites (``approvals.view_all``, else 403). Newest
-    first; ``status_filter`` narrows (``to_decide`` is pending only).
+    request at the visible sites (``approvals.view_all``, else 403);
+    ``decided``: the requests the caller decided -- someone else's (a
+    requester's own withdrawal is no decision), at any site. ``status_filter``
+    narrows, ``closed`` drops the pending ones (``to_decide`` is pending only:
+    both answer ``[]`` there), ``project_id`` / ``requester_id`` /
+    ``decided_by`` filter.
+
+    Newest first by ``created_at``; the history (``decided``, or ``closed``)
+    by when the request closed (``history_key``), with keyset paging:
+    ``before_id`` continues after that row (422 elsewhere -- ``to_decide``
+    included, with or without ``closed`` -- and for an unknown id).
     """
     if scope == "all" and not user.permissions.has(VIEW_ALL_KEY):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=permission_required_detail(VIEW_ALL_KEY)
         )
-    if scope == "to_decide" and status_filter not in (None, "pending"):
+    # ``to_decide`` is pending only: never the history, even with ``closed``
+    # (so its ``before_id`` is the 422 too, not a silent ``[]``).
+    history = scope == "decided" or (closed and scope != "to_decide")
+    if before_id is not None and not history:
+        raise HTTPException(
+            status_code=422,
+            detail=BEFORE_ID_NEEDS_HISTORY_DETAIL,
+        )
+    if scope == "to_decide" and (closed or status_filter not in (None, "pending")):
         return []
 
+    filters = _filter_clauses(
+        scope, project_id=project_id, requester_id=requester_id, decided_by=decided_by
+    )
     if scope == "to_decide":
-        rows, policies, visible = await _to_decide_rows(db, http, user, limit=limit)
+        rows, policies, visible = await _to_decide_rows(
+            db, http, user, limit=limit, filters=filters
+        )
     else:
-        visible = await visible_site_ids(http, db, user)
+        cursor = await _history_cursor(db, before_id) if before_id is not None else None
+        # One's own decisions carry no site clause, and a decided row is closed
+        # (never decidable): ``decided`` needs no visible sites, so no query.
+        visible = frozenset() if scope == "decided" else await visible_site_ids(http, db, user)
         query = request_rows_query()
         if scope == "mine":
             query = query.where(ApprovalRequest.requester_id == user.id)
+        elif scope == "decided":
+            # One's own decisions: no site clause.
+            query = query.where(
+                ApprovalRequest.decided_by == user.id, ApprovalRequest.requester_id != user.id
+            )
         else:
             in_visible = visible_sites_clause(Project.site_id, visible)
             if in_visible is not None:
                 query = query.where(in_visible)
         if status_filter is not None:
             query = query.where(ApprovalRequest.status == status_filter)
-        query = query.order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+        if closed:
+            query = query.where(ApprovalRequest.status != "pending")
+        if filters:
+            query = query.where(*filters)
+        if history:
+            key = history_key()
+            if cursor is not None:
+                query = query.where(tuple_(key, ApprovalRequest.id) < tuple_(cursor[0], cursor[1]))
+            query = query.order_by(key.desc(), ApprovalRequest.id.desc())
+        else:
+            query = query.order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
         rows = list((await db.execute(query.limit(limit))).all())
         if not rows:
             return []
@@ -2375,13 +2466,18 @@ async def list_requests(
 
 
 async def _to_decide_rows(
-    db: AsyncSession, http: Request, user: Any, *, limit: int
+    db: AsyncSession,
+    http: Request,
+    user: Any,
+    *,
+    limit: int,
+    filters: Sequence[Any] = (),
 ) -> tuple[list[Any], dict[str, Policy], frozenset[int] | None]:
     """
     Pending requests the caller may decide, newest first: the eligibility rule
     (``decider_clause``), the visible sites and "never one's own" are all in
     SQL, so ``limit`` counts decidable rows only -- a page is never cut short
-    by rows the caller may not decide.
+    by rows the caller may not decide. ``filters``: the list's optional ones.
     """
     policies = await load_policies(db)
     visible = await visible_site_ids(http, db, user)
@@ -2394,6 +2490,8 @@ async def _to_decide_rows(
     eligible = decider_clause(user, policies)
     if eligible is not None:
         query = query.where(eligible)
+    if filters:
+        query = query.where(*filters)
     query = query.order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
     rows = list((await db.execute(query.limit(limit))).all())
     return rows, policies, visible
