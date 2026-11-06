@@ -10,6 +10,10 @@
  * MyRequestRow — one of my own requests (My Requests): the sentence, its
  * outcome, my own message ("Your message"), the decider's note, and Cancel
  * while it is pending.
+ *
+ * HistoryRow — a closed request (History): the outcome, the sentence worded
+ * for a decider, its card, who asked ("Requested by …"), their message, the
+ * decision note and when it was decided. No actions.
  */
 
 import { Button } from '@/components/common/Button';
@@ -19,7 +23,7 @@ import { MentionText } from '@/components/common/MentionTextarea';
 import { useAppStore } from '@/stores/appStore';
 import { relativeTime } from '@/utils/relativeTime';
 import { CardLink } from './CardLink';
-import { describeRequest, requestOutcome } from './requestText';
+import { decidedWhen, describeRequest, requestOutcome } from './requestText';
 import type { ApprovalRequest } from '@/types';
 import styles from './WorkView.module.css';
 
@@ -69,6 +73,14 @@ export function ApprovalRequestRow({ request, onDecided, onError }: ApprovalRequ
   );
 }
 
+function OutcomeChip({ request }: { request: ApprovalRequest }) {
+  return (
+    <span className={`${styles.statusChip} ${styles[`status_${request.status}`] ?? ''}`}>
+      {requestOutcome(request)}
+    </span>
+  );
+}
+
 interface MyRequestRowProps {
   request: ApprovalRequest;
   onCancel: (request: ApprovalRequest) => Promise<void>;
@@ -83,9 +95,7 @@ export function MyRequestRow({ request, onCancel }: MyRequestRowProps) {
       <div className={styles.itemMain}>
         <span className={styles.itemTitle}>{describeRequest(request, 'requester')}</span>
         <span className={styles.itemMeta}>
-          <span className={`${styles.statusChip} ${styles[`status_${request.status}`] ?? ''}`}>
-            {requestOutcome(request)}
-          </span>
+          <OutcomeChip request={request} />
           <RequestCard request={request} />
           {request.created_at && <span>{relativeTime(request.created_at)}</span>}
         </span>
@@ -108,6 +118,30 @@ export function MyRequestRow({ request, onCancel }: MyRequestRowProps) {
           Cancel request
         </Button>
       )}
+    </li>
+  );
+}
+
+export function HistoryRow({ request }: { request: ApprovalRequest }) {
+  const meUserId = useAppStore((s) => s.currentUser?.id);
+  return (
+    <li className={styles.item}>
+      <div className={styles.itemMain}>
+        <span className={styles.itemTitle}>{describeRequest(request, 'decider')}</span>
+        <span className={styles.itemMeta}>
+          <OutcomeChip request={request} />
+          <RequestCard request={request} />
+          <span>Requested by {request.requester_name || 'someone'}</span>
+          <span title="Decided">{decidedWhen(request)}</span>
+        </span>
+        {request.note && (
+          <span className={styles.itemNote}>
+            <span className={styles.itemNoteLabel}>Message: </span>
+            <MentionText body={request.note} meUserId={meUserId} />
+          </span>
+        )}
+        {request.decision_note && <span className={styles.itemNote}>“{request.decision_note}”</span>}
+      </div>
     </li>
   );
 }

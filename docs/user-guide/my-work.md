@@ -1,20 +1,21 @@
 # My Work
 
-**My Work** gathers your own work outside the boards: booking requests you can decide, your bookings, and the requests you have sent. Open it from **My Work** in the sidebar, just below the Kanban Board. Everyone signed in has it.
+**My Work** gathers your own work outside the boards: booking requests you can decide, your bookings, the requests you have sent, and the requests already decided. Open it from **My Work** in the sidebar, just below the Kanban Board. Everyone signed in has it.
 
 The sidebar entry carries a badge with the number of requests waiting for your decision (up to *99+*). It updates live — when someone sends you a request, or a request you could decide is decided by someone else, the badge and the lists change without a reload.
 
 ![My Work signed in as a project manager: the My Approvals tab lists Diana Davis's request to join a phase at 50% with Approve and Reject buttons](../assets/screenshots/my-work.png){ loading=lazy }
 
-## The Three Tabs
+## The Four Tabs
 
 | Tab | What it lists |
 |-----|---------------|
 | **My Approvals** | Booking requests you may approve or reject — see [Approvals](settings.md#approvals) |
 | **My Assignments** | Your bookings: the projects, phases and subphases you are booked on |
 | **My Requests** | Requests you sent to book yourself, change your booking or leave a card, with their outcome |
+| **History** | Requests that are closed: the ones you decided, or — with the right permission — every closed request |
 
-Each tab shows how many items it holds: requests to decide, current and upcoming bookings, and pending requests. **My Assignments** opens first.
+Each tab shows how many items it holds: requests to decide, current and upcoming bookings, pending requests, and the History entries loaded so far. **My Assignments** opens first.
 
 ## My Approvals
 
@@ -73,6 +74,17 @@ Every request you sent appears here with its outcome:
 A request you sent with a message shows it as **Your message**, apart from the approver's reason.
 
 Pending and decided requests are under **Open** and **Done** respectively. Your pending bookings also show where they belong — as dashed rows in the [Gantt chart](staff-management.md#booking-yourself-when-approval-is-required) and on the Kanban card.
+
+## History
+
+**History** lists requests that are no longer pending, the most recently decided first. Each entry shows the outcome (*Approved by* or *Rejected by* a name, *Withdrawn*, *Expired* with its reason, …), the request sentence with its card, **Requested by** and the requester's name, their message, the approver's note, and when it was decided — or *—* for a request that closed without a decision time, such as one expired because its card was deleted.
+
+- **Decided by me** (the default) lists the requests you approved, rejected or cancelled for someone else, whatever their site. Withdrawing your own request is not a decision, so it does not appear here — it is under **My Requests**
+- **All requests** lists every closed request for projects at the sites you can see, whoever decided it. It is offered only when your role has the **See all approval requests** permission (administrators always have it); it adds the **Expired** and **Superseded** outcomes and a **Decided by** filter
+
+Narrow the list with the outcome (**All**, **Approved**, **Rejected**, **Cancelled**), a **Project** and the person who made the request (**Requested by**). Every change reloads the list from the top. The tab shows 50 requests at a time; **Load more** brings the next ones. The list loads when you open the tab and follows new decisions live while it is open.
+
+![My Work, History tab, Decided by me: Diana Davis's request to join the Preparation phase of Catalyst Optimization at 40%, Approved by Admin User, with its card, Requested by Diana Davis and the decision time, below the Decided by me / All requests, outcome, project and Requested by filters](../assets/screenshots/my-work-history.png){ loading=lazy }
 
 ## Notifications
 

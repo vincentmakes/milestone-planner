@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.base import DateTimeJS
 
-ApprovalScope = Literal["mine", "to_decide", "all"]
+ApprovalScope = Literal["mine", "to_decide", "all", "decided"]
 ApprovalStatus = Literal["pending", "approved", "rejected", "cancelled", "superseded", "expired"]
 ApprovalLevel = Literal["project", "phase", "subphase"]
 

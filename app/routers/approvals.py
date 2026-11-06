@@ -6,9 +6,12 @@ the Kanban join / leave answer 202 when the caller's ``assignments.self_*``
 key is in approval mode); this router lists and decides them. Every rule lives
 in app/services/approvals.py:
 
-- ``GET /approval-requests?scope=mine|to_decide|all&status=`` -- the caller's
-  requests, the pending ones they may decide, or every request at their
-  visible sites (``approvals.view_all``);
+- ``GET /approval-requests?scope=mine|to_decide|all|decided&status=`` -- the
+  caller's requests, the pending ones they may decide, every request at their
+  visible sites (``approvals.view_all``), or the ones they decided; filters
+  ``closed``, ``project_id``, ``requester_id``, ``decided_by``; the history
+  (``decided`` or ``closed=true``) is ordered by when the request closed and
+  paged with ``before_id``;
 - ``GET /approval-requests/{id}`` -- the requester, an eligible approver or a
   holder of ``approvals.view_all`` (404 otherwise);
 - ``POST /approval-requests/{id}/approve|reject`` -- an eligible approver
@@ -49,13 +52,32 @@ async def list_approval_requests(
     request: Request,
     scope: ApprovalScope = "mine",
     status: ApprovalStatus | None = None,
+    closed: bool = False,
+    project_id: int | None = None,
+    requester_id: int | None = None,
+    decided_by: int | None = None,
+    before_id: int | None = None,
     limit: int = Query(200, ge=1, le=500),
     db: AsyncSession = Depends(get_db_readonly),
     user: User = Depends(get_current_user),
 ):
-    """List requests by scope (newest first); ``all`` needs ``approvals.view_all``."""
+    """
+    List requests by scope (newest first); ``all`` needs ``approvals.view_all``.
+    ``decided`` and ``closed=true`` are the history: ordered by when the
+    request closed, paged with ``before_id`` (422 on any other list).
+    """
     return await approvals.list_requests(
-        db, request, user, scope=scope, status_filter=status, limit=limit
+        db,
+        request,
+        user,
+        scope=scope,
+        status_filter=status,
+        limit=limit,
+        closed=closed,
+        project_id=project_id,
+        requester_id=requester_id,
+        decided_by=decided_by,
+        before_id=before_id,
     )
 
 

@@ -131,10 +131,13 @@ async function receive(entity_type: string) {
 
 const workRefresh = vi.fn(async () => {});
 const realWorkRefresh = useWorkStore.getState().refresh;
+const historyReload = vi.fn(async () => {});
+const realHistoryReload = useWorkStore.getState().reloadHistoryIfHeld;
 
 beforeEach(() => {
   workRefresh.mockClear();
-  useWorkStore.setState({ refresh: workRefresh });
+  historyReload.mockClear();
+  useWorkStore.setState({ refresh: workRefresh, reloadHistoryIfHeld: historyReload });
   vi.useFakeTimers();
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.clearAllMocks();
@@ -145,7 +148,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  useWorkStore.setState({ refresh: realWorkRefresh });
+  useWorkStore.setState({ refresh: realWorkRefresh, reloadHistoryIfHeld: realHistoryReload });
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -272,7 +275,17 @@ describe('WebSocketProvider slice refresh', () => {
     await receive('approval_request');
     expect(loadAllProjects).toHaveBeenCalledTimes(1);
     expect(workRefresh).toHaveBeenCalledTimes(1);
+    // The History reloads its page 1 too (the store skips it when it holds no rows).
+    expect(historyReload).toHaveBeenCalledTimes(1);
     expect(rolesApi.getApprovalPolicies).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed approval history reload', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    historyReload.mockRejectedValueOnce(new Error('boom'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await receive('approval_request');
+    expect(error).toHaveBeenCalledWith('[WS] approval history refresh failed', expect.any(Error));
   });
 
   it('refreshes the work store once for an unknown entity', async () => {
@@ -315,6 +328,7 @@ describe('WebSocketProvider slice refresh', () => {
       await vi.advanceTimersByTimeAsync(250);
     });
     expect(workRefresh).toHaveBeenCalledTimes(1);
+    expect(historyReload).toHaveBeenCalledTimes(1);
     expect(loadAllProjects).not.toHaveBeenCalled();
   });
 

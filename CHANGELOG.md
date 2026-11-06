@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-11-06
+
+### Added
+- My Work → History: a tab listing every approval request you decided and, for approvers with `approvals.view_all`, every decided request at your sites, with who decided it, when and why.
+
 ## [2.4.0] - 2026-11-05
 
 ### Added
