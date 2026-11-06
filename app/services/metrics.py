@@ -2355,8 +2355,6 @@ async def load_facts(
     start, end = period
     scope = _project_scope(visible_site_ids, archived)
     statements = _booking_statements(scope, start, end)
-    # Settings -> General -> Weekends are working days (off: Monday to Friday).
-    weekends_working = await instance_settings.weekends_working(db)
 
     with_capacity = "capacity" in families
     population = _capacity_population(visible_site_ids) if with_capacity else None
@@ -2374,6 +2372,9 @@ async def load_facts(
         count += int(result.scalar_one())
     if count > MAX_FACT_ROWS:
         raise TooManyFacts()
+
+    # Settings -> General -> Weekends are working days (off: Monday to Friday).
+    weekends_working = await instance_settings.weekends_working(db)
 
     # Reference data (every row: labels, colours, stale-id warnings).
     persons = {

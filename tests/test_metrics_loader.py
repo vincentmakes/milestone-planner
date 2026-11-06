@@ -319,6 +319,26 @@ async def test_row_cap(db, monkeypatch):
     assert len((await _load(db)).bookings) == 5
 
 
+async def test_row_cap_is_checked_before_the_weekends_setting_is_read(db, monkeypatch):
+    # A refused query costs no settings read: the setting is read after the cap.
+    from app.services import instance_settings
+
+    reads = []
+
+    async def weekends_working(session):
+        reads.append(session)
+        return False
+
+    monkeypatch.setattr(instance_settings, "weekends_working", weekends_working)
+    monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 5)
+    with pytest.raises(TooManyFacts):
+        await _load(db)
+    assert reads == []
+    monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 6)
+    await _load(db)
+    assert reads == [db]
+
+
 async def test_load_facts_accepts_the_families(db):
     # Booking, project and phase facts always load; the capacity and equipment
     # families (Tasks 2 / 3) add their facts only when named.

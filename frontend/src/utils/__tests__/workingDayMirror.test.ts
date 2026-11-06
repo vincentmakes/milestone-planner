@@ -69,6 +69,8 @@ const COUNT_CASES: [string, string, boolean, string[], number][] = [
   ['2026-03-02', '2026-03-08', true, ['2026-03-07'], 6],
   ['2026-03-02', '2026-03-08', true, ['2026-03-04', '2026-03-07', '2026-03-08'], 4],
   ['2026-03-02', '2026-03-06', false, ['2026-03-01', '2026-03-09'], 5],
+  // An off day in the midnight ISO form, on the range's last day.
+  ['2026-03-02', '2026-03-06', false, ['2026-03-06T00:00:00.000Z'], 4],
   // All of March 2026: 22 weekdays, 31 days.
   ['2026-03-01', '2026-03-31', false, [], 22],
   ['2026-03-01', '2026-03-31', true, [], 31],
@@ -92,7 +94,7 @@ describe('mirror of app/services/working_days.py', () => {
 
   it('holds the whole shared tables', () => {
     expect(WORKING_DAY_CASES).toHaveLength(19);
-    expect(COUNT_CASES).toHaveLength(22);
+    expect(COUNT_CASES).toHaveLength(23);
   });
 });
 

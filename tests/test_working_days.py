@@ -75,6 +75,8 @@ COUNT_CASES: list[tuple[str, str, bool, list[str], int]] = [
     ("2026-03-02", "2026-03-08", True, ["2026-03-07"], 6),
     ("2026-03-02", "2026-03-08", True, ["2026-03-04", "2026-03-07", "2026-03-08"], 4),
     ("2026-03-02", "2026-03-06", False, ["2026-03-01", "2026-03-09"], 5),
+    # An off day in the midnight ISO form, on the range's last day.
+    ("2026-03-02", "2026-03-06", False, ["2026-03-06T00:00:00.000Z"], 4),
     # All of March 2026: 22 weekdays, 31 days.
     ("2026-03-01", "2026-03-31", False, [], 22),
     ("2026-03-01", "2026-03-31", True, [], 31),
@@ -87,7 +89,9 @@ COUNT_CASES: list[tuple[str, str, bool, list[str], int]] = [
 
 
 def d(text: str) -> date:
-    return date.fromisoformat(text)
+    # The calendar day of a date or of its midnight ISO form (the frontend's
+    # ``toDateOnly``); the server itself only ever sees ``date`` objects.
+    return date.fromisoformat(text[:10])
 
 
 @pytest.mark.parametrize(("day", "weekends_working", "holiday", "expected"), WORKING_DAY_CASES)
@@ -112,7 +116,7 @@ def test_count_cases(start, end, weekends_working, off_days, expected):
 def test_the_shared_tables_are_whole():
     # The TypeScript mirror asserts the same lengths.
     assert len(WORKING_DAY_CASES) == 19
-    assert len(COUNT_CASES) == 22
+    assert len(COUNT_CASES) == 23
 
 
 def test_the_count_matches_day_by_day_counting():

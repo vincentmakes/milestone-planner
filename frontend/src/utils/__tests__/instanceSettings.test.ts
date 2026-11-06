@@ -295,8 +295,12 @@ describe('selectShowWeekends', () => {
 });
 
 describe('selectWeekendsWorking', () => {
-  it("is on only for exactly 'true' -- not a switch (unloaded, missing or stray values read as off)", () => {
+  it("is on only for 'true' -- not a switch (unloaded, missing or stray values read as off)", () => {
     expect(selectWeekendsWorking({ instanceSettings: { weekend_working_days: 'true' } })).toBe(true);
+    // Case-insensitive and trimmed, like the backend's weekends_working_from
+    for (const value of [' TRUE ', 'True', 'tRuE\n']) {
+      expect(selectWeekendsWorking({ instanceSettings: { weekend_working_days: value } })).toBe(true);
+    }
     for (const value of [undefined, '', 'false', '1', 'yes', 'maybe']) {
       expect(selectWeekendsWorking({ instanceSettings: { weekend_working_days: value } })).toBe(false);
     }

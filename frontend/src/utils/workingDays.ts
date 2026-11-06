@@ -69,7 +69,8 @@ export function countWorkingDays(
     }
   }
   let inside = 0;
-  for (const day of new Set(offDays)) {
+  // Compared as calendar days: a midnight-ISO off day is its date
+  for (const day of new Set(Array.from(offDays, toDateOnly))) {
     if (day >= first && day <= last && isWorkingDay(day, weekendsWorking)) inside++;
   }
   return total - inside;
