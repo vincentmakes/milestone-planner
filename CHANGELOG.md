@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Staff overview: consecutive days with the same allocation are drawn as one solid block instead of one pale cell per day, cut every 10 days so a label is always in view; a Home Office day stays inside the block, underlined.
 - Timeline: hovering a date number shows the same holiday / event bubble as hovering the event strip below it.
 - Timeline: when weekends are hidden, a clearer separator marks the start of each week, always under the bars and blocks.
-- Settings → General → Show Weekends now says it only shows or hides the Saturday and Sunday columns; whether they count as working days is the new setting below it. While weekends are not working days, the Staff overview, the availability badges ("Weekend") and the Gantt's work days no longer count Saturday and Sunday, like the dashboards.
+- Settings → General → Show Weekends now says it only shows or hides the Saturday and Sunday columns; whether they count as working days is the new setting below it.
+- While Weekends are working days is off (the default), Saturday and Sunday are blank in the Staff overview's workload, the availability badge reads "Weekend" on those days, and the Gantt's work days leave them out, like the dashboards.
 
 ## [2.4.0] - 2026-11-05
 

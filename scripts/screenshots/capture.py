@@ -1233,9 +1233,12 @@ def _year_end_shutdown_start() -> date:
 def shot_staff_heatmap_month(context: BrowserContext) -> None:
     """The Gantt with the Staff & Calendar panel open at month zoom and
     weekends hidden (show_weekends set to false through the API for the shot,
-    restored afterwards): consecutive days with the same allocation form one
-    block, a wider band marks the start of each week, and the seeded Year-end
-    shutdown closure is in view. Fresh context: the collapsed sidebar is a
+    then written back with the value GET /settings reported -- that includes
+    the default, so an instance without a row ends with an explicit
+    show_weekends=true, which reads the same): consecutive days with the same
+    allocation form solid blocks of at most 10 days, Home Office days are
+    underlined, a wider band between the blocks marks the start of each week,
+    and the seeded Year-end shutdown closure is in view. Fresh context: the collapsed sidebar is a
     persisted preference and must not leak into the other shots; the panel
     sizes are dragged (component state, not persisted)."""
     fresh = context.browser.new_context(

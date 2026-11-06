@@ -17,8 +17,9 @@ turned off takes away from everyone, admins included (``PermissionSet``'s
 
 ``weekend_working_days`` (2.5.0, *Weekends are working days*) is a boolean
 but **not a switch** in that sense: it is off by default, so it is on only
-when its row reads ``true`` (``weekends_working_from``: ``value.strip().lower()
-== "true"``; the client's ``selectWeekendsWorking`` compares with ``'true'``).
+when its row reads a case-insensitive ``true`` (``weekends_working_from``:
+``value.strip().lower() == "true"``; the client's ``selectWeekendsWorking``
+reads it the same way).
 A missing, empty or malformed row keeps Monday to Friday.
 
 Import-light like app/services/permissions.py: the model is imported inside
@@ -292,8 +293,9 @@ def flag_enabled(value: str | None) -> bool:
 
 def weekends_working_from(value: str | None) -> bool:
     """
-    Whether the stored ``weekend_working_days`` is on: only a row reading
-    ``true`` (no row, or anything else: off -- not a switch, see above).
+    Whether the stored ``weekend_working_days`` is on: only a row reading a
+    case-insensitive ``true``, spaces trimmed (no row, or anything else: off
+    -- not a switch, see above).
     """
     return value is not None and value.strip().lower() == "true"
 
