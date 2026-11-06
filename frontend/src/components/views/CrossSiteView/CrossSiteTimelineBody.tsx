@@ -35,6 +35,7 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
     // header's events row (TimelineHeader)
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
+    const renderWeekSeparators = showHighlighting && !showWeekends;
     
     // Calculate today line position
     const todayPosition = useMemo(
@@ -83,6 +84,16 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
                       ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
                       : {}),
                   }}
+                />
+              ) : null
+            )}
+            {/* Week separator bands (when weekends are hidden) */}
+            {renderWeekSeparators && cells.map((cell, index) =>
+              cell.isFirstOfWeek && index > 0 ? (
+                <div
+                  key={`week-sep-${index}`}
+                  className={styles.weekSeparator}
+                  style={{ left: index * cellWidth - 1 }}
                 />
               ) : null
             )}

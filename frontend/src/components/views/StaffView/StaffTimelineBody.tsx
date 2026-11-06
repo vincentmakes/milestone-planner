@@ -141,15 +141,6 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                 />
               ) : null
             )}
-            {renderWeekSeparators && cells.map((cell, index) =>
-              cell.isFirstOfWeek && index > 0 ? (
-                <div
-                  key={`week-sep-${index}`}
-                  className={styles.weekSeparator}
-                  style={{ left: index * cellWidth }}
-                />
-              ) : null
-            )}
           </div>
           
           {/* Today line */}
@@ -242,6 +233,23 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
               cellWidth={cellWidth}
               viewMode={viewMode}
             />
+
+            {/* Week separators (weekends hidden): an overlay above the
+                workload heatmap, under the bars (last child of .rows; its
+                class contains no "row") */}
+            {renderWeekSeparators && (
+              <div className={styles.weekBands} aria-hidden="true">
+                {cells.map((cell, index) =>
+                  cell.isFirstOfWeek && index > 0 ? (
+                    <div
+                      key={`week-sep-${index}`}
+                      className={styles.weekSeparator}
+                      style={{ left: index * cellWidth - 1 }}
+                    />
+                  ) : null
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
