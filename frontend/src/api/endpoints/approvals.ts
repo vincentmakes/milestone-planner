@@ -39,12 +39,48 @@ function listUrl(scope: 'mine' | 'to_decide', status?: ApprovalRequestStatus): s
   return `/api/approval-requests?${params.toString()}`;
 }
 
+/** The History tab's page size (`limit`); a full page means there may be more. */
+export const HISTORY_PAGE_SIZE = 50;
+
+/**
+ * One page of the approval history: `scope=decided` (the requests I decided
+ * for someone else) or `scope=all` with `closed=true` (every closed request at
+ * my sites, `approvals.view_all`). Ordered by when the request closed, newest
+ * first; `before_id` = the id of the last row held continues after it.
+ */
+export interface HistoryParams {
+  scope: 'decided' | 'all';
+  closed?: boolean;
+  status?: ApprovalRequestStatus;
+  project_id?: number;
+  requester_id?: number;
+  decided_by?: number;
+  before_id?: number;
+  limit: number;
+}
+
+function historyUrl(params: HistoryParams): string {
+  const query = new URLSearchParams({ scope: params.scope });
+  if (params.closed) query.set('closed', 'true');
+  if (params.status) query.set('status', params.status);
+  const ids = ['project_id', 'requester_id', 'decided_by', 'before_id'] as const;
+  for (const key of ids) {
+    const value = params[key];
+    if (value != null) query.set(key, String(value));
+  }
+  query.set('limit', String(params.limit));
+  return `/api/approval-requests?${query.toString()}`;
+}
+
 export const approvalsApi = {
   /** The caller's own requests, newest first (optionally one status). */
   getMine: (status?: ApprovalRequestStatus) => apiGet<ApprovalRequest[]>(listUrl('mine', status)),
 
   /** The pending requests the caller may decide, newest first. */
   getToDecide: () => apiGet<ApprovalRequest[]>(listUrl('to_decide')),
+
+  /** One page of the history (closed requests), see `HistoryParams`. */
+  listHistory: (params: HistoryParams) => apiGet<ApprovalRequest[]>(historyUrl(params)),
 
   /** One request (the requester, an approver, or `approvals.view_all`). */
   get: (id: number) => apiGet<ApprovalRequest>(`/api/approval-requests/${id}`),

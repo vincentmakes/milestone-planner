@@ -230,15 +230,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
             )
           );
           break;
-        case 'approvals':
-          // Both request lists live in workStore, which reloads them together.
+        case 'approvals': {
+          // Both request lists live in workStore, which reloads them together;
+          // the History tab's page 1 too, once it holds rows.
+          const work = useWorkStore.getState();
+          tasks.push(work.refresh().catch((e) => console.error('[WS] approvals refresh failed', e)));
           tasks.push(
-            useWorkStore
-              .getState()
-              .refresh()
-              .catch((e) => console.error('[WS] approvals refresh failed', e))
+            work.reloadHistoryIfHeld().catch((e) => console.error('[WS] approval history refresh failed', e))
           );
           break;
+        }
         case 'dashboards': {
           // The list only once the view has loaded it (a user without
           // views.dashboards never asks for it); the open dashboard itself

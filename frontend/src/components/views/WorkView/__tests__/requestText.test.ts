@@ -3,7 +3,8 @@
  * asks for (to a decider) or asked for (to the requester), and its outcome.
  */
 import { describe, it, expect } from 'vitest';
-import { describeRequest, requestOutcome, requestTarget } from '../requestText';
+import { decidedWhen, describeRequest, requestOutcome, requestTarget } from '../requestText';
+import { formatDateTime } from '@/utils/date';
 import { makeApprovalRequest } from '@/test/factories';
 import { formatShortDateRange } from '@/utils/date';
 
@@ -71,5 +72,18 @@ describe('requestOutcome', () => {
     expect(requestOutcome(makeApprovalRequest({ status: 'expired', close_reason: 'overtaken' }))).toBe('Expired: the booking was changed since the request was made');
     expect(requestOutcome(makeApprovalRequest({ status: 'expired', close_reason: 'something_new' }))).toBe('Expired');
     expect(requestOutcome(makeApprovalRequest({ status: 'expired' }))).toBe('Expired');
+  });
+});
+
+describe('decidedWhen', () => {
+  it('gives the local date and time of the decision', () => {
+    const at = '2026-10-21T14:05:00.000Z';
+    expect(decidedWhen({ decided_at: at })).toBe(formatDateTime(at));
+    expect(decidedWhen({ decided_at: at })).toContain('2026');
+  });
+
+  it('is a dash without a decision time', () => {
+    expect(decidedWhen({ decided_at: null })).toBe('—');
+    expect(decidedWhen({ decided_at: 'not a date' })).toBe('—');
   });
 });

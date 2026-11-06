@@ -5,7 +5,7 @@
  * Bioprocess at 40%"; to the requester, "Join Design of Bioprocess at 40%".
  */
 
-import { formatShortDateRange } from '@/utils/date';
+import { formatDateTime, formatShortDateRange } from '@/utils/date';
 import type { ApprovalRequest, ApprovalRequestStatus, BookingValues } from '@/types';
 
 const CREATE = 'assignments.self_create';
@@ -91,4 +91,14 @@ export function requestOutcome(request: ApprovalRequest): string {
     return `${label}: ${CLOSE_REASONS[request.close_reason]}`;
   }
   return label;
+}
+
+/**
+ * When the request closed, local date and time (`formatDateTime`: "22 Oct
+ * 2026, 14:05" in the browser locale); "—" when it carries no decision time (a
+ * request expired by the data cleanup). `decided_at` is a real timestamp.
+ */
+export function decidedWhen(request: Pick<ApprovalRequest, 'decided_at'>): string {
+  if (!request.decided_at) return '—';
+  return formatDateTime(request.decided_at) || '—';
 }

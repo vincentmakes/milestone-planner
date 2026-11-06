@@ -74,6 +74,37 @@
   margin-left: auto;
 }
 
+/* Two rows: the chip groups, then the labelled pickers aligned on their boxes. */
+.historyControls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.historyChips,
+.historyPickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.historyChips {
+  align-items: center;
+}
+
+.historyPickers {
+  align-items: flex-end;
+}
+
+.historySelect {
+  min-width: 12rem;
+}
+
+.loadMore {
+  display: flex;
+  justify-content: center;
+}
+
 .body {
   flex: 1;
   overflow-y: auto;

@@ -5,6 +5,9 @@
  * cancelling my own request, the Open/Done filter on My Requests, and My
  * Assignments: my approved bookings from the loaded projects, Upcoming / All,
  * Open = the booking dialog for that row. Loads on mount and focus.
+ * History: closed requests I decided (or all of them with approvals.view_all),
+ * outcome / project / person filters as request params, Load more with the
+ * last row's id, empty and error states.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -19,7 +22,9 @@ import { resetAllStores } from '@/stores';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { addDaysToDateString, formatDateISO, formatMediumDate } from '@/utils/date';
 import { makeApprovalRequest, makePhase, makeProject, makeSite, makeSubphase, makeUser } from '@/test/factories';
-import type { StaffAssignment } from '@/types';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
+import { pickOption, pickerTrigger } from '@/test/searchableSelect';
+import type { ApprovalRequest, StaffAssignment } from '@/types';
 
 const refreshProjects = vi.fn().mockResolvedValue(undefined);
 
@@ -34,6 +39,7 @@ vi.mock('@/api/endpoints/approvals', async (importOriginal) => ({
     approve: vi.fn(),
     reject: vi.fn(),
     cancel: vi.fn(),
+    listHistory: vi.fn(),
   },
 }));
 
@@ -97,6 +103,7 @@ function seedProjects() {
 }
 
 function seedApi() {
+  vi.mocked(approvalsApi.listHistory).mockResolvedValue([]);
   vi.mocked(approvalsApi.getToDecide).mockResolvedValue([toDecide]);
   vi.mocked(approvalsApi.getMine).mockResolvedValue([myRequest, decidedRequest]);
 }
@@ -123,7 +130,7 @@ afterEach(async () => {
 });
 
 describe('tabs', () => {
-  it('shows the three tabs with their counts, My Assignments first', async () => {
+  it('shows the four tabs with their counts, My Assignments first', async () => {
     await renderView();
     expect(screen.getByRole('tablist', { name: 'My Work' })).toBeInTheDocument();
     // The count is in the name with a separator; the visual count is hidden.
@@ -131,6 +138,8 @@ describe('tabs', () => {
     // Upcoming bookings: today's project booking and the subphase segment.
     expect(screen.getByRole('tab', { name: 'My Assignments, 2 items' })).toHaveTextContent('2');
     expect(screen.getByRole('tab', { name: 'My Requests, 1 item' })).toHaveTextContent('1');
+    // Not loaded before the tab opens.
+    expect(screen.getByRole('tab', { name: 'History, 0 items' })).toHaveTextContent('0');
     expect(tab(/^My Approvals/).querySelector('[aria-hidden="true"]')).toHaveTextContent('1');
     expect(useWorkStore.getState().openCount).toBe(1);
     expect(tab(/^My Assignments/)).toHaveAttribute('aria-selected', 'true');
@@ -144,10 +153,12 @@ describe('tabs', () => {
       'Alice Smith wants to join Feasibility of Bioprocess Scale-Up at 40%'
     );
     fireEvent.keyDown(tab(/^My Approvals/), { key: 'ArrowLeft' });
-    expect(useWorkStore.getState().activeTab).toBe('requests');
-    fireEvent.keyDown(tab(/^My Requests/), { key: 'ArrowRight' });
+    expect(useWorkStore.getState().activeTab).toBe('history');
+    fireEvent.keyDown(tab(/^History/), { key: 'ArrowRight' });
     expect(useWorkStore.getState().activeTab).toBe('approvals');
     fireEvent.keyDown(tab(/^My Approvals/), { key: 'End' });
+    expect(useWorkStore.getState().activeTab).toBe('history');
+    fireEvent.keyDown(tab(/^History/), { key: 'ArrowLeft' });
     expect(useWorkStore.getState().activeTab).toBe('requests');
     fireEvent.keyDown(tab(/^My Requests/), { key: 'Home' });
     expect(useWorkStore.getState().activeTab).toBe('approvals');
@@ -402,5 +413,134 @@ describe('My Requests', () => {
     expect(screen.getByRole('tabpanel')).toHaveTextContent('No pending requests');
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.getByRole('tabpanel')).toHaveTextContent('No decided requests');
+  });
+});
+
+describe('History', () => {
+  const decided = (id: number, overrides: Partial<ApprovalRequest> = {}) =>
+    makeApprovalRequest({
+      id,
+      status: 'approved',
+      requester_id: 7,
+      requester_name: 'Alice Smith',
+      decided_by: 4,
+      decided_by_name: 'Dora Decider',
+      decided_at: '2026-10-21T14:05:00.000Z',
+      ...overrides,
+    });
+
+  const lastCall = () => vi.mocked(approvalsApi.listHistory).mock.lastCall?.[0];
+
+  async function openHistory() {
+    await renderView();
+    fireEvent.click(tab(/^History/));
+    await waitFor(() => expect(useWorkStore.getState().history.loaded).toBe(true));
+  }
+
+  it('loads the requests I decided when the tab opens and lists them', async () => {
+    vi.mocked(approvalsApi.listHistory).mockResolvedValue([
+      decided(51, { decision_note: 'Fine by me' }),
+      decided(50, { status: 'rejected' }),
+    ]);
+    await openHistory();
+
+    expect(lastCall()).toEqual(expect.objectContaining({ scope: 'decided', limit: 50 }));
+    expect(lastCall()?.closed).toBeUndefined();
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(2);
+    expect(panel).toHaveTextContent('Approved by Dora Decider');
+    expect(panel).toHaveTextContent('Requested by Alice Smith');
+    expect(panel).toHaveTextContent('“Fine by me”');
+    expect(screen.getByRole('tab', { name: 'History, 2 items' })).toBeInTheDocument();
+    // Fewer than a page: nothing more to load.
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+  });
+
+  it('offers only "Decided by me" without approvals.view_all', async () => {
+    await openHistory();
+    const scope = screen.getByRole('group', { name: 'Requests' });
+    expect(within(scope).getAllByRole('button').map((b) => b.textContent)).toEqual(['Decided by me']);
+    const outcome = screen.getByRole('group', { name: 'Outcome' });
+    expect(within(outcome).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'All',
+      'Approved',
+      'Rejected',
+      'Cancelled',
+    ]);
+    expect(() => pickerTrigger(/^Decided by/)).toThrow(); // All-requests mode only
+  });
+
+  it('switches to every closed request with approvals.view_all', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'user', permissions: [...USER_DEFAULTS, 'approvals.view_all'] }),
+    });
+    vi.mocked(approvalsApi.listHistory).mockResolvedValue([decided(51)]);
+    await openHistory();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All requests' }));
+    await waitFor(() => expect(lastCall()).toEqual(expect.objectContaining({ scope: 'all', closed: true })));
+    const outcome = screen.getByRole('group', { name: 'Outcome' });
+    expect(within(outcome).getByRole('button', { name: 'Expired' })).toBeInTheDocument();
+    fireEvent.click(within(outcome).getByRole('button', { name: 'Superseded' }));
+    await waitFor(() => expect(lastCall()?.status).toBe('superseded'));
+
+    await waitFor(() => expect(useWorkStore.getState().history.loading).toBe(false));
+    pickOption(/^Decided by/, 'Dora Decider');
+    await waitFor(() => expect(lastCall()?.decided_by).toBe(4));
+
+    // Back to my decisions: the All-mode outcome and decider are dropped.
+    fireEvent.click(screen.getByRole('button', { name: 'Decided by me' }));
+    await waitFor(() => expect(lastCall()?.scope).toBe('decided'));
+    expect(lastCall()?.status).toBeUndefined();
+    expect(lastCall()?.decided_by).toBeUndefined();
+    expect(screen.queryByRole('button', { name: 'Expired' })).not.toBeInTheDocument();
+  });
+
+  it('turns the outcome and the pickers into request params', async () => {
+    vi.mocked(approvalsApi.listHistory).mockResolvedValue([decided(51)]);
+    await openHistory();
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Outcome' })).getByRole('button', { name: 'Rejected' }));
+    await waitFor(() => expect(lastCall()?.status).toBe('rejected'));
+    await waitFor(() => expect(useWorkStore.getState().history.loading).toBe(false));
+
+    expect(pickerTrigger(/^Project/)).toHaveTextContent('Any project');
+    pickOption(/^Project/, 'Trial');
+    await waitFor(() => expect(lastCall()?.project_id).toBe(2));
+    await waitFor(() => expect(useWorkStore.getState().history.loading).toBe(false));
+
+    pickOption(/^Requested by/, 'Alice Smith');
+    await waitFor(() => expect(lastCall()).toEqual(expect.objectContaining({ requester_id: 7, project_id: 2 })));
+  });
+
+  it('loads more after the last row when the page was full', async () => {
+    const page = Array.from({ length: 50 }, (_, i) => decided(200 - i));
+    vi.mocked(approvalsApi.listHistory).mockResolvedValueOnce(page).mockResolvedValueOnce([decided(100)]);
+    await openHistory();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() => expect(useWorkStore.getState().history.rows).toHaveLength(51));
+    expect(lastCall()?.before_id).toBe(151);
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+  });
+
+  it('says when nothing was decided yet', async () => {
+    await openHistory();
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('No decided requests yet.');
+  });
+
+  it('says it is loading until the first page lands', async () => {
+    vi.mocked(approvalsApi.listHistory).mockReturnValue(new Promise(() => {}));
+    await renderView();
+    fireEvent.click(tab(/^History/));
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Loading…');
+  });
+
+  it('shows a failed load in place instead of the empty state', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(approvalsApi.listHistory).mockRejectedValue(new Error('500'));
+    await openHistory();
+    expect(screen.getByRole('alert')).toHaveTextContent('The history could not be loaded.');
+    expect(screen.getByRole('tabpanel')).not.toHaveTextContent('No decided requests yet.');
   });
 });
