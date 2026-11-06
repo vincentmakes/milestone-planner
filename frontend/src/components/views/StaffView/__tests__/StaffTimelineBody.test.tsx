@@ -153,7 +153,11 @@ describe('StaffTimelineBody workload blocks', () => {
     ...over,
   });
 
-  function renderBookings(assignments: StaffAssignmentWithContext[], viewMode: 'month' | 'quarter' = 'month') {
+  function renderBookings(
+    assignments: StaffAssignmentWithContext[],
+    viewMode: 'month' | 'quarter' = 'month',
+    vacations: Vacation[] = []
+  ) {
     seedUser({ id: 1, role: 'admin' });
     // No site closure left over from another test
     act(() => useAppStore.getState().setCompanyEvents([], new Set()));
@@ -162,7 +166,7 @@ describe('StaffTimelineBody workload blocks', () => {
       <StaffTimelineBody
         staff={[bob]}
         assignmentsMap={new Map([[4, assignments]])}
-        vacationsMap={new Map()}
+        vacationsMap={new Map([[4, vacations]])}
         rowHeights={new Map([[4, 44]])}
         expandedStaff={new Set()}
         expandedBankHolidays={false}
@@ -196,6 +200,46 @@ describe('StaffTimelineBody workload blocks', () => {
     expect(blocks().map((b) => b.textContent)).toEqual(['75%', '25%']);
     expect(blocks().map((b) => b.style.width)).toEqual(['120px', '30px']);
     expect(blocks()[1].title).toBe(`25% allocated · ${formatMediumDate('2026-09-18')}`);
+  });
+
+  it('keeps Home Office days inside the block, each underlined on its own day', () => {
+    useAppStore.setState({
+      absenceTypes: [
+        { id: 2, name: 'Home Office', color: '#0ea5e9', counts_as_unavailable: false, sort_order: 0, is_active: true },
+      ],
+    });
+    const remote = (id: number, date: string): Vacation => ({
+      id,
+      staff_id: 4,
+      start_date: date,
+      end_date: date,
+      description: 'Remote day',
+      absence_type_id: 2,
+    });
+    // Mon–Fri 14–18 September 2026, Home Office on Monday and Wednesday
+    const { cells, blocks } = renderBookings([booking({})], 'month', [
+      remote(41, '2026-09-14'),
+      remote(42, '2026-09-16'),
+    ]);
+    expect(blocks()).toHaveLength(1);
+    const [block] = blocks();
+    expect(block.style.width).toBe(`${5 * 30}px`);
+    expect(block).toHaveTextContent(/^75%$/);
+    const underlines = within(block).getAllByTestId('available-absence-day');
+    expect(underlines).toHaveLength(2);
+    // Days 0 and 2 of the run, one cell wide, in the absence type's colour
+    expect(underlines.map((u) => u.style.left)).toEqual([
+      'calc(0px - var(--run-border))',
+      'calc(60px - var(--run-border))',
+    ]);
+    expect(underlines.map((u) => u.style.width)).toEqual(['30px', '30px']);
+    expect(underlines[0].style.getPropertyValue('--absence-color')).toBe('#0ea5e9');
+    expect(underlines[0].className).toMatch(/availableAbsenceDay/);
+    expect(cells.findIndex((c) => c.dateStr === '2026-09-14') * 30).toBe(parseInt(block.style.left, 10));
+    expect(block.title).toBe(
+      `75% allocated · ${formatMediumDate('2026-09-14')} – ${formatMediumDate('2026-09-18')}` +
+        `\nHome Office: Remote day · ${formatMediumDate('2026-09-14')}, ${formatMediumDate('2026-09-16')}`
+    );
   });
 
   it('draws no block at quarter zoom', () => {

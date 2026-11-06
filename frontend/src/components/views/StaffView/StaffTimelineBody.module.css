@@ -85,8 +85,9 @@
 /* Week separators (when weekends are hidden): 3 px bands straddling the
    boundary before each Monday (left = index × cell width − 1). They live in
    an overlay that is the last child of .rows: in the grid layer the workload
-   heatmap would cover them. The overlay ties with .workloadCell (z 1) but
-   paints after it, and stays under .bar (z 2). Its class must not contain
+   heatmap would cover them. The overlay (z 1) paints over the heatmap's
+   translucent fill (.workloadCell has no z-index), under its badges
+   (.workloadIndicator, z 2) and under .bar (z 2). Its class must not contain
    "row" (the drag hooks and DependencyLayer find rows by class). */
 .weekBands {
   position: absolute;
@@ -263,41 +264,53 @@
   opacity: 0.6;
 }
 
-/* Workload Heatmap Cells - positioned at bottom of row */
+/* Workload Heatmap Cells - positioned at bottom of row. No z-index: the
+   block must not be a stacking context, so that its badge can rise above the
+   week bands (.weekBands, z 1) while its translucent fill stays under them. */
 .workloadCell {
   position: absolute;
-  z-index: 1;
   pointer-events: auto;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* The left border width, so a day's underline lines up with its column */
+  --run-border: 0px;
 }
 
 /* State-specific borders */
 .workloadCell.overloaded {
   border-left: 2px solid var(--accent-red);
   border-right: 2px solid var(--accent-red);
+  --run-border: 2px;
 }
 
 .workloadCell.vacation,
 .workloadCell.conflict {
   border-left: 2px solid var(--absence-color, var(--accent-purple));
   border-right: 2px solid var(--absence-color, var(--accent-purple));
+  --run-border: 2px;
 }
 
-/* Available absence (e.g. Home Office): thin type-coloured underline only */
-.workloadCell.availableAbsence {
-  box-shadow: inset 0 -3px 0 var(--absence-color, var(--accent-purple));
+/* Available absence (e.g. Home Office): a thin type-coloured underline under
+   its own day, inside the block (the day does not split the block) */
+.availableAbsenceDay {
+  position: absolute;
+  bottom: 0;
+  height: 3px;
+  background: var(--absence-color, var(--accent-purple));
+  pointer-events: none;
 }
 
-/* Workload Indicator Badge - centered in the indicator area */
+/* Workload Indicator Badge - centered in the indicator area, above the week
+   bands (z 1) and under the bars (z 2, later in the row) */
 .workloadIndicator {
+  position: relative;
   font-size: 9px;
   font-weight: 600;
   padding: 1px 4px;
   border-radius: 2px;
   white-space: nowrap;
-  z-index: 3;
+  z-index: 2;
   pointer-events: none;
 }
 

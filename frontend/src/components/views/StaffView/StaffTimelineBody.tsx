@@ -20,6 +20,7 @@ import { useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useWorkloadCalculation, getWorkloadBackground, workloadLabel, workloadRuns } from '@/hooks';
+import type { AvailableAbsenceDay } from '@/hooks';
 import { formatMediumDate } from '@/utils/date';
 import {
   parseRecurringPattern,
@@ -236,8 +237,8 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
             />
 
             {/* Week separators (weekends hidden): an overlay above the
-                workload heatmap, under the bars (last child of .rows; its
-                class contains no "row") */}
+                workload heatmap's fill but under its badges, under the bars
+                (last child of .rows; its class contains no "row") */}
             {renderWeekSeparators && (
               <div className={styles.weekBands} aria-hidden="true">
                 {cells.map((cell, index) =>
@@ -282,6 +283,18 @@ interface StaffRowProps {
    * vacation bars are display-only.
    */
   canManage: boolean;
+}
+
+/**
+ * The title lines of a block's available absences (Home Office): one line per
+ * absence with the days it covers, e.g. "\nHome Office · 2 Mar 2026, 4 Mar 2026".
+ */
+function availableAbsenceNote(days: AvailableAbsenceDay[]): string {
+  const byLabel = new Map<string, string[]>();
+  days.forEach((day) => {
+    byLabel.set(day.label, [...(byLabel.get(day.label) ?? []), formatMediumDate(day.date)]);
+  });
+  return Array.from(byLabel, ([label, dates]) => `\n${label} · ${dates.join(', ')}`).join('');
 }
 
 function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closureIndex, siteIds, teamIds, teamSiteById, rowHeight, cells, cellWidth, viewMode, canManage }: StaffRowProps) {
@@ -460,16 +473,19 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
   return (
     <div className={styles.row} style={{ height: rowHeight }}>
       {/* Workload heatmap blocks (one per run of equal days) - only in the indicator area at bottom */}
-      {runs.map(({ from, to, workload, tooltip, startDate, endDate }) => {
+      {runs.map(({ from, to, workload, tooltip, startDate, endDate, availableAbsenceDays }) => {
         const label = workloadLabel(workload);
         const dates =
           startDate === endDate
             ? formatMediumDate(startDate)
             : `${formatMediumDate(startDate)} – ${formatMediumDate(endDate)}`;
+        // Available absences (Home Office) inside the run: one line per absence,
+        // with its days (an absence or closure block names it in `tooltip`)
+        const availableNote = workload.isOnVacation ? '' : availableAbsenceNote(availableAbsenceDays);
         return (
           <div
             key={`workload-${from}`}
-            className={`${styles.workloadCell} ${styles[workload.state]} ${workload.hasAvailableAbsence ? styles.availableAbsence : ''}`}
+            className={`${styles.workloadCell} ${styles[workload.state]}`}
             style={{
               left: from * cellWidth,
               width: (to - from + 1) * cellWidth,
@@ -480,12 +496,25 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
                 : {}),
               ...getWorkloadBackground(workload),
             }}
-            title={`${tooltip} · ${dates}`}
+            title={`${tooltip} · ${dates}${availableNote}`}
           >
             {/* Workload indicator badge ("OFF" when an absence or a site closure makes them unavailable) */}
             {label !== null && (
               <div className={`${styles.workloadIndicator} ${styles[workload.state]}`}>{label}</div>
             )}
+            {/* An available absence (Home Office) underlines its own day only */}
+            {availableAbsenceDays.map((day) => (
+              <div
+                key={day.index}
+                className={styles.availableAbsenceDay}
+                data-testid="available-absence-day"
+                style={{
+                  left: `calc(${(day.index - from) * cellWidth}px - var(--run-border))`,
+                  width: cellWidth,
+                  ...(day.color ? ({ ['--absence-color' as string]: day.color } as React.CSSProperties) : {}),
+                }}
+              />
+            ))}
           </div>
         );
       })}

@@ -4,7 +4,7 @@
  * first cell): the header, the Gantt, Equipment, Cross-site and Archived
  * bodies in their grid layer (under the bars), the Staff body in an overlay
  * that is the last child of its rows (the workload heatmap would cover a grid
- * band; the overlay stays under the bars). Week / month zoom only, and none
+ * band; the overlay stays under the bars and the workload badges). Week / month zoom only, and none
  * while weekends are shown. Separators carry no `row` / `bar` class and no
  * `data-date` (the drag hooks and `DependencyLayer` query those).
  */
@@ -188,6 +188,26 @@ describe('week separators — Staff overlay', () => {
     expect(rule).toMatch(/inset: 0;/);
     expect(rule).toMatch(/z-index: 1;/);
     expect(rule).toMatch(/pointer-events: none;/);
+  });
+
+  it('paints over the heatmap fill but never over a workload badge', () => {
+    const css = readFileSync(
+      join(__dirname, '..', '..', '..', 'views', 'StaffView', 'StaffTimelineBody.module.css'),
+      'utf8'
+    );
+    const zOf = (rule: string) => Number(rule.match(/z-index:\s*(\d+);/)?.[1]);
+    const bands = css.match(/\.weekBands\s*\{([^}]*)\}/)?.[1] ?? '';
+    const block = css.match(/\.workloadCell\s*\{([^}]*)\}/)?.[1] ?? '';
+    const badge = css.match(/\.workloadIndicator\s*\{([^}]*)\}/)?.[1] ?? '';
+    // The block is no stacking context (no z-index), so its badge competes
+    // with the bands in the rows' stacking context and its fill stays under them
+    expect(block).toMatch(/position: absolute;/);
+    expect(block).not.toMatch(/z-index/);
+    expect(badge).toMatch(/position: relative;/);
+    expect(zOf(badge)).toBeGreaterThan(zOf(bands));
+    // ...and under the bars
+    const bar = css.match(/\.bar\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(zOf(badge)).toBeLessThanOrEqual(zOf(bar));
   });
 });
 

@@ -5,7 +5,7 @@ export { useDragAndDrop } from './useDragAndDrop';
 export { useResize } from './useResize';
 export { useScrollSync } from './useScrollSync';
 export { useWorkloadCalculation, getWorkloadTooltip, getWorkloadBackground, workloadLabel, workloadRuns } from './useWorkloadCalculation';
-export type { WorkloadCell, WorkloadRun, ClosureLookup } from './useWorkloadCalculation';
+export type { WorkloadCell, WorkloadRun, AvailableAbsenceDay, ClosureLookup } from './useWorkloadCalculation';
 export { useDependencyLinking } from './useDependencyLinking';
 export { usePhantomSibling } from './usePhantomSibling';
 export type { PhantomSiblingConfig } from './usePhantomSibling';

@@ -199,14 +199,60 @@ describe('workloadRuns', () => {
     ]);
   });
 
-  it('keeps an available absence (no badge) apart from the plain days around it', () => {
-    const dates = days(3);
-    const runs = workloadRuns(at([assignment], dates, [vacation(2)]), dates);
-    expect(runs.map((r) => [r.from, r.to, !!r.workload.hasAvailableAbsence])).toEqual([
-      [0, 0, false],
-      [1, 1, true],
-      [2, 2, false],
+  it('does not split a run on an available absence: its day is listed for an underline', () => {
+    // Mon–Fri at 50 %, Home Office on Monday and Wednesday
+    const dates = days(5);
+    const monday: Vacation = { ...vacation(2), id: 2, start_date: '2026-03-02', end_date: '2026-03-02' };
+    const wednesday: Vacation = { ...vacation(2), id: 3, start_date: '2026-03-04', end_date: '2026-03-04' };
+    const runs = workloadRuns(at([assignment], dates, [monday, wednesday]), dates);
+    expect(spans(runs)).toEqual([[0, 4, '50%']]);
+    // The run's tooltip is the booking's, not the first day's absence
+    expect(runs[0].tooltip).toBe('50% allocated');
+    expect(runs[0].availableAbsenceDays).toEqual([
+      { index: 0, date: '2026-03-02', color: '#0ea5e9', label: 'Home Office: Remote day' },
+      { index: 2, date: '2026-03-04', color: '#0ea5e9', label: 'Home Office: Remote day' },
     ]);
+  });
+
+  it('joins available-absence days without a booking into one underlined block', () => {
+    const dates = days(2);
+    const both: Vacation = { ...vacation(2), start_date: '2026-03-02', end_date: '2026-03-03' };
+    const runs = workloadRuns(at([], dates, [both]), dates);
+    expect(spans(runs)).toEqual([[0, 1, null]]);
+    expect(runs[0].tooltip).toBe('Available');
+    expect(runs[0].availableAbsenceDays.map((d) => d.index)).toEqual([0, 1]);
+  });
+
+  it('keeps a run of plain days without underlines', () => {
+    const dates = days(2);
+    expect(workloadRuns(at([assignment], dates), dates)[0].availableAbsenceDays).toEqual([]);
+  });
+
+  it('still splits a closure day that names an available absence from the plain closure days', () => {
+    const shutdown: CompanyEvent = {
+      id: 1,
+      site_id: 1,
+      site_ids: [1],
+      date: '2026-03-02',
+      end_date: '2026-03-03',
+      name: 'Site shutdown',
+      color: '#f97316',
+      counts_as_unavailable: true,
+    };
+    const shutdownDays = new Map([
+      ['2026-03-02', shutdown],
+      ['2026-03-03', shutdown],
+    ]);
+    const dates = days(2);
+    const remote: Vacation = { ...vacation(2), start_date: '2026-03-03', end_date: '2026-03-03' };
+    const cells = calculateWorkloadCells([], [remote], dates.map(cell), 100, byId, shutdownDays);
+    const runs = workloadRuns(cells, dates);
+    expect(spans(runs)).toEqual([
+      [0, 0, 'OFF'],
+      [1, 1, 'OFF'],
+    ]);
+    expect(runs[1].tooltip).toBe('Site closed: Site shutdown\nHome Office: Remote day');
+    expect(runs[1].availableAbsenceDays.map((d) => d.index)).toEqual([1]);
   });
 
   it('skips non-working cells: a run stops before one', () => {

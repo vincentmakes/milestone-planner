@@ -73,9 +73,24 @@ export interface WorkloadCell {
 }
 
 /**
+ * A day inside a run with an absence that leaves the person available
+ * (Home Office): drawn as an underline under that day only, in the absence
+ * type's colour, and named in the block's title.
+ */
+export interface AvailableAbsenceDay {
+  index: number;
+  date: string;
+  /** The absence type's colour; undefined for an untyped absence */
+  color?: string;
+  /** The absence as the tooltip names it ("Home Office: Remote day") */
+  label: string;
+}
+
+/**
  * One block of the Staff overview: cells `from`…`to` (indices, inclusive)
  * that read the same, drawn with `workload` (the first cell's) and titled
- * `tooltip`, covering `startDate`…`endDate`.
+ * `tooltip`, covering `startDate`…`endDate`. `availableAbsenceDays` are the
+ * run's days with an available absence (they do not split a run).
  */
 export interface WorkloadRun {
   from: number;
@@ -84,6 +99,7 @@ export interface WorkloadRun {
   tooltip: string;
   startDate: string;
   endDate: string;
+  availableAbsenceDays: AvailableAbsenceDay[];
 }
 
 /**
@@ -206,20 +222,25 @@ export function useWorkloadCalculation(
 /**
  * Generate tooltip text for a workload cell
  */
-export function getWorkloadTooltip(workload: WorkloadCell): string {
+/** The absence of a cell as the tooltip names it: "Type: description (recurring)" */
+function absenceText(workload: WorkloadCell): string {
   const recurringNote = workload.isRecurringVacation ? ' (recurring)' : '';
-  const hasAbsence = !!workload.absenceName || !!workload.vacationDescription;
   const absenceLabel = workload.absenceName
     ? (workload.vacationDescription && workload.vacationDescription !== workload.absenceName
         ? `${workload.absenceName}: ${workload.vacationDescription}`
         : workload.absenceName)
     : (workload.vacationDescription || 'Vacation');
+  return `${absenceLabel}${recurringNote}`;
+}
+
+export function getWorkloadTooltip(workload: WorkloadCell): string {
+  const hasAbsence = !!workload.absenceName || !!workload.vacationDescription;
 
   if (workload.isOnVacation) {
     // A site closure is named first; an absence on the same day is listed under it
     const label = workload.closureName
-      ? `Site closed: ${workload.closureName}${hasAbsence ? `\n${absenceLabel}${recurringNote}` : ''}`
-      : `${absenceLabel}${recurringNote}`;
+      ? `Site closed: ${workload.closureName}${hasAbsence ? `\n${absenceText(workload)}` : ''}`
+      : absenceText(workload);
     if (workload.total > 0) {
       const during = workload.closureName ? 'site closure' : 'absence';
       return `${label}\n⚠️ Conflict: ${workload.total}% assigned during ${during}`;
@@ -229,7 +250,7 @@ export function getWorkloadTooltip(workload: WorkloadCell): string {
 
   // An absence that does not reduce capacity (e.g. Home Office) is mentioned
   // on top of the normal workload text.
-  const prefix = workload.hasAvailableAbsence ? `${absenceLabel}${recurringNote}\n` : '';
+  const prefix = workload.hasAvailableAbsence ? `${absenceText(workload)}\n` : '';
 
   if (workload.total === 0) {
     return `${prefix}Available`;
@@ -277,8 +298,11 @@ function drawsNothing(workload: WorkloadCell): boolean {
 /**
  * Merges the workload cells into runs (pure): cells that draw something and
  * are adjacent by index join one run while they read the same — the badge,
- * the state, the colour, the available-absence underline and the tooltip
- * (so two different absences both reading "OFF" stay apart). Adjacency is by
+ * the state, the colour of an absence or closure block and the tooltip (so
+ * two different absences both reading "OFF" stay apart). An available absence
+ * (Home Office) does not split a run: outside an absence or closure it is
+ * left out of the key and of the run's tooltip, and listed in the run's
+ * `availableAbsenceDays` instead (one underline per day). Adjacency is by
  * index, as in `eventLanes.ts`: with weekends hidden, Friday and the next
  * Monday are neighbours and join. `dates` are the cells' `dateStr`s.
  */
@@ -290,22 +314,37 @@ export function workloadRuns(cells: WorkloadCell[], dates: string[]): WorkloadRu
       key = null;
       return;
     }
-    const tooltip = getWorkloadTooltip(workload);
+    const offBlock = workload.state === 'vacation' || workload.state === 'conflict';
+    // On an absence or closure block the tooltip already names the absence
+    const tooltip = getWorkloadTooltip(
+      workload.isOnVacation ? workload : { ...workload, hasAvailableAbsence: false }
+    );
     const cellKey = JSON.stringify([
       workloadLabel(workload),
       workload.state,
-      workload.closureColor ?? workload.absenceColor ?? null,
-      !!workload.hasAvailableAbsence,
+      offBlock ? (workload.closureColor ?? workload.absenceColor ?? null) : null,
       tooltip,
     ]);
+    const day: AvailableAbsenceDay | null = workload.hasAvailableAbsence
+      ? { index, date: dates[index], color: workload.absenceColor, label: absenceText(workload) }
+      : null;
     const last = runs[runs.length - 1];
     if (last && key === cellKey && last.to === index - 1) {
       last.to = index;
       last.endDate = dates[index];
+      if (day) last.availableAbsenceDays.push(day);
       return;
     }
     key = cellKey;
-    runs.push({ from: index, to: index, workload, tooltip, startDate: dates[index], endDate: dates[index] });
+    runs.push({
+      from: index,
+      to: index,
+      workload,
+      tooltip,
+      startDate: dates[index],
+      endDate: dates[index],
+      availableAbsenceDays: day ? [day] : [],
+    });
   });
   return runs;
 }
