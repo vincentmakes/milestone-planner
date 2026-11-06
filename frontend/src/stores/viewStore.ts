@@ -250,6 +250,13 @@ interface ViewState {
   cellWidth: number;
   currentResourceTab: ResourceTab;
   timelineScrollLeft: number;
+  /**
+   * The date (YYYY-MM-DD) at the timeline's left edge, written by a scroll, a
+   * navigation or a cell-set change of a visible timeline — never by its mount.
+   * An in-session remount restores it (useTimelinePosition); not persisted, so
+   * a reload opens on today.
+   */
+  timelineAnchorDate: string | null;
   showAssignments: boolean;
   showStaffOverview: boolean;
   showEquipmentOverview: boolean;
@@ -346,6 +353,7 @@ interface ViewState {
   setCellWidth: (width: number) => void;
   setCurrentResourceTab: (tab: ResourceTab) => void;
   setTimelineScrollLeft: (scrollLeft: number) => void;
+  setTimelineAnchorDate: (date: string | null) => void;
   setShowAssignments: (show: boolean) => void;
   toggleShowAssignments: () => void;
   navigatePeriod: (direction: 1 | -1) => void;
@@ -428,6 +436,7 @@ const initialViewState = {
   cellWidth: 36,
   currentResourceTab: 'staff' as ResourceTab,
   timelineScrollLeft: 0,
+  timelineAnchorDate: null as string | null,
   showAssignments: true,
   showStaffOverview: false,
   showEquipmentOverview: false,
@@ -499,6 +508,8 @@ export const useViewStore = create<ViewState>()(
       setCurrentResourceTab: (tab) => set({ currentResourceTab: tab }),
 
       setTimelineScrollLeft: (scrollLeft) => set({ timelineScrollLeft: scrollLeft }),
+
+      setTimelineAnchorDate: (date) => set({ timelineAnchorDate: date }),
 
       setShowAssignments: (show) => set({ showAssignments: show }),
 
@@ -653,7 +664,7 @@ export const useViewStore = create<ViewState>()(
         set({ currentDate: navigateDate(new Date(currentDate), direction, viewMode) });
       },
 
-      goToToday: () => set({ currentDate: new Date() }),
+      goToToday: () => set({ currentDate: new Date(), timelineAnchorDate: null }),
 
       // -----------------------------------------
       // EXPANDED STATE ACTIONS
@@ -840,7 +851,7 @@ export const useViewStore = create<ViewState>()(
       // -----------------------------------------
       // "Today" is read when the view is reset, not when this module loaded.
       resetView: () => set({ ...initialViewState, currentDate: new Date() }),
-      resetTimelinePosition: () => set({ currentDate: new Date(), timelineScrollLeft: 0 }),
+      resetTimelinePosition: () => set({ currentDate: new Date(), timelineScrollLeft: 0, timelineAnchorDate: null }),
     }),
     {
       name: 'milestone-view-storage-v1',
@@ -850,10 +861,11 @@ export const useViewStore = create<ViewState>()(
       version: VIEW_STORE_VERSION,
       migrate: (persisted, version) => migrateViewState(persisted, version) as ViewState,
       // Only persist certain fields. Deliberately NOT the timeline scroll
-      // offset or currentDate: the app always opens on today. A restored
-      // pixel offset is relative to a timeline that starts months before the
-      // restored date, so it reopened wherever the user last was (e.g. a
-      // year back). Both stay in memory, so switching views keeps the place.
+      // offset, its anchor date or currentDate: the app always opens on today.
+      // A restored pixel offset is relative to a timeline that starts months
+      // before the restored date, so it reopened wherever the user last was
+      // (e.g. a year back). All three stay in memory, so switching views keeps
+      // the place (by the anchor date). viewStore.expansion.test.ts guards it.
       partialize: (state) => ({
         viewMode: state.viewMode,
         currentView: state.currentView,

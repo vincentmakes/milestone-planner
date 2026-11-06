@@ -45,10 +45,22 @@ describe('view mode and simple settings', () => {
     });
   });
 
-  it('goToToday moves the date back to now', () => {
+  it('goToToday moves the date back to now and drops the anchor date', () => {
     view().setCurrentDate(new Date(2000, 0, 1));
+    view().setTimelineAnchorDate('2000-01-01');
     view().goToToday();
     expect(view().currentDate.toDateString()).toBe(new Date().toDateString());
+    expect(view().timelineAnchorDate).toBeNull();
+  });
+
+  it('resetTimelinePosition and resetView forget the offset and the anchor date', () => {
+    view().setTimelineScrollLeft(420);
+    view().setTimelineAnchorDate('2026-03-10');
+    view().resetTimelinePosition();
+    expect(view()).toMatchObject({ timelineScrollLeft: 0, timelineAnchorDate: null });
+    view().setTimelineAnchorDate('2026-03-10');
+    view().resetView();
+    expect(view().timelineAnchorDate).toBeNull();
   });
 
   it('toggles assignments, sidebar and resource panel', () => {
@@ -266,6 +278,24 @@ describe('persistence', () => {
     expect(raw.state).not.toHaveProperty('timelineScrollLeft');
     expect(raw.state).not.toHaveProperty('currentDate');
     expect(raw.state).not.toHaveProperty('expandedStaff');
+  });
+
+  // The Gantt opens on today after a reload: no place in the timeline — a
+  // date or a pixel offset — may ever be persisted (Timeline.scroll.test.tsx
+  // pins the in-session side). Do not weaken.
+  it('persists no place in the timeline: no date and no pixel offset', () => {
+    view().setTimelineScrollLeft(999);
+    view().setTimelineAnchorDate('2026-03-10');
+    view().setCurrentDate(new Date(2026, 2, 10));
+    view().setViewMode('week'); // any write persists
+    const persisted = JSON.parse(localStorage.getItem(KEY) as string).state as Record<string, unknown>;
+    for (const field of ['timelineScrollLeft', 'timelineAnchorDate', 'currentDate']) {
+      expect(persisted).not.toHaveProperty(field);
+    }
+    const values = JSON.stringify(persisted);
+    expect(values).not.toMatch(/\d{4}-\d{2}-\d{2}/); // no date anywhere
+    expect(values).not.toContain('999');
+    expect(Object.keys(persisted).filter((k) => /scroll|date|anchor/i.test(k))).toEqual([]);
   });
 
   it('restores persisted fields and turns arrays back into Sets', async () => {

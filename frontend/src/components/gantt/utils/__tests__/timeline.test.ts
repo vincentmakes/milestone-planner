@@ -11,6 +11,9 @@ import {
   findTodayCell,
   generateTimelineCells,
   generateTimelineHeaders,
+  leftEdgeDate,
+  openingScrollLeft,
+  scrollLeftForDate,
 } from '../timeline';
 import type { ViewMode } from '@/types';
 
@@ -331,5 +334,64 @@ describe('today on a hidden weekend day', () => {
     expect(findTodayCell(future)).toBeNull();
     expect(findTodayCell([])).toBeNull();
     expect(calculateTodayCenterScrollLeft(past, 30, 600)).toBeNull();
+  });
+});
+
+describe('leftEdgeDate / scrollLeftForDate (a place kept by date, never by pixel)', () => {
+  const CW = 30;
+  const at = new Date(2026, 2, 15);
+  const days = generateTimelineCells(at, 'month', new Set(), []);
+  const weekdays = generateTimelineCells(at, 'month', new Set(), [], new Set(), [], false);
+  const weeks = generateTimelineCells(at, 'quarter', new Set(), []);
+  const months = generateTimelineCells(at, 'year', new Set(), []);
+
+  it.each([
+    ['day cells', days],
+    ['weekday cells', weekdays],
+    ['quarter weeks', weeks],
+    ['year months', months],
+  ])('round-trips every cell date with %s', (_label, cells) => {
+    for (const index of [0, 5, Math.floor(cells.length / 2), cells.length - 1]) {
+      const date = cells[index].dateStr;
+      expect(scrollLeftForDate(cells, CW, date)).toBe(index * CW);
+      expect(leftEdgeDate(cells, CW, index * CW)).toBe(date);
+      expect(leftEdgeDate(cells, CW, index * CW + CW - 1)).toBe(date);
+    }
+  });
+
+  it('sends a hidden weekend day to the next working day', () => {
+    // Saturday 7 and Sunday 8 March 2026 have no cell: Monday 9 holds them.
+    const monday = weekdays.findIndex((c) => c.dateStr === '2026-03-09');
+    expect(scrollLeftForDate(weekdays, CW, '2026-03-07')).toBe(monday * CW);
+    expect(scrollLeftForDate(weekdays, CW, '2026-03-08')).toBe(monday * CW);
+  });
+
+  it('keeps a day inside the span cell (quarter week, year month) that holds it', () => {
+    const week = weeks.findIndex((c) => c.dateStr === '2026-03-09'); // Monday
+    expect(scrollLeftForDate(weeks, CW, '2026-03-12')).toBe(week * CW);
+    const month = months.findIndex((c) => c.dateStr === '2026-03-01');
+    expect(scrollLeftForDate(months, CW, '2026-03-20')).toBe(month * CW);
+  });
+
+  it('clamps to the timeline ends and handles no cells', () => {
+    expect(scrollLeftForDate(days, CW, '1990-01-01')).toBe(0);
+    expect(scrollLeftForDate(days, CW, '2999-01-01')).toBe((days.length - 1) * CW);
+    expect(leftEdgeDate(days, CW, -50)).toBe(days[0].dateStr);
+    expect(leftEdgeDate(days, CW, 10 ** 9)).toBe(days[days.length - 1].dateStr);
+    expect(scrollLeftForDate([], CW, '2026-03-09')).toBe(0);
+    expect(leftEdgeDate([], CW, 0)).toBeNull();
+  });
+});
+
+describe('openingScrollLeft', () => {
+  it('opens on the anchor date when there is one, on today otherwise', () => {
+    const cells = generateTimelineCells(new Date(), 'month', new Set(), []);
+    expect(openingScrollLeft(cells, 30, 900, null)).toBe(calculateTodayScrollLeft(cells, 30, 900));
+    expect(openingScrollLeft(cells, 30, 900, cells[40].dateStr)).toBe(40 * 30);
+  });
+
+  it('opens at 0 when today is outside the timeline and nothing is anchored', () => {
+    const past = generateTimelineCells(new Date(2000, 0, 1), 'month', new Set(), []);
+    expect(openingScrollLeft(past, 30, 900, null)).toBe(0);
   });
 });

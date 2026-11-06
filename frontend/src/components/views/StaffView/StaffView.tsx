@@ -17,7 +17,8 @@ import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
 import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
-import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
+import { generateTimelineCells, generateTimelineHeaders, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
+import { useTimelinePosition } from '@/hooks/useTimelinePosition';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { StaffTimelineBody } from './StaffTimelineBody';
 import { BankHolidaysRow } from './BankHolidaysRow';
@@ -111,10 +112,6 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
-  const timelineScrollLeft = useViewStore((s) => s.timelineScrollLeft);
-  const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
-  const hasRestoredScroll = useRef(false);
-  const scrollSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const { openVacationModal } = useUIStore();
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
@@ -256,32 +253,21 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
 
-  // Position the timeline on mount (standalone only — Gantt's Timeline handles it when embedded).
-  useEffect(() => {
-    if (embedded || hasRestoredScroll.current) return;
-    const scrollContainer = timelineScrollRef.current;
-    if (!scrollContainer) return;
-    if (cells.length === 0) return;
-    hasRestoredScroll.current = true;
-    // This session's position when coming back from another view, else today.
-    requestAnimationFrame(() => {
-      scrollContainer.scrollLeft = timelineScrollLeft > 0
-        ? timelineScrollLeft
-        : calculateTodayScrollLeft(cells, cellWidth, scrollContainer.clientWidth) ?? 0;
-    });
-  }, [embedded, timelineScrollLeft, cells, cellWidth]);
+  // Position the timeline (standalone only — Gantt's Timeline handles it when
+  // embedded): today, or this session's anchor date; never a pixel offset.
+  const { onScroll: savePositionOnScroll } = useTimelinePosition({
+    containerRef: timelineScrollRef,
+    cells,
+    cellWidth,
+    viewMode,
+    enabled: !embedded,
+  });
 
   // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
   const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     handleSyncScroll(e);
-    if (embedded) return;
-    const scrollContainer = timelineScrollRef.current;
-    if (!scrollContainer || !hasRestoredScroll.current) return;
-    if (scrollSaveTimeout.current) clearTimeout(scrollSaveTimeout.current);
-    scrollSaveTimeout.current = setTimeout(() => {
-      setTimelineScrollLeft(scrollContainer.scrollLeft);
-    }, 200);
-  }, [embedded, handleSyncScroll, setTimelineScrollLeft]);
+    savePositionOnScroll(); // a no-op when embedded
+  }, [handleSyncScroll, savePositionOnScroll]);
   
   // Build staff assignments map with stacking info
   const staffAssignmentsMap = useMemo(() => {

@@ -17,7 +17,7 @@ import {
   startOfQuarter,
 } from 'date-fns';
 import type { ViewMode } from '@/types';
-import { addDaysToDateString, formatLocalDate } from '@/utils/date';
+import { addDaysToDateString, daysBetweenDateStrings, formatLocalDate } from '@/utils/date';
 
 // =============================================================================
 // TYPES
@@ -822,6 +822,55 @@ export function calculateTodayScrollLeft(
   const todayPosition = calculateTodayPosition(cells, cellWidth);
   if (todayPosition === null) return null;
   return Math.max(0, todayPosition - containerWidth / 2);
+}
+
+/**
+ * The date (YYYY-MM-DD) of the cell at a timeline's left edge for `scrollLeft`,
+ * or null without cells. Paired with `scrollLeftForDate`: a timeline keeps its
+ * place across cell sets by this date, never by its pixel offset — the same
+ * pixel is another date once weekends are hidden or the view mode changes.
+ */
+export function leftEdgeDate(cells: TimelineCell[], cellWidth: number, scrollLeft: number): string | null {
+  if (cells.length === 0) return null;
+  const index = Math.min(Math.max(Math.floor(scrollLeft / cellWidth), 0), cells.length - 1);
+  return cells[index].dateStr;
+}
+
+/**
+ * Index of the cell holding `date` (YYYY-MM-DD). A span cell (a quarter week,
+ * a year month) holds every day up to the next cell; a day cell holds only its
+ * own day, so a day with no cell (a hidden weekend day) falls to the next one,
+ * as in `findTodayCell`. Before the first cell: 0; after the last: the last.
+ */
+function cellIndexForDate(cells: TimelineCell[], date: string): number {
+  const next = cells.findIndex((cell) => cell.dateStr >= date);
+  if (next === -1) return cells.length - 1;
+  if (next === 0 || cells[next].dateStr === date) return next;
+  const previous = cells[next - 1];
+  const previousIsSpan =
+    previous.dateEnd !== undefined || daysBetweenDateStrings(previous.dateStr, cells[next].dateStr) >= 7;
+  return previousIsSpan ? next - 1 : next;
+}
+
+/** scrollLeft that puts the cell holding `date` at the left edge (0 without cells). */
+export function scrollLeftForDate(cells: TimelineCell[], cellWidth: number, date: string): number {
+  if (cells.length === 0) return 0;
+  return cellIndexForDate(cells, date) * cellWidth;
+}
+
+/**
+ * Where a timeline opens: on `anchorDate` at the left edge when this session
+ * left one (a view switch and back), otherwise centred on today. Computed from
+ * the cells it is given only — never from a stored pixel offset.
+ */
+export function openingScrollLeft(
+  cells: TimelineCell[],
+  cellWidth: number,
+  containerWidth: number,
+  anchorDate: string | null
+): number {
+  if (anchorDate) return scrollLeftForDate(cells, cellWidth, anchorDate);
+  return calculateTodayScrollLeft(cells, cellWidth, containerWidth) ?? 0;
 }
 
 /**

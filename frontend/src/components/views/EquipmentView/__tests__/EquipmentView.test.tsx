@@ -10,6 +10,7 @@ import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores'
 import { tagFilterKey } from '@/utils/tags';
 import { deleteEquipmentBlock } from '@/api';
 import { formatDateISO } from '@/utils/date';
+import { generateTimelineCells } from '@/components/gantt/utils/timeline';
 import { makeEquipment, makePhase, makeProject, makeSite, makeTeam, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
 import { buildEventDateSet } from '@/api';
@@ -424,5 +425,42 @@ describe('EquipmentView event strip', () => {
     useAppStore.setState({ companyEvents: stripEvents, companyEventDates: buildEventDateSet(stripEvents) });
     const { container } = render(<EquipmentView embedded />);
     expect(container.querySelector('[class*="markerLayer"]')).toBeNull();
+  });
+});
+
+describe('EquipmentView timeline position', () => {
+  const nextFrame = () => act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+  const anchor = () => useViewStore.getState().timelineAnchorDate;
+  function renderScroller(ui: React.ReactElement) {
+    const { container } = render(ui);
+    const scroller = container.querySelector('[class*="timelineScroll"]') as HTMLDivElement;
+    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 600 });
+    return scroller;
+  }
+
+  it("standalone: opens on the session's anchor date and anchors the left-edge date on scroll", async () => {
+    seed();
+    const now = new Date();
+    useViewStore.setState({ viewMode: 'month', currentDate: now, cellWidth: 30, timelineAnchorDate: isoOffset(-20) });
+    const cells = generateTimelineCells(now, 'month', new Set(), []);
+    const index = cells.findIndex((c) => c.dateStr === isoOffset(-20));
+    const scroller = renderScroller(<EquipmentView />);
+    await nextFrame();
+    expect(scroller.scrollLeft).toBe(index * 30);
+
+    scroller.scrollLeft = (index + 5) * 30;
+    fireEvent.scroll(scroller);
+    await waitFor(() => expect(anchor()).toBe(cells[index + 5].dateStr));
+  });
+
+  it('embedded: leaves the position and the anchor to the Gantt', async () => {
+    seed();
+    const scroller = renderScroller(<EquipmentView embedded />);
+    await nextFrame();
+    expect(scroller.scrollLeft).toBe(0);
+    scroller.scrollLeft = 300;
+    fireEvent.scroll(scroller);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(anchor()).toBeNull();
   });
 });
