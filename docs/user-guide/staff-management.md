@@ -24,7 +24,7 @@ The right side shows a horizontal timeline with:
 
 - **Assignment bars** — Colored by project, stacked when overlapping; a booking still [awaiting approval](#booking-yourself-when-approval-is-required) is hatched and does not count towards the workload
 - **Absence blocks** — Drawn in the color of their [absence type](vacations.md#absence-types). Only types that count as unavailable reduce capacity; a Home Office day is shown but leaves the person available
-- **Workload indicator** — Thin bar showing total utilization level
+- **Workload indicator** — Thin bar showing total utilization level (week and month zoom). Consecutive days that read the same — the same allocation, the same absence or closure — form one block with one label; hover it for the details and its dates
 - **Site closures** — Company events marked as closures make the staff of their sites unavailable; see [below](#site-closures-in-the-workload)
 - **Event strip** — The thin strip under the day labels of the timeline header lists every bank holiday and company event of a day, as on the [Gantt chart](gantt-charts.md#holidays-and-events-on-the-timeline)
 - **Bank holidays and company events** — Expandable rows at the bottom. Admins and superusers can click an entry to edit it, or **+** to add one, in [Settings](settings.md#bank-holidays); changes appear for other users straight away

@@ -6,7 +6,10 @@
  * - Total allocation percentage from all assignments
  * - Whether staff is on vacation (including recurring patterns)
  * - Contributing assignments for tooltip
- * - Visual state (overloaded, full, partial, vacation, conflict)
+ * - Visual state (overloaded, full, partial, vacation, conflict, nonworking)
+ *
+ * `workloadRuns` then merges adjacent cells that read the same into one block
+ * (the Staff overview draws one block per run, not one per day).
  */
 
 import { useMemo } from 'react';
@@ -60,8 +63,25 @@ export interface WorkloadCell {
   closureColor?: string;
   /** Available percentage (100 - total, or 0 if on vacation) */
   available: number;
-  /** Visual state for styling */
-  state: 'empty' | 'partial' | 'full' | 'overloaded' | 'vacation' | 'conflict';
+  /**
+   * Visual state for styling. `nonworking`: a day that is not a working day
+   * (a weekend while weekends are not working days) — drawn as nothing.
+   */
+  state: 'empty' | 'partial' | 'full' | 'overloaded' | 'vacation' | 'conflict' | 'nonworking';
+}
+
+/**
+ * One block of the Staff overview: cells `from`…`to` (indices, inclusive)
+ * that read the same, drawn with `workload` (the first cell's) and titled
+ * `tooltip`, covering `startDate`…`endDate`.
+ */
+export interface WorkloadRun {
+  from: number;
+  to: number;
+  workload: WorkloadCell;
+  tooltip: string;
+  startDate: string;
+  endDate: string;
 }
 
 /**
@@ -210,6 +230,68 @@ export function getWorkloadTooltip(workload: WorkloadCell): string {
   }
   
   return text;
+}
+
+/**
+ * The badge of a workload block: "OFF" when an absence or a site closure
+ * makes the person unavailable, "0%" on a conflict, the allocation otherwise;
+ * none for a cell without allocation (an available absence alone) or a
+ * non-working day.
+ */
+export function workloadLabel(workload: WorkloadCell): string | null {
+  switch (workload.state) {
+    case 'empty':
+    case 'nonworking':
+      return null;
+    case 'vacation':
+      return 'OFF';
+    case 'conflict':
+      return '0%';
+    default:
+      return `${workload.total}%`;
+  }
+}
+
+/** A cell the heatmap draws nothing for: no allocation, no absence, or a non-working day */
+function drawsNothing(workload: WorkloadCell): boolean {
+  if (workload.state === 'nonworking') return true;
+  return workload.total === 0 && !workload.isOnVacation && !workload.hasAvailableAbsence;
+}
+
+/**
+ * Merges the workload cells into runs (pure): cells that draw something and
+ * are adjacent by index join one run while they read the same — the badge,
+ * the state, the colour, the available-absence underline and the tooltip
+ * (so two different absences both reading "OFF" stay apart). Adjacency is by
+ * index, as in `eventLanes.ts`: with weekends hidden, Friday and the next
+ * Monday are neighbours and join. `dates` are the cells' `dateStr`s.
+ */
+export function workloadRuns(cells: WorkloadCell[], dates: string[]): WorkloadRun[] {
+  const runs: WorkloadRun[] = [];
+  let key: string | null = null;
+  cells.forEach((workload, index) => {
+    if (drawsNothing(workload)) {
+      key = null;
+      return;
+    }
+    const tooltip = getWorkloadTooltip(workload);
+    const cellKey = JSON.stringify([
+      workloadLabel(workload),
+      workload.state,
+      workload.closureColor ?? workload.absenceColor ?? null,
+      !!workload.hasAvailableAbsence,
+      tooltip,
+    ]);
+    const last = runs[runs.length - 1];
+    if (last && key === cellKey && last.to === index - 1) {
+      last.to = index;
+      last.endDate = dates[index];
+      return;
+    }
+    key = cellKey;
+    runs.push({ from: index, to: index, workload, tooltip, startDate: dates[index], endDate: dates[index] });
+  });
+  return runs;
 }
 
 /**

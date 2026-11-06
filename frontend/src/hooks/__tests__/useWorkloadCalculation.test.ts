@@ -1,11 +1,19 @@
 /**
  * Only absences that count as unavailable zero a person's capacity in the
  * Staff heatmap. An available one (Home Office) leaves the workload alone but
- * is still named in the cell tooltip.
+ * is still named in the cell tooltip. `workloadRuns` merges adjacent cells
+ * that read the same into one block.
  */
 
 import { describe, it, expect } from 'vitest';
-import { calculateWorkloadCells, getWorkloadTooltip, getWorkloadBackground } from '../useWorkloadCalculation';
+import {
+  calculateWorkloadCells,
+  getWorkloadTooltip,
+  getWorkloadBackground,
+  workloadLabel,
+  workloadRuns,
+} from '../useWorkloadCalculation';
+import type { WorkloadCell } from '../useWorkloadCalculation';
 import { indexAbsenceTypes } from '@/utils/recurringVacation';
 import { buildClosureIndex, getClosureOn } from '@/utils/siteClosure';
 import type { TimelineCell } from '@/components/gantt/utils';
@@ -125,5 +133,101 @@ describe('calculateWorkloadCells with site closures', () => {
       new Map([['2026-03-10', { ...shutdown, color: null }]])
     );
     expect(w.closureColor).toBe('#ef4444');
+  });
+});
+
+describe('workloadRuns', () => {
+  /** Consecutive days from 2026-03-02 (a Monday) */
+  const days = (n: number, from = 2) =>
+    Array.from({ length: n }, (_, i) => `2026-03-${String(from + i).padStart(2, '0')}`);
+  const at = (assignments: typeof assignment[], dates: string[], vacations: Vacation[] = []) =>
+    calculateWorkloadCells(assignments, vacations, dates.map(cell), 100, byId);
+  const spans = (runs: ReturnType<typeof workloadRuns>) => runs.map((r) => [r.from, r.to, workloadLabel(r.workload)]);
+
+  it('joins adjacent cells with the same allocation into one run with its dates', () => {
+    const dates = days(5);
+    const runs = workloadRuns(at([{ ...assignment, allocation: 75 }], dates), dates);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      from: 0,
+      to: 4,
+      tooltip: '75% allocated',
+      startDate: '2026-03-02',
+      endDate: '2026-03-06',
+    });
+    expect(runs[0].workload).toMatchObject({ total: 75, state: 'partial' });
+  });
+
+  it('splits where the total changes, and keeps a one-day run', () => {
+    const dates = days(5);
+    const extra = { ...assignment, id: 2, allocation: 50, start_date: '2026-03-04', end_date: '2026-03-04' };
+    const runs = workloadRuns(at([assignment, extra], dates), dates);
+    expect(spans(runs)).toEqual([
+      [0, 1, '50%'],
+      [2, 2, '100%'],
+      [3, 4, '50%'],
+    ]);
+    expect(runs[1]).toMatchObject({ startDate: '2026-03-04', endDate: '2026-03-04' });
+  });
+
+  it('skips the cells that draw nothing and splits a run around them', () => {
+    const dates = days(5);
+    const short = { ...assignment, start_date: '2026-03-02', end_date: '2026-03-03' };
+    const late = { ...assignment, id: 2, start_date: '2026-03-05', end_date: '2026-03-06' };
+    expect(spans(workloadRuns(at([short, late], dates), dates))).toEqual([
+      [0, 1, '50%'],
+      [3, 4, '50%'],
+    ]);
+    expect(workloadRuns(at([], dates), dates)).toEqual([]);
+  });
+
+  it('joins Friday and the next Monday when the weekend cells are hidden (adjacent by index)', () => {
+    const dates = ['2026-03-05', '2026-03-06', '2026-03-09', '2026-03-10'];
+    const runs = workloadRuns(at([assignment], dates), dates);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ from: 0, to: 3, startDate: '2026-03-05', endDate: '2026-03-10' });
+  });
+
+  it('keeps two different absences apart even though both read "OFF"', () => {
+    const dates = days(2);
+    const sick: Vacation = { ...vacation(1), id: 2, start_date: '2026-03-02', end_date: '2026-03-02', description: 'Sick' };
+    const leave: Vacation = { ...vacation(1), id: 3, start_date: '2026-03-03', end_date: '2026-03-03', description: 'Leave' };
+    const runs = workloadRuns(at([], dates, [sick, leave]), dates);
+    expect(spans(runs)).toEqual([
+      [0, 0, 'OFF'],
+      [1, 1, 'OFF'],
+    ]);
+  });
+
+  it('keeps an available absence (no badge) apart from the plain days around it', () => {
+    const dates = days(3);
+    const runs = workloadRuns(at([assignment], dates, [vacation(2)]), dates);
+    expect(runs.map((r) => [r.from, r.to, !!r.workload.hasAvailableAbsence])).toEqual([
+      [0, 0, false],
+      [1, 1, true],
+      [2, 2, false],
+    ]);
+  });
+
+  it('skips non-working cells: a run stops before one', () => {
+    const dates = days(4);
+    const cells: WorkloadCell[] = at([assignment], dates);
+    cells[2] = { ...cells[2], state: 'nonworking' };
+    expect(spans(workloadRuns(cells, dates))).toEqual([
+      [0, 1, '50%'],
+      [3, 3, '50%'],
+    ]);
+  });
+});
+
+describe('workloadLabel', () => {
+  const base = calculateWorkloadCells([assignment], [], [cell('2026-03-10')], 100, byId)[0];
+
+  it('reads the allocation, OFF, 0 % on a conflict, and nothing on an empty or non-working day', () => {
+    expect(workloadLabel(base)).toBe('50%');
+    expect(workloadLabel({ ...base, state: 'vacation' })).toBe('OFF');
+    expect(workloadLabel({ ...base, state: 'conflict' })).toBe('0%');
+    expect(workloadLabel({ ...base, state: 'empty' })).toBeNull();
+    expect(workloadLabel({ ...base, state: 'nonworking' })).toBeNull();
   });
 });

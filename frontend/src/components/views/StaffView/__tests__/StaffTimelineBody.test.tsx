@@ -2,6 +2,8 @@
  * Vacation bars on the staff timeline follow the same rule as the left panel:
  * a person may edit their own absences, admins and superusers anyone's.
  * Otherwise a bar is tooltip-only (the backend would answer 403 on save).
+ * The workload heatmap draws one block per run of days that read the same,
+ * titled with its dates.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -12,8 +14,10 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
+import { formatMediumDate } from '@/utils/date';
 import type { Staff, Vacation } from '@/types';
 import { makeTeam, makeUser } from '@/test/factories';
+import type { StaffAssignmentWithContext } from '../StaffView';
 
 const bob: Staff = { id: 4, name: 'Bob Brown', site_id: 1, active: true };
 
@@ -122,7 +126,9 @@ describe('StaffTimelineBody site closures', () => {
 
     const rows = Array.from(container.querySelectorAll<HTMLElement>('[class*="staffWrapper"]'));
     expect(rows).toHaveLength(3);
-    const closed = (row: HTMLElement, name: string) => within(row).queryAllByTitle(`Site closed: ${name}`).length;
+    // The block's title carries its dates after the tooltip
+    const closed = (row: HTMLElement, name: string) =>
+      within(row).queryAllByTitle(new RegExp(`^Site closed: ${name} · `)).length;
     // The member
     expect(closed(rows[0], 'Team offsite')).toBe(1);
     expect(closed(rows[0], 'Shutdown')).toBe(1);
@@ -131,6 +137,70 @@ describe('StaffTimelineBody site closures', () => {
       expect(closed(row, 'Team offsite')).toBe(0);
       expect(closed(row, 'Shutdown')).toBe(1);
     }
+  });
+});
+
+describe('StaffTimelineBody workload blocks', () => {
+  const booking = (over: Partial<StaffAssignmentWithContext>): StaffAssignmentWithContext => ({
+    id: 31,
+    staff_id: 4,
+    allocation: 75,
+    start_date: '2026-09-14',
+    end_date: '2026-09-18',
+    projectName: 'Formulation study',
+    projectId: 9,
+    level: 'project',
+    ...over,
+  });
+
+  function renderBookings(assignments: StaffAssignmentWithContext[], viewMode: 'month' | 'quarter' = 'month') {
+    seedUser({ id: 1, role: 'admin' });
+    // No site closure left over from another test
+    act(() => useAppStore.getState().setCompanyEvents([], new Set()));
+    const cells = generateTimelineCells(new Date(2026, 8, 15), viewMode, new Set(), []);
+    const utils = render(
+      <StaffTimelineBody
+        staff={[bob]}
+        assignmentsMap={new Map([[4, assignments]])}
+        vacationsMap={new Map()}
+        rowHeights={new Map([[4, 44]])}
+        expandedStaff={new Set()}
+        expandedBankHolidays={false}
+        expandedCompanyEvents={false}
+        cells={cells}
+        cellWidth={30}
+        totalWidth={cells.length * 30}
+        viewMode={viewMode}
+      />
+    );
+    const blocks = () => [...utils.container.querySelectorAll<HTMLElement>('[class*="workloadCell"]')];
+    return { ...utils, cells, blocks };
+  }
+
+  it('draws a 5-day 75 % booking as one block, five cells wide, with one badge', () => {
+    const { cells, blocks } = renderBookings([booking({})]);
+    expect(blocks()).toHaveLength(1);
+    const [block] = blocks();
+    const monday = cells.findIndex((c) => c.dateStr === '2026-09-14');
+    expect(block.style.left).toBe(`${monday * 30}px`);
+    expect(block.style.width).toBe(`${5 * 30}px`);
+    expect(block).toHaveTextContent(/^75%$/);
+    expect(block.title).toBe(`75% allocated · ${formatMediumDate('2026-09-14')} – ${formatMediumDate('2026-09-18')}`);
+  });
+
+  it('splits where the allocation changes and names a one-day block with its date', () => {
+    const { blocks } = renderBookings([
+      booking({ end_date: '2026-09-17' }),
+      booking({ id: 32, allocation: 25, start_date: '2026-09-18', end_date: '2026-09-18' }),
+    ]);
+    expect(blocks().map((b) => b.textContent)).toEqual(['75%', '25%']);
+    expect(blocks().map((b) => b.style.width)).toEqual(['120px', '30px']);
+    expect(blocks()[1].title).toBe(`25% allocated · ${formatMediumDate('2026-09-18')}`);
+  });
+
+  it('draws no block at quarter zoom', () => {
+    const { blocks } = renderBookings([booking({})], 'quarter');
+    expect(blocks()).toHaveLength(0);
   });
 });
 

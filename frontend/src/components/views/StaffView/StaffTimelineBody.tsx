@@ -3,7 +3,8 @@
  * Timeline body for staff view - shows stacked assignments and vacations
  * Uses same structure as TimelineBody from main Gantt
  * Supports expanded view with detail rows for vacations and assignments
- * Includes workload heatmap visualization per cell
+ * Includes the workload heatmap: one block per run of adjacent days that read
+ * the same (`workloadRuns`), not one per day
  */
 
 import { forwardRef, useMemo } from 'react';
@@ -18,7 +19,8 @@ import { useUIStore } from '@/stores/uiStore';
 import { useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
-import { useWorkloadCalculation, getWorkloadTooltip, getWorkloadBackground } from '@/hooks';
+import { useWorkloadCalculation, getWorkloadBackground, workloadLabel, workloadRuns } from '@/hooks';
+import { formatMediumDate } from '@/utils/date';
 import {
   parseRecurringPattern,
   absenceTypeFor,
@@ -292,6 +294,11 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
   
   // Only show workload heatmap in week/month view (not quarter/year - cells too small)
   const showWorkloadHeatmap = viewMode === 'week' || viewMode === 'month';
+  // Adjacent days that read the same make one block
+  const runs = useMemo(
+    () => (showWorkloadHeatmap ? workloadRuns(workloadCells, cells.map((c) => c.dateStr)) : []),
+    [showWorkloadHeatmap, workloadCells, cells]
+  );
   
   // Calculate bar positions and stack them
   const stackedBars = useMemo(() => {
@@ -433,18 +440,20 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
   
   return (
     <div className={styles.row} style={{ height: rowHeight }}>
-      {/* Workload heatmap cells - only in the indicator area at bottom */}
-      {showWorkloadHeatmap && workloadCells.map((workload, index) => {
-        // Only render cells with workload or an absence (skip empty cells)
-        if (workload.total === 0 && !workload.isOnVacation && !workload.hasAvailableAbsence) return null;
-        
+      {/* Workload heatmap blocks (one per run of equal days) - only in the indicator area at bottom */}
+      {runs.map(({ from, to, workload, tooltip, startDate, endDate }) => {
+        const label = workloadLabel(workload);
+        const dates =
+          startDate === endDate
+            ? formatMediumDate(startDate)
+            : `${formatMediumDate(startDate)} – ${formatMediumDate(endDate)}`;
         return (
           <div
-            key={`workload-${index}`}
+            key={`workload-${from}`}
             className={`${styles.workloadCell} ${styles[workload.state]} ${workload.hasAvailableAbsence ? styles.availableAbsence : ''}`}
             style={{
-              left: index * cellWidth,
-              width: cellWidth,
+              left: from * cellWidth,
+              width: (to - from + 1) * cellWidth,
               top: indicatorTop,
               height: INDICATOR_AREA_HEIGHT,
               ...((workload.closureColor ?? workload.absenceColor)
@@ -452,15 +461,11 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
                 : {}),
               ...getWorkloadBackground(workload),
             }}
-            title={getWorkloadTooltip(workload)}
+            title={`${tooltip} · ${dates}`}
           >
             {/* Workload indicator badge ("OFF" when an absence or a site closure makes them unavailable) */}
-            {workload.state !== 'empty' && (
-              <div className={`${styles.workloadIndicator} ${styles[workload.state]}`}>
-                {workload.state === 'vacation' ? 'OFF' : 
-                 workload.state === 'conflict' ? '0%' :
-                 `${workload.total}%`}
-              </div>
+            {label !== null && (
+              <div className={`${styles.workloadIndicator} ${styles[workload.state]}`}>{label}</div>
             )}
           </div>
         );
