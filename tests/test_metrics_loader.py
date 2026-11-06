@@ -22,6 +22,7 @@ from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock,
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.project_field import ProjectField, ProjectFieldOption, ProjectFieldSelection
 from app.models.rbac import Role
+from app.models.settings import Settings
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.tag import ProjectTag, Tag
 from app.models.team import CompanyEventTeam, ProjectTeam, Team, TeamMember
@@ -955,3 +956,45 @@ async def test_loaded_equipment_aggregates(equipment_db):
     )
     # Booked days on the project's site: the oven's two days count there.
     assert ask("equipment_booked_days", "site") == ([("Frankfurt", 9), ("Winterthur", 11)], 20)
+
+
+async def test_load_facts_reads_weekends_are_working_days(capacity_db):
+    """
+    The setting is read in the loader's session; off (no row) keeps weekend
+    holidays and absences out, ``true`` brings them in.
+    """
+    capacity_db.add_all(
+        [
+            # A Saturday holiday at Winterthur and Ann's absent weekend.
+            BankHoliday(site_id=1, date=d("2026-03-07"), name="Saturday", year=2026),
+            Vacation(
+                staff_id=1,
+                start_date=d("2026-03-14"),
+                end_date=d("2026-03-15"),
+                absence_type_id=1,
+            ),
+        ]
+    )
+    await capacity_db.flush()
+
+    off = await _load_capacity(capacity_db)
+    assert off.weekends_working is False
+    assert off.capacity[1].off_days == march(ANN_OFF)
+    assert d("2026-03-07") not in off.holidays[1]
+
+    capacity_db.add(Settings(key="weekend_working_days", value="true"))
+    await capacity_db.flush()
+
+    on = await _load_capacity(capacity_db)
+    assert on.weekends_working is True
+    assert d("2026-03-07") in on.holidays[1]
+    assert on.capacity[1].off_days == march(sorted([*ANN_OFF, "07", "14", "15"]))
+    # Bob (Winterthur) gets the Saturday holiday; his [R:1,3] course still
+    # takes Mondays and Wednesdays only.
+    assert on.capacity[2].off_days == march(sorted([*BOB_OFF, "07"]))
+
+
+async def test_a_stray_weekends_value_reads_as_off(capacity_db):
+    capacity_db.add(Settings(key="weekend_working_days", value="yes"))
+    await capacity_db.flush()
+    assert (await _load_capacity(capacity_db)).weekends_working is False

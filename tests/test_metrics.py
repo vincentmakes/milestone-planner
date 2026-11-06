@@ -2813,3 +2813,130 @@ def test_equipment_utilisation_rule():
     assert rule(5.0, 0.0, {}) is None
     assert rule(0.0, 0.0, {}) == 0.0
     assert rule(22.0, 20.0, {}) == pytest.approx(110.0)
+
+
+# ---------------------------------------------------------------------------
+# Weekends are working days (2.5.0, ``Facts.weekends_working``)
+# ---------------------------------------------------------------------------
+# Off (the default) every number above stays Monday to Friday; these cases
+# turn the setting on and check each place the rule reaches. One week =
+# Monday 2 to Sunday 8 March 2026.
+
+WEEK = {"from": "2026-03-02", "to": "2026-03-08"}
+
+
+def weekend_facts(on: bool, **kwargs: Any) -> Facts:
+    case = facts(**kwargs)
+    case.weekends_working = on
+    return case
+
+
+def weekend_capacity(on: bool, absences: tuple[AbsenceSpan, ...] = (), **kwargs: Any):
+    off_days = metrics.person_off_days(
+        MARCH_DAYS,
+        (1,),
+        (),
+        kwargs.get("holidays", {}),
+        absences,
+        kwargs.get("closures", ()),
+        FACT_TEAM_SITES,
+        weekends_working=on,
+    )
+    return CapacityFact(1, "Ann", (1,), (), 100, off_days)
+
+
+@pytest.mark.parametrize(("on", "days"), [(False, 0), (True, 2)])
+def test_a_weekend_booking_counts_only_when_weekends_are_working_days(on, days):
+    case = weekend_facts(on, bookings=[booking(1, "2026-03-07", "2026-03-08")])
+    assert aggregate(case, q("booked_days"), viewer=FULL).total == days
+
+
+@pytest.mark.parametrize(("on", "days"), [(False, 2), (True, 4)])
+def test_a_friday_to_monday_booking(on, days):
+    case = weekend_facts(on, bookings=[booking(1, "2026-03-06", "2026-03-09")])
+    assert aggregate(case, q("booked_days"), viewer=FULL).total == days
+
+
+@pytest.mark.parametrize(("on", "weeks"), [(False, 1), (True, 1)])
+def test_a_whole_week_is_one_week_either_way(on, weeks):
+    # 5 days / 5 off, 7 days / 7 on: the divisor follows the setting.
+    case = weekend_facts(on, bookings=[booking(1, "2026-03-02", "2026-03-08")])
+    assert aggregate(case, q("booked_weeks", period=WEEK), viewer=FULL).total == weeks
+    assert aggregate(case, q("project_weeks", period=WEEK), viewer=FULL).total == weeks
+
+
+def test_the_weeks_divisor_is_seven_when_weekends_are_working_days():
+    # Monday to Friday at 100 %: 5 of 7 days of a week.
+    case = weekend_facts(True, bookings=[booking(1, "2026-03-02", "2026-03-06")])
+    assert aggregate(case, q("booked_weeks"), viewer=FULL).total == pytest.approx(0.71, abs=0.01)
+    assert aggregate(case, q("booked_days"), viewer=FULL).total == 5
+
+
+@pytest.mark.parametrize(("on", "days"), [(False, 5), (True, 7)])
+def test_capacity_per_week(on, days):
+    case = weekend_facts(on, capacity=[weekend_capacity(on)])
+    assert aggregate(case, q("capacity_days", period=WEEK), viewer=FULL).total == days
+
+
+@pytest.mark.parametrize(("on", "days"), [(False, 22), (True, 27)])
+def test_a_saturday_recurring_absence_counts_only_when_weekends_are_working_days(on, days):
+    # [R:6] = every Saturday: 7, 14, 21 and 28 March.
+    saturdays = (absence("2026-03-01", "2026-03-31", "[R:6] Saturdays"),)
+    case = weekend_facts(on, capacity=[weekend_capacity(on, saturdays)])
+    assert aggregate(case, q("capacity_days"), viewer=FULL).total == days
+
+
+@pytest.mark.parametrize(("on", "days"), [(False, 5), (True, 5)])
+def test_a_weekend_closure_takes_capacity_only_when_weekends_are_working_days(on, days):
+    closures = (closure("2026-03-07", "2026-03-08"),)
+    case = weekend_facts(on, capacity=[weekend_capacity(on, closures=closures)])
+    assert aggregate(case, q("capacity_days", period=WEEK), viewer=FULL).total == days
+
+
+@pytest.mark.parametrize(("on", "days"), [(False, 5), (True, 6)])
+def test_a_saturday_holiday_is_kept_only_when_weekends_are_working_days(on, days):
+    holidays = expand_holidays(
+        [(1, d("2026-03-07"), None)], (d("2026-03-01"), d("2026-03-31")), weekends_working=on
+    )
+    assert holidays == ({1: [d("2026-03-07")]} if on else {})
+    case = weekend_facts(on, bookings=[booking(1, "2026-03-02", "2026-03-08")], holidays=holidays)
+    assert aggregate(case, q("booked_days"), viewer=FULL).total == days
+
+
+@pytest.mark.parametrize(("on", "utilisation"), [(False, 0), (True, 6.9)])
+def test_equipment_availability_follows_the_setting(on, utilisation):
+    # A Sunday-to-Monday block: 1 March is a Sunday, 2 March a Monday.
+    off_days = metrics.equipment_off_days(
+        MARCH_DAYS, (1,), {}, [(d("2026-03-01"), d("2026-03-02"))], weekends_working=on
+    )
+    assert off_days == ((d("2026-03-01"), d("2026-03-02")) if on else (d("2026-03-02"),))
+    case = weekend_facts(
+        on,
+        equipment_bookings=[used(1, "2026-03-07", "2026-03-08")],
+        availability=[EquipmentAvailabilityFact(1, (1,), off_days)],
+    )
+    # On: the weekend booking's 2 days over 31 - 2 available days; off: 0 of 21.
+    assert aggregate(case, q("equipment_utilisation"), viewer=FULL).total == utilisation
+
+
+def test_the_calendar_helpers_default_to_weekends_off():
+    assert metrics.weekday_count(d("2026-03-02"), d("2026-03-08")) == 5
+    assert metrics.weekday_count(d("2026-03-02"), d("2026-03-08"), weekends_working=True) == 7
+    assert working_days(d("2026-03-02"), d("2026-03-08"), [d("2026-03-07")]) == 5
+    assert (
+        working_days(d("2026-03-02"), d("2026-03-08"), [d("2026-03-07")], weekends_working=True)
+        == 6
+    )
+    assert metrics.off_days_within(MARCH_DAYS, [d("2026-03-07")]) == ()
+    assert metrics.off_days_within(MARCH_DAYS, [d("2026-03-07")], weekends_working=True) == (
+        d("2026-03-07"),
+    )
+    assert metrics.capacity_days(d("2026-03-02"), d("2026-03-08"), (), 50) == 2.5
+    assert (
+        metrics.capacity_days(d("2026-03-02"), d("2026-03-08"), (), 50, weekends_working=True)
+        == 3.5
+    )
+    calendar = WorkingCalendar({})
+    assert (calendar.weekends_working, calendar.days_per_week) == (False, 5)
+    assert WorkingCalendar({}, True).days_per_week == 7
+    assert Facts.__dataclass_fields__["weekends_working"].default is False

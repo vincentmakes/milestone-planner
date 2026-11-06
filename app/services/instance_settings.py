@@ -15,6 +15,12 @@ before validation keep. ``FLAG_DISABLES`` names the permission keys a switch
 turned off takes away from everyone, admins included (``PermissionSet``'s
 ``disabled_keys``).
 
+``weekend_working_days`` (2.5.0, *Weekends are working days*) is a boolean
+but **not a switch** in that sense: it is off by default, so it is on only
+when its row reads ``true`` (``weekends_working_from``: ``value.strip().lower()
+== "true"``; the client's ``selectWeekendsWorking`` compares with ``'true'``).
+A missing, empty or malformed row keeps Monday to Friday.
+
 Import-light like app/services/permissions.py: the model is imported inside
 the readers.
 """
@@ -237,6 +243,12 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     # 2.4.0: how long audit-log rows are kept, in days (0 = forever);
     # app/services/audit_log.purge_old applies it.
     "audit_log_retention_days": SettingSpec(_int_range(0, 3650), "365"),
+    # 2.5.0: the timeline's Saturday and Sunday columns (a switch, display only).
+    "show_weekends": SettingSpec(_boolean, "true"),
+    # 2.5.0: Saturdays and Sundays count as working days in the dashboards,
+    # capacity and availability. Off by default -- NOT a switch: read it with
+    # ``weekends_working_from``, never ``flag_enabled``.
+    "weekend_working_days": SettingSpec(_boolean, "false"),
 }
 
 # The settings Settings -> Project fields saves: writable with
@@ -278,6 +290,14 @@ def flag_enabled(value: str | None) -> bool:
     return value != "false"
 
 
+def weekends_working_from(value: str | None) -> bool:
+    """
+    Whether the stored ``weekend_working_days`` is on: only a row reading
+    ``true`` (no row, or anything else: off -- not a switch, see above).
+    """
+    return value is not None and value.strip().lower() == "true"
+
+
 def volume_decimals_from(value: str | None) -> int | None:
     """
     The decimals the stored ``volume_decimals`` keeps Volume to (None = as
@@ -312,6 +332,11 @@ async def get_value(db: "AsyncSession", key: str) -> str | None:
 async def is_enabled(db: "AsyncSession", key: str) -> bool:
     """Whether the switch ``key`` is on (one query)."""
     return flag_enabled(await get_value(db, key))
+
+
+async def weekends_working(db: "AsyncSession") -> bool:
+    """Whether Saturdays and Sundays are working days (one query, off by default)."""
+    return weekends_working_from(await get_value(db, "weekend_working_days"))
 
 
 async def volume_decimals(db: "AsyncSession") -> int | None:

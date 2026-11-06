@@ -28,11 +28,16 @@ runs once per side and ``_combine_composite`` folds the two sums.
 
 Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
 
-- **Working day** = Monday to Friday, not a bank holiday of the *project's*
-  site (multi-day holidays count every weekday they cover); a site-less
-  project only skips weekends. Counted arithmetically, never by expanding days.
+- **Working day** = a working day of ``app/services/working_days.py`` --
+  Monday to Friday, or every day when the instance setting
+  ``weekend_working_days`` is on (``Facts.weekends_working``, read by
+  ``load_facts``; off by default) -- that is not a bank holiday of the
+  *project's* site (multi-day holidays count every working day they cover); a
+  site-less project only skips the non-working days. Counted arithmetically,
+  never by expanding days.
 - ``booked_days`` = sum of allocation / 100 x working days of (booking span x
-  period x bucket); ``booked_weeks`` = that / 5. ``project_weeks`` /
+  period x bucket); ``booked_weeks`` = that / the working days per week (5,
+  or 7 with weekends on: ``WORKING_DAYS_PER_WEEK``). ``project_weeks`` /
   ``phase_weeks`` prorate the project's / phase's span the same way (no
   allocation). ``project_count`` counts a project in every period bucket its
   span touches; ``project_volume`` adds each project's volume once.
@@ -42,7 +47,7 @@ Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
   (``include`` / ``only`` / ``exclude``) applies to every phase measure.
 - The **capacity** family (``views.staff``): ``capacity_days`` = sum over the
   bookable people (active, *Bookable as a resource*, members of a visible
-  site) of max_capacity / 100 x (weekdays - their off days) of (period x
+  site) of max_capacity / 100 x (working days - their off days) of (period x
   bucket); off days are bank holidays at any of their sites, unavailable
   absences (``[R:...]`` ones on their pattern days only) and the site
   closures that apply to them. ``utilisation`` = booked days / capacity days x
@@ -58,8 +63,8 @@ Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
   count bookings / distinct equipment; ``equipment_utilisation`` = booked
   days / available days x 100, where an active equipment of a visible site
   (any active equipment when every site is visible) is available on the
-  weekdays that are not a bank holiday at one of its sites nor inside one of
-  its blocks. Overlapping bookings add up, so a double-booked instrument
+  working days that are not a bank holiday at one of its sites nor inside
+  one of its blocks. Overlapping bookings add up, so a double-booked instrument
   reads over 100 %. Utilisation counts only the bookings of equipment with
   an availability and reads ``site`` (dimension and filter) from the
   equipment on both sides; the booking measures keep the project's site.
@@ -89,7 +94,7 @@ the loader only, so the schemas can import the constants cheaply.
 from __future__ import annotations
 
 import json
-from bisect import bisect_left, bisect_right
+from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -99,6 +104,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from app.services.absence_patterns import absence_weekdays, parse_recurring_days
 from app.services.booking_segments import effective_dates
 from app.services.card_status import CARD_STATUSES
+from app.services.working_days import WORKING_DAYS_PER_WEEK, count_working_days, is_working_day
 
 if TYPE_CHECKING:
     from sqlalchemy import ColumnElement
@@ -746,7 +752,7 @@ class CapacityFact:
 
     ``site_ids`` are their live ``user_sites`` (not cut to the visible sites:
     the visible sites only decide who is loaded), ``team_ids`` every team they
-    are in. ``off_days`` are the sorted weekdays of the loaded period they
+    are in. ``off_days`` are the sorted working days of the loaded period they
     cannot work: a bank holiday at any of their sites, an unavailable absence
     (recurring ones on their pattern days only) or a site closure that
     applies to them (``closure_applies``).
@@ -789,7 +795,7 @@ class EquipmentAvailabilityFact:
     active equipment, site-less included, when every site is visible).
 
     ``site_ids`` are all its sites (the visible sites only decide which
-    equipment is loaded); ``off_days`` the sorted weekdays of the loaded
+    equipment is loaded); ``off_days`` the sorted working days of the loaded
     period it is not available: a bank holiday at any of its sites, or a day
     inside one of its blocks (``equipment_off_days``).
     """
@@ -837,7 +843,7 @@ class Facts:
     projects: dict[int, ProjectFact]
     phases: list[PhaseFact]
     bookings: list[BookingFact]
-    # site id -> sorted weekday holiday days (multi-day rows expanded)
+    # site id -> sorted working-day holiday days (multi-day rows expanded)
     holidays: dict[int, list[date]]
     persons: dict[int, str]
     teams: dict[int, TeamInfo]
@@ -862,6 +868,10 @@ class Facts:
     # depth) inside the period: ``start = end`` = their date, ``type`` = the
     # top phase's type. Read by Phases due / Phases overdue only.
     milestones: list[PhaseFact] = field(default_factory=list)
+    # The instance setting ``weekend_working_days`` (2.5.0): Saturdays and
+    # Sundays are working days. ``holidays`` and the off days were expanded
+    # with it, ``aggregate`` builds its ``WorkingCalendar`` from it.
+    weekends_working: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -869,38 +879,47 @@ class Facts:
 # ---------------------------------------------------------------------------
 
 
-def weekday_count(a: date, b: date) -> int:
-    """Monday-to-Friday days in ``[a, b]`` (0 when ``b < a``), by arithmetic."""
-    if b < a:
-        return 0
-    days = (b - a).days + 1
-    weeks, rest = divmod(days, 7)
-    first = a.weekday()
-    return weeks * 5 + sum(1 for i in range(rest) if (first + i) % 7 < 5)
+def weekday_count(a: date, b: date, *, weekends_working: bool = False) -> int:
+    """Working days in ``[a, b]`` (0 when ``b < a``), by arithmetic (``working_days.py``)."""
+    return count_working_days(a, b, weekends_working=weekends_working)
 
 
-def working_days(a: date, b: date, holidays_sorted: Sequence[date]) -> int:
-    """Weekdays of ``[a, b]`` minus the holidays in it (sorted, unique, weekdays only)."""
-    if b < a:
-        return 0
-    inside = bisect_right(holidays_sorted, b) - bisect_left(holidays_sorted, a)
-    return weekday_count(a, b) - inside
+def working_days(
+    a: date, b: date, holidays_sorted: Sequence[date], *, weekends_working: bool = False
+) -> int:
+    """Working days of ``[a, b]`` minus the holidays in it (sorted, unique, working days only)."""
+    return count_working_days(a, b, weekends_working=weekends_working, off_days=holidays_sorted)
 
 
-def capacity_days(a: date, b: date, off_days: Sequence[date], max_capacity: int) -> float:
+def capacity_days(
+    a: date,
+    b: date,
+    off_days: Sequence[date],
+    max_capacity: int,
+    *,
+    weekends_working: bool = False,
+) -> float:
     """
-    The days of ``[a, b]`` a person can work, at ``max_capacity`` %: weekdays
-    minus their off days in it (sorted, unique, weekdays only), by ``bisect``.
+    The days of ``[a, b]`` a person can work, at ``max_capacity`` %: working
+    days minus their off days in it (sorted, unique, working days only), by
+    ``bisect``.
     """
-    return working_days(a, b, off_days) * max_capacity / 100
+    return working_days(a, b, off_days, weekends_working=weekends_working) * max_capacity / 100
 
 
-def off_days_within(period: tuple[date, date], *day_sets: Iterable[date]) -> tuple[date, ...]:
-    """The sorted, unique weekdays of ``period`` found in any of ``day_sets``."""
+def off_days_within(
+    period: tuple[date, date], *day_sets: Iterable[date], weekends_working: bool = False
+) -> tuple[date, ...]:
+    """The sorted, unique working days of ``period`` found in any of ``day_sets``."""
     start, end = period
     return tuple(
         sorted(
-            {day for days in day_sets for day in days if start <= day <= end and day.weekday() < 5}
+            {
+                day
+                for days in day_sets
+                for day in days
+                if start <= day <= end and is_working_day(day, weekends_working)
+            }
         )
     )
 
@@ -953,11 +972,14 @@ def person_off_days(
     absences: Iterable[AbsenceSpan],
     closures: Iterable[ClosureSpan],
     team_sites: Mapping[int, int | None],
+    *,
+    weekends_working: bool = False,
 ) -> tuple[date, ...]:
     """
     A person's off days in ``period`` (``CapacityFact.off_days``): the bank
     holidays of any of their sites, their unavailable absences (a recurring
-    one on its pattern days only) and the closures that apply to them.
+    one on its pattern days only) and the closures that apply to them --
+    working days only (``weekends_working``: Saturdays and Sundays too).
     """
     start, end = period
     day_sets: list[Iterable[date]] = [holidays.get(site_id, ()) for site_id in site_ids]
@@ -965,14 +987,24 @@ def person_off_days(
         if absence.unavailable:
             days = parse_recurring_days(absence.description)
             day_sets.append(
-                absence_weekdays(max(absence.start, start), min(absence.end, end), days)
+                absence_weekdays(
+                    max(absence.start, start),
+                    min(absence.end, end),
+                    days,
+                    weekends_working=weekends_working,
+                )
             )
     for closure in closures:
         if closure_applies(closure.site_ids, closure.team_ids, site_ids, team_ids, team_sites):
             day_sets.append(
-                absence_weekdays(max(closure.start, start), min(closure.end, end), None)
+                absence_weekdays(
+                    max(closure.start, start),
+                    min(closure.end, end),
+                    None,
+                    weekends_working=weekends_working,
+                )
             )
-    return off_days_within(period, *day_sets)
+    return off_days_within(period, *day_sets, weekends_working=weekends_working)
 
 
 def equipment_off_days(
@@ -980,41 +1012,61 @@ def equipment_off_days(
     site_ids: Sequence[int],
     holidays: Mapping[int, Sequence[date]],
     blocks: Iterable[tuple[date, date]],
+    *,
+    weekends_working: bool = False,
 ) -> tuple[date, ...]:
     """
     An equipment's off days in ``period`` (``EquipmentAvailabilityFact.off_days``):
-    the bank holidays of any of its sites and the weekdays of its blocks
+    the bank holidays of any of its sites and the working days of its blocks
     (``(start, end)`` pairs).
     """
     start, end = period
     day_sets: list[Iterable[date]] = [holidays.get(site_id, ()) for site_id in site_ids]
     for first, last in blocks:
-        day_sets.append(absence_weekdays(max(first, start), min(last, end), None))
-    return off_days_within(period, *day_sets)
+        day_sets.append(
+            absence_weekdays(
+                max(first, start), min(last, end), None, weekends_working=weekends_working
+            )
+        )
+    return off_days_within(period, *day_sets, weekends_working=weekends_working)
 
 
 class WorkingCalendar:
-    """Working days per site: weekdays minus that site's bank holidays."""
+    """
+    Working days per site: the working days (``working_days.py``; every day
+    with ``weekends_working``) minus that site's bank holidays.
+    """
 
-    def __init__(self, holidays_by_site: Mapping[int, Sequence[date]]):
+    def __init__(
+        self, holidays_by_site: Mapping[int, Sequence[date]], weekends_working: bool = False
+    ):
         self._holidays = holidays_by_site
+        self.weekends_working = weekends_working
+        # ``booked_weeks`` / ``project_weeks`` / ``phase_weeks``: days per week.
+        self.days_per_week = WORKING_DAYS_PER_WEEK[weekends_working]
 
     def days(self, site_id: int | None, a: date, b: date) -> int:
         holidays: Sequence[date] = () if site_id is None else self._holidays.get(site_id, ())
-        return working_days(a, b, holidays)
+        return working_days(a, b, holidays, weekends_working=self.weekends_working)
 
 
 def expand_holidays(
-    rows: Iterable[tuple[int, date, date | None]], period: tuple[date, date]
+    rows: Iterable[tuple[int, date, date | None]],
+    period: tuple[date, date],
+    *,
+    weekends_working: bool = False,
 ) -> dict[int, list[date]]:
-    """``(site_id, date, end_date)`` rows -> sorted weekday days per site, within ``period``."""
+    """
+    ``(site_id, date, end_date)`` rows -> sorted working days per site, within
+    ``period`` (a weekend holiday counts only with ``weekends_working``).
+    """
     start, end = period
     days: dict[int, set[date]] = {}
     for site_id, first, last in rows:
         day = max(first, start)
         stop = min(last or first, end)
         while day <= stop:
-            if day.weekday() < 5:
+            if is_working_day(day, weekends_working):
                 days.setdefault(site_id, set()).add(day)
             day += timedelta(days=1)
     return {site_id: sorted(values) for site_id, values in days.items()}
@@ -1685,20 +1737,33 @@ def _amount(measure: str, item: _Item, calendar: WorkingCalendar, start: date, e
         assert item.booking is not None
         days = calendar.days(_project_of(item).site_id, start, end)
         booked = item.booking.allocation / 100 * days
-        return booked if measure == "booked_days" else booked / 5
+        return booked if measure == "booked_days" else booked / calendar.days_per_week
     if measure in ("project_weeks", "phase_weeks"):
-        return calendar.days(_project_of(item).site_id, start, end) / 5
+        return calendar.days(_project_of(item).site_id, start, end) / calendar.days_per_week
     if measure == "project_volume":
         return float(_project_of(item).volume or 0)
     if measure == "capacity_days":
         assert item.capacity is not None
-        return capacity_days(start, end, item.capacity.off_days, item.capacity.max_capacity)
+        return capacity_days(
+            start,
+            end,
+            item.capacity.off_days,
+            item.capacity.max_capacity,
+            weekends_working=calendar.weekends_working,
+        )
     if measure == "equipment_booked_days":
         # Whole days on the project's calendar (no allocation).
         return float(calendar.days(_project_of(item).site_id, start, end))
     if measure == "equipment_available_days":
         assert item.availability is not None
-        return float(working_days(start, end, item.availability.off_days))
+        return float(
+            working_days(
+                start,
+                end,
+                item.availability.off_days,
+                weekends_working=calendar.weekends_working,
+            )
+        )
     if measure in COUNT_MEASURES:
         return 1.0  # a distinct count: the amount is unused
     raise MetricError(f"Unknown measure: {measure}")
@@ -1934,7 +1999,7 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
     dimensions = [_resolve_dimension(facts, spec) for spec in query.dimensions]
     measure: str = query.measure
     family = FAMILY[measure]
-    calendar = WorkingCalendar(facts.holidays)
+    calendar = WorkingCalendar(facts.holidays, facts.weekends_working)
 
     period_index = next((i for i, d in enumerate(dimensions) if d.kind == "period"), None)
     bucket_list: list[Bucket] = []
@@ -2284,11 +2349,14 @@ async def load_facts(
     from app.models.tag import ProjectTag, Tag
     from app.models.team import CompanyEventTeam, ProjectTeam, Team, TeamMember
     from app.models.user import User, UserSite
+    from app.services import instance_settings
     from app.services.project_field_rules import load_project_field_values
 
     start, end = period
     scope = _project_scope(visible_site_ids, archived)
     statements = _booking_statements(scope, start, end)
+    # Settings -> General -> Weekends are working days (off: Monday to Friday).
+    weekends_working = await instance_settings.weekends_working(db)
 
     with_capacity = "capacity" in families
     population = _capacity_population(visible_site_ids) if with_capacity else None
@@ -2733,7 +2801,11 @@ async def load_facts(
                 )
             )
         ).all()
-        holidays = expand_holidays(((row[0], row[1], row[2]) for row in holiday_rows), (start, end))
+        holidays = expand_holidays(
+            ((row[0], row[1], row[2]) for row in holiday_rows),
+            (start, end),
+            weekends_working=weekends_working,
+        )
 
     capacity: dict[int, CapacityFact] = {}
     if capacity_ids:
@@ -2755,6 +2827,7 @@ async def load_facts(
                     absences.get(person_id, ()),
                     closures,
                     team_sites,
+                    weekends_working=weekends_working,
                 ),
             )
 
@@ -2763,7 +2836,11 @@ async def load_facts(
             equipment_id=info.id,
             site_ids=info.site_ids,
             off_days=equipment_off_days(
-                (start, end), info.site_ids, holidays, blocks_of.get(info.id, ())
+                (start, end),
+                info.site_ids,
+                holidays,
+                blocks_of.get(info.id, ()),
+                weekends_working=weekends_working,
             ),
         )
         for info in available
@@ -2788,4 +2865,5 @@ async def load_facts(
         equipment=equipment,
         equipment_bookings=equipment_bookings,
         equipment_availability=equipment_availability,
+        weekends_working=weekends_working,
     )
