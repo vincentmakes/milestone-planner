@@ -231,3 +231,60 @@ describe('workloadLabel', () => {
     expect(workloadLabel({ ...base, state: 'nonworking' })).toBeNull();
   });
 });
+
+describe('calculateWorkloadCells on non-working days', () => {
+  // Fri 6, Sat 7, Sun 8, Mon 9 March 2026; the booking runs all month.
+  const days = ['2026-03-06', '2026-03-07', '2026-03-08', '2026-03-09'].map(cell);
+  const weekendClosure: CompanyEvent = {
+    id: 2,
+    site_id: 1,
+    site_ids: [1],
+    date: '2026-03-07',
+    end_date: '2026-03-08',
+    name: 'Weekend shutdown',
+    color: '#f97316',
+    counts_as_unavailable: true,
+  };
+  const closures = (dateStr: string) => getClosureOn(new Set([1]), dateStr, buildClosureIndex([weekendClosure]));
+  const weekendAbsence: Vacation = { ...vacation(1), start_date: '2026-03-07', end_date: '2026-03-08' };
+
+  it('makes a weekend nonworking by default: no allocation, no badge, no "Available"', () => {
+    const cells = calculateWorkloadCells([assignment], [], days, 100, byId);
+    expect(cells.map((w) => w.state)).toEqual(['partial', 'nonworking', 'nonworking', 'partial']);
+    expect(cells[1]).toEqual({ total: 0, assignments: [], isOnVacation: false, available: 0, state: 'nonworking' });
+    expect(workloadLabel(cells[1])).toBeNull();
+    // Friday and Monday are separate blocks: the weekend between them draws nothing.
+    expect(workloadRuns(cells, days.map((c) => c.dateStr)).map((r) => [r.from, r.to])).toEqual([
+      [0, 0],
+      [3, 3],
+    ]);
+  });
+
+  it('puts nonworking before an absence or a closure on the weekend', () => {
+    const withAbsence = calculateWorkloadCells([assignment], [weekendAbsence], days, 100, byId);
+    expect(withAbsence.map((w) => w.state)).toEqual(['partial', 'nonworking', 'nonworking', 'partial']);
+    const withClosure = calculateWorkloadCells([assignment], [], days, 100, byId, closures);
+    expect(withClosure.map((w) => w.state)).toEqual(['partial', 'nonworking', 'nonworking', 'partial']);
+  });
+
+  it('counts the weekend like any day when weekends are working days', () => {
+    const cells = calculateWorkloadCells([assignment], [], days, 100, byId, undefined, true);
+    expect(cells.map((w) => [w.state, w.total])).toEqual([
+      ['partial', 50],
+      ['partial', 50],
+      ['partial', 50],
+      ['partial', 50],
+    ]);
+    expect(workloadRuns(cells, days.map((c) => c.dateStr))).toHaveLength(1);
+    // ... and an absence or a closure then takes the weekend day off.
+    const absent = calculateWorkloadCells([assignment], [weekendAbsence], days, 100, byId, undefined, true);
+    expect(absent.map((w) => w.state)).toEqual(['partial', 'conflict', 'conflict', 'partial']);
+    const closed = calculateWorkloadCells([], [], days, 100, byId, closures, true);
+    expect(closed.map((w) => w.state)).toEqual(['empty', 'vacation', 'vacation', 'empty']);
+  });
+
+  it('decides on the cell date, not on the cell flags', () => {
+    const flagged = { dateStr: '2026-03-09', isWeekend: true } as TimelineCell;
+    expect(calculateWorkloadCells([assignment], [], [flagged], 100, byId)[0].state).toBe('partial');
+  });
+});

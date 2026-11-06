@@ -204,6 +204,11 @@
   background: var(--accent-red);
 }
 
+/* Today is no working day (a weekend while weekends are not working days) */
+.status.nonWorking {
+  background: var(--text-muted);
+}
+
 /* Part-time indicator - ring around the status dot */
 .status.partTime {
   box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--accent-blue);

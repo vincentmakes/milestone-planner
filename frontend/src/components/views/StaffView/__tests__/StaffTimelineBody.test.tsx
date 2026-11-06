@@ -6,7 +6,7 @@
  * titled with its dates.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, act, within } from '@testing-library/react';
 import { StaffTimelineBody } from '../StaffTimelineBody';
 import { generateTimelineCells } from '@/components/gantt/utils';
@@ -201,6 +201,30 @@ describe('StaffTimelineBody workload blocks', () => {
   it('draws no block at quarter zoom', () => {
     const { blocks } = renderBookings([booking({})], 'quarter');
     expect(blocks()).toHaveLength(0);
+  });
+
+  describe('across a weekend (weekends shown)', () => {
+    // Thu 17 .. Tue 22 September 2026
+    const acrossWeekend = booking({ start_date: '2026-09-17', end_date: '2026-09-22' });
+
+    beforeEach(() => {
+      useAppStore.setState({ instanceSettings: { show_weekends: 'true' } });
+    });
+    afterEach(() => {
+      useAppStore.setState({ instanceSettings: null });
+    });
+
+    it('books nothing on Saturday and Sunday by default: two blocks around them', () => {
+      const { blocks } = renderBookings([acrossWeekend]);
+      expect(blocks().map((b) => b.style.width)).toEqual(['60px', '60px']);
+      expect(blocks().map((b) => b.textContent)).toEqual(['75%', '75%']);
+    });
+
+    it('draws one block over the weekend when weekends are working days', () => {
+      useAppStore.setState({ instanceSettings: { show_weekends: 'true', weekend_working_days: 'true' } });
+      const { blocks } = renderBookings([acrossWeekend]);
+      expect(blocks().map((b) => b.style.width)).toEqual(['180px']);
+    });
   });
 });
 

@@ -115,6 +115,35 @@ describe('DetailsRows', () => {
     expect(screen.getByText('Total:').nextSibling).toHaveTextContent('2 days');
   });
 
+  describe('work days through the working-day rule', () => {
+    // Thu 5 .. Tue 10 March 2026: a Friday holiday and a Saturday one.
+    const span = { start_date: '2026-03-05', end_date: '2026-03-10' };
+    const holidays = new Set(['2026-03-06', '2026-03-07']);
+    const phase = makePhase({ id: 4, ...span });
+    const sub = makeSubphase({ id: 5, ...span });
+    const weekProject = makeProject({ id: 6, ...span, phases: [] });
+
+    it('counts Monday to Friday and only the weekday holiday by default', () => {
+      for (const data of [
+        phaseTooltipData(phase, project, holidays),
+        subphaseTooltipData(sub, project, phase, holidays),
+        projectTooltipData(weekProject, { tags: [], fields: [], bankHolidayDates: holidays }),
+      ]) {
+        expect(data).toMatchObject({ totalDays: 6, workDays: 3, holidays: 1 });
+      }
+    });
+
+    it('counts every day and both holidays when weekends are working days', () => {
+      for (const data of [
+        phaseTooltipData(phase, project, holidays, true),
+        subphaseTooltipData(sub, project, phase, holidays, true),
+        projectTooltipData(weekProject, { tags: [], fields: [], bankHolidayDates: holidays, weekendsWorking: true }),
+      ]) {
+        expect(data).toMatchObject({ totalDays: 6, workDays: 4, holidays: 2 });
+      }
+    });
+  });
+
   it('builds no project data without dates', () => {
     expect(
       projectTooltipData(makeProject({ start_date: '', end_date: '', phases: [] }), {

@@ -595,6 +595,7 @@ export interface SSOConfig {
 export interface InstanceSettings {
   instance_title?: string;
   instance_name?: string;
+  /** `false` hides the Saturday and Sunday columns of the timelines (display only) */
   show_weekends?: string;
   /** `none` / `staff` / `equipment`: the overview panel the Gantt opens with */
   gantt_default_panel?: string;
@@ -624,6 +625,12 @@ export interface InstanceSettings {
   project_tooltip_rows?: string;
   /** Days the audit log keeps its rows, `"0"` – `"3650"` (`"0"` = indefinitely; 2.4.0) */
   audit_log_retention_days?: string;
+  /**
+   * `true`: Saturdays and Sundays are working days in the dashboards, capacity
+   * and availability (2.5.0; off by default -- not a switch, read it with
+   * `selectWeekendsWorking`)
+   */
+  weekend_working_days?: string;
   [key: string]: string | undefined;
 }
 

@@ -54,6 +54,8 @@ export const INSTANCE_SETTING_DEFAULTS = {
   project_tooltip_rows:
     '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]',
   audit_log_retention_days: '365',
+  show_weekends: 'true',
+  weekend_working_days: 'false',
 } as const;
 
 export type DefaultedSettingKey = keyof typeof INSTANCE_SETTING_DEFAULTS;
@@ -62,7 +64,6 @@ export type DefaultedSettingKey = keyof typeof INSTANCE_SETTING_DEFAULTS;
 export const INSTANCE_SETTING_KEYS = [
   'instance_title',
   'instance_name',
-  'show_weekends',
   ...(Object.keys(INSTANCE_SETTING_DEFAULTS) as DefaultedSettingKey[]),
 ] as const;
 

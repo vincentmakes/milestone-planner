@@ -31,6 +31,7 @@ import {
 } from '@/utils/recurringVacation';
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
 import { getClosureOn } from '@/utils/siteClosure';
+import { selectWeekendsWorking } from '@/utils/instanceSettings';
 import type { ClosureIndex } from '@/utils/siteClosure';
 import { BAR_HEIGHT, BAR_GAP, ROW_PADDING, DETAIL_ROW_HEIGHT, INDICATOR_AREA_HEIGHT } from './StaffView';
 import type { TimelineCell } from '@/components/gantt/utils';
@@ -285,6 +286,8 @@ interface StaffRowProps {
 
 function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closureIndex, siteIds, teamIds, teamSiteById, rowHeight, cells, cellWidth, viewMode, canManage }: StaffRowProps) {
   const { openVacationModal } = useUIStore();
+  // Settings → General → Weekends are working days: a weekend draws nothing unless on
+  const weekendsWorking = useAppStore(selectWeekendsWorking);
 
   // Get max capacity for this staff member
   const maxCapacity = staffMember.max_capacity ?? 100;
@@ -298,7 +301,15 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
   }, [closureIndex, siteIds, teamIds, teamSiteById, staffMember.site_id, staffMember.team_ids]);
 
   // Calculate workload per cell
-  const workloadCells = useWorkloadCalculation(assignments, vacations, cells, maxCapacity, absenceTypesById, closures);
+  const workloadCells = useWorkloadCalculation(
+    assignments,
+    vacations,
+    cells,
+    maxCapacity,
+    absenceTypesById,
+    closures,
+    weekendsWorking
+  );
   
   // Only show workload heatmap in week/month view (not quarter/year - cells too small)
   const showWorkloadHeatmap = viewMode === 'week' || viewMode === 'month';

@@ -275,40 +275,6 @@ export function getWeekEnd(date: Date): Date {
 }
 
 /**
- * Calculate the number of business days between two dates
- */
-export function getBusinessDaysBetween(start: Date, end: Date): number {
-  let count = 0;
-  const current = new Date(start);
-  
-  while (current <= end) {
-    if (!isWeekend(current)) {
-      count++;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  
-  return count;
-}
-
-/**
- * Add business days to a date
- */
-export function addBusinessDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  let remaining = days;
-  
-  while (remaining > 0) {
-    result.setDate(result.getDate() + 1);
-    if (!isWeekend(result)) {
-      remaining--;
-    }
-  }
-  
-  return result;
-}
-
-/**
  * Get the ISO week number (1-52/53). Week 1 is the week with the year's
  * first Thursday, so Jan 1 can be in week 52/53 of the previous year.
  * (`getWeek(…, { weekStartsOn: 1 })` is NOT ISO: it numbers the week that

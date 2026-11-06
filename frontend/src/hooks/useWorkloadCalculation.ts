@@ -19,6 +19,7 @@ import { getAbsenceOn, absenceTypeName, absenceColor, cleanVacationDescription }
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import { isPendingAssignment } from '@/utils/kanbanCards';
+import { isWorkingDay } from '@/utils/workingDays';
 
 /**
  * Site closures affecting the row's person: a day → event map, or a lookup
@@ -65,7 +66,8 @@ export interface WorkloadCell {
   available: number;
   /**
    * Visual state for styling. `nonworking`: a day that is not a working day
-   * (a weekend while weekends are not working days) — drawn as nothing.
+   * (`isWorkingDay`: a weekend while weekends are not working days) — drawn
+   * as nothing, whatever is booked or absent on it.
    */
   state: 'empty' | 'partial' | 'full' | 'overloaded' | 'vacation' | 'conflict' | 'nonworking';
 }
@@ -90,6 +92,12 @@ export interface WorkloadRun {
  * capacity; an available absence (Home Office) is reported but leaves the
  * capacity untouched. A site closure (company event flagged as such) zeroes
  * the capacity like an unavailable absence, under the event's name and colour.
+ *
+ * A day that is no working day (`utils/workingDays.ts`, decided on the cell's
+ * `dateStr`; `weekendsWorking` = Settings → General → Weekends are working
+ * days) is `nonworking` before anything else: precedence nonworking >
+ * absence / closure > booking, so a booking across a weekend books nothing on
+ * Saturday and Sunday unless weekends are working days — the dashboards' rule.
  */
 export function calculateWorkloadCells(
   assignments: AssignmentWithDates[],
@@ -97,7 +105,8 @@ export function calculateWorkloadCells(
   cells: TimelineCell[],
   maxCapacity: number = 100,
   absenceTypesById?: AbsenceTypesById,
-  closures?: ClosureLookup
+  closures?: ClosureLookup,
+  weekendsWorking: boolean = false
 ): WorkloadCell[] {
   const closureOn = (dateStr: string): CompanyEvent | null => {
     if (!closures) return null;
@@ -108,6 +117,10 @@ export function calculateWorkloadCells(
   return cells.map((cell) => {
     // Use the pre-formatted dateStr from the cell (local timezone, YYYY-MM-DD format)
     const cellDateStr = cell.dateStr;
+
+    if (!isWorkingDay(cellDateStr, weekendsWorking)) {
+      return { total: 0, assignments: [], isOnVacation: false, available: 0, state: 'nonworking' };
+    }
 
     // The vacations passed in all belong to this staff member (null = no staff filter)
     const absence = getAbsenceOn(null, cellDateStr, vacations, absenceTypesById);
@@ -172,6 +185,7 @@ export function calculateWorkloadCells(
  * @param maxCapacity - Staff member's max capacity (default 100, e.g. 80 for part-time)
  * @param absenceTypesById - Absence types; without it every absence counts as unavailable
  * @param closures - Site closures affecting this person (see ClosureLookup)
+ * @param weekendsWorking - Saturdays and Sundays are working days (`selectWeekendsWorking`)
  */
 export function useWorkloadCalculation(
   assignments: AssignmentWithDates[],
@@ -179,11 +193,13 @@ export function useWorkloadCalculation(
   cells: TimelineCell[],
   maxCapacity: number = 100,
   absenceTypesById?: AbsenceTypesById,
-  closures?: ClosureLookup
+  closures?: ClosureLookup,
+  weekendsWorking: boolean = false
 ): WorkloadCell[] {
   return useMemo(
-    () => calculateWorkloadCells(assignments, vacations, cells, maxCapacity, absenceTypesById, closures),
-    [assignments, vacations, cells, maxCapacity, absenceTypesById, closures]
+    () =>
+      calculateWorkloadCells(assignments, vacations, cells, maxCapacity, absenceTypesById, closures, weekendsWorking),
+    [assignments, vacations, cells, maxCapacity, absenceTypesById, closures, weekendsWorking]
   );
 }
 
