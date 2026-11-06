@@ -25,7 +25,7 @@ import json
 import os
 import re
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
@@ -1214,6 +1214,102 @@ def shot_settings_general_retention(context: BrowserContext) -> None:
     page.close()
 
 
+def _set_setting(page: Page, key: str, value: str | None) -> None:
+    """Write one instance setting through the API (None deletes the row, so
+    the default applies again)."""
+    resp = page.request.put(f"{URL}api/settings/{key}", data={"value": value})
+    if not resp.ok:
+        raise RuntimeError(f"PUT /api/settings/{key} answered {resp.status}")
+
+
+def _year_end_shutdown_start() -> date:
+    """First day of the seeded Year-end shutdown closure (app/scripts/demo_data.py:
+    24 December of this year, or of next year once that has passed)."""
+    today = date.today()
+    start = date(today.year, 12, 24)
+    return start if start >= today else date(today.year + 1, 12, 24)
+
+
+def shot_staff_heatmap_month(context: BrowserContext) -> None:
+    """The Gantt with the Staff & Calendar panel open at month zoom and
+    weekends hidden (show_weekends set to false through the API for the shot,
+    restored afterwards): consecutive days with the same allocation form one
+    block, a wider band marks the start of each week, and the seeded Year-end
+    shutdown closure is in view. Fresh context: the collapsed sidebar is a
+    persisted preference and must not leak into the other shots; the panel
+    sizes are dragged (component state, not persisted)."""
+    fresh = context.browser.new_context(
+        viewport={"width": 1440, "height": 900}, locale="en-US"
+    )
+    page = fresh.new_page()
+    login(page)
+    stored = page.request.get(f"{URL}api/settings").json().get("show_weekends")
+    _set_setting(page, "show_weekends", "false")
+    try:
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1500)
+        go_to_gantt(page)
+        set_color_by(page, "Project type")
+        page.get_by_role("button", name="Collapse sidebar").click()
+        page.locator('header').get_by_role('button', name='Month view', exact=True).click()
+        page.wait_for_timeout(400)
+        click_today(page)
+        open_panel(page, "Staff & Calendar")
+        # Narrow the project panel to its minimum and raise the Staff panel to
+        # its maximum height, so the timeline shows about four weeks of all
+        # four people.
+        box = page.locator('[class*="_resizer_"]').first.bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 200)
+        page.mouse.down()
+        page.mouse.move(box["x"] - 200, box["y"] + 200, steps=5)
+        page.mouse.up()
+        box = page.locator('[class*="horizontalResizer"]').first.bounding_box()
+        page.mouse.move(box["x"] + 600, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(box["x"] + 600, box["y"] - 400, steps=5)
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        # Start the view ten days before the closure: merged blocks before it,
+        # the closure, the blocks after New Year.
+        target = (_year_end_shutdown_start() - timedelta(days=10)).isoformat()
+        page.evaluate(
+            """(t) => {
+              const cell = [...document.querySelectorAll('[data-date]')]
+                .filter(e => e.getAttribute('data-date') >= t)
+                .sort((a, b) => a.getAttribute('data-date').localeCompare(b.getAttribute('data-date')))[0];
+              const sc = document.querySelector('[class*="horizontalScroll"]');
+              sc.scrollLeft = cell.getBoundingClientRect().left - sc.getBoundingClientRect().left + sc.scrollLeft;
+            }""",
+            target,
+        )
+        page.wait_for_timeout(1000)
+        page.screenshot(path=str(OUT / "staff-heatmap-month.png"))
+        log("[done] staff-heatmap-month.png")
+    finally:
+        _set_setting(page, "show_weekends", stored)
+        fresh.close()
+
+
+def shot_settings_general_gantt(context: BrowserContext) -> None:
+    """Settings -> General scrolled to the Display and Gantt Chart blocks: Show Weekends
+    and Weekends are working days with their hints, then Auto-expand
+    Projects."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "General")
+    page.get_by_label("Weekends are working days").wait_for(timeout=8000)
+    # The Display block above it fits too (the pane cannot scroll the Gantt
+    # Chart heading to the top: Data management is short).
+    page.get_by_role("heading", name="Display", exact=True).evaluate(
+        "el => el.scrollIntoView({block: 'start'})"
+    )
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "settings-general-gantt.png"))
+    log("[done] settings-general-gantt.png")
+    page.close()
+
+
 def shot_dark_theme(context: BrowserContext) -> None:
     """Gantt in the dark theme. Fresh context so the shared (light) context
     is untouched; must run last anyway to keep run order deterministic."""
@@ -1302,6 +1398,8 @@ TARGETS = {
     "settings-audit-log": shot_settings_audit_log,
     "settings-audit-log-entry": shot_settings_audit_log_entry,
     "settings-general-retention": shot_settings_general_retention,
+    "staff-heatmap-month": shot_staff_heatmap_month,
+    "settings-general-gantt": shot_settings_general_gantt,
     "dark-theme": shot_dark_theme,  # keep last: the only intentionally dark shot
 }
 

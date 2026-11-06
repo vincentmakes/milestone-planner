@@ -68,6 +68,8 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 
 **Weekends are working days** decides one rule everywhere a day is counted: the [dashboards](dashboards.md#what-the-numbers-mean) (booked days and weeks, capacity, utilisation, equipment availability), the Staff & Calendar workload blocks and *X% available* badges, the resource panel cards and the Gantt's Shift-hover *Work days*. Off, a booking across a weekend books nothing on Saturday and Sunday (the heatmap leaves them blank, a staff card reads *Weekend* on those days) and a week has 5 working days; on, every day counts and a week has 7. Bank holidays, absences and closures still take their days off either way. It is saved with **Save Changes**, like the other General settings.
 
+![Settings → General, Display and Gantt Chart: Default View and Week Starts On, then Show Weekends (on) and Weekends are working days (off) with their hints, and Auto-expand Projects](../assets/screenshots/settings-general-gantt.png){ loading=lazy }
+
 ### Audit Log Retention
 
 **Audit log retention** (under *Data management*, below the [Audit log](#audit-log) row) sets how long [audit log](../admin-guide/audit-log.md#retention) entries are kept: a whole number of days from 0 to 3 650, default 365. The **Keep audit entries indefinitely** switch sets it to 0. Like the other General settings it is saved with **Save Changes**.
