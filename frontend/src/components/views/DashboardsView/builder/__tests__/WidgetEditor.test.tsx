@@ -572,6 +572,10 @@ describe('WidgetEditor — measure families', () => {
     expect(measureSelect()).toHaveAccessibleDescription(CAPACITY_HINT);
     setMeasure('equipment_utilisation');
     expect(measureSelect()).toHaveAccessibleDescription(EQUIPMENT_AVAILABILITY_HINT);
+    // Each hint names the Weekends are working days setting.
+    for (const hint of [WORKING_DAYS_HINT, CAPACITY_HINT, EQUIPMENT_AVAILABILITY_HINT]) {
+      expect(hint).toContain('Monday to Friday, or every day when Weekends are working days is on');
+    }
     setMeasure('project_count');
     expect(measureSelect()).not.toHaveAccessibleDescription();
   });

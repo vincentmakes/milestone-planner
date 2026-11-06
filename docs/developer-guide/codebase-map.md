@@ -208,7 +208,8 @@ app/
     encryption.py      # AES-256-GCM credentials + bcrypt/PBKDF2 password hashing
     holidays.py        # Nager API client (v4, legacy v3 auto-detected), parsing, region matching
     instance_settings.py # KNOWN_SETTINGS (admin defaults + feature switches): canonicalise (422),
-                       #   defaults, is_enabled / flag_enabled, FLAG_DISABLES. Import-light
+                       #   defaults, is_enabled / flag_enabled, FLAG_DISABLES, weekends_working (not a
+                       #   switch: on only for "true"). Import-light
     login_throttle.py  # In-memory, per-process failed-login throttle (tenant + admin portal)
     master_db.py       # Master DB singleton: init, idempotent auto-migrations,
                        #   verify_admin_exists() (auto-creates admin@milestone.local)
@@ -216,6 +217,9 @@ app/
                        #   (mirrored in frontend/src/utils/mentions.ts)
     absence_patterns.py # [R:d,…] recurring absences: parse_recurring_days, js_weekday, absence_weekdays
                        #   (mirrored in frontend/src/utils/recurringVacation.ts). Import-light
+    working_days.py    # The working-day rule (2.5.0): is_working_day, count_working_days, WORKING_DAYS_PER_WEEK
+                       #   (Mon–Fri, every day with weekend_working_days on; mirrored in
+                       #   frontend/src/utils/workingDays.ts, WORKING_DAY_CASES). Import-light
     people_lists.py    # shareable_users_statement: the one "people you may name" query (mention picker,
                        #   dashboard people picker and its check)
     notifications.py   # Notification rows for Kanban and approval events (actor excluded,
@@ -383,7 +387,10 @@ frontend/
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
                        #   roles, pendingBookings (+ assignmentLock), myAssignments, auditLabels, metrics, viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
                        #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel /
-                       #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals / tooltipRowGate),
+                       #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals / tooltipRowGate /
+                       #   selectShowWeekends / selectWeekendsWorking),
+                       #   workingDays (isWorkingDay / countWorkingDays: the working-day rule, mirror of
+                       #   app/services/working_days.py),
                        #   projectFieldsPreview (the Project fields preview's sample project)
                        #   (criticalPath/diffProjects/dependencies/completionStatus live in
                        #   components/gantt/utils/)

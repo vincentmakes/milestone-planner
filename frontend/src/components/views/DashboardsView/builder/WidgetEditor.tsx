@@ -152,11 +152,11 @@ const WORKING_DAY_MEASURES: ReadonlySet<Measure> = new Set<Measure>([
   'equipment_booked_days',
 ]);
 export const WORKING_DAYS_HINT =
-  'Working days: Monday to Friday, without the bank holidays loaded for the project’s site.';
+  'Working days: Monday to Friday, or every day when Weekends are working days is on, without the bank holidays loaded for the project’s site.';
 export const CAPACITY_HINT =
-  'Capacity counts weekdays at the person’s sites minus bank holidays, absences and closures, at their max capacity; booked time is matched to the same people';
+  'Capacity counts working days (Monday to Friday, or every day when Weekends are working days is on) at the person’s sites minus bank holidays, absences and closures, at their max capacity; booked time is matched to the same people';
 export const EQUIPMENT_AVAILABILITY_HINT =
-  'Availability counts weekdays at the equipment’s sites minus bank holidays and blocks; overlapping bookings add up';
+  'Availability counts working days (Monday to Friday, or every day when Weekends are working days is on) at the equipment’s sites minus bank holidays and blocks; overlapping bookings add up';
 
 /** The hint under the measure: how its days are counted. */
 function measureHint(measure: Measure): string | undefined {
