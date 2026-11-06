@@ -86,12 +86,14 @@ export default defineConfig({
       // up 0.1 with the Project fields one-list round (94.13 / 93.17 / 94.48,
       // branches 86.27 unchanged); set 0.1 under the 2.4.0 totals of the
       // audit log on its own, without the approval history (lines 94.26,
-      // statements 93.32, functions 94.63, branches 86.49).
+      // statements 93.32, functions 94.63, branches 86.49); raised 0.1 under
+      // the 2.5.0 totals with the approval history (lines 94.3, statements
+      // 93.36, functions 94.66, branches 86.57).
       thresholds: {
-        lines: 94.16,
-        statements: 93.22,
-        functions: 94.53,
-        branches: 86.39,
+        lines: 94.31,
+        statements: 93.39,
+        functions: 94.61,
+        branches: 86.65,
       },
     },
   },
