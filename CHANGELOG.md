@@ -5,6 +5,13 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-11-06
+
+### Changed
+- Staff overview: consecutive days with the same allocation are drawn as one block instead of one block per day.
+- Timeline: hovering a date number shows the same holiday / event bubble as hovering the event strip below it.
+- Timeline: when weekends are hidden, a clearer separator marks the start of each week.
+
 ## [2.4.0] - 2026-11-05
 
 ### Added
