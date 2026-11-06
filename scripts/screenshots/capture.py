@@ -1081,6 +1081,22 @@ def shot_equipment_assign_modal(context: BrowserContext) -> None:
     page.close()
 
 
+def shot_my_work_history(context: BrowserContext) -> None:
+    """My Work as the admin, on the History tab ("Decided by me"): the
+    requests the admin approved or rejected. Needs at least one request the
+    admin decided -- the seed has none, so decide one first (the live check
+    approves a request of Diana's); the shot itself writes nothing."""
+    page = context.new_page()
+    login(page)
+    _open_my_work(page)
+    page.get_by_role("tab", name=re.compile(r"^History")).click()
+    page.get_by_role("tabpanel").locator("li").first.wait_for(timeout=10000)
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "my-work-history.png"))
+    log("[done] my-work-history.png")
+    page.close()
+
+
 def _audit_row(row_id: int, minutes_ago: int, action: str, category: str, **fields) -> dict:
     when = datetime.now(UTC) - timedelta(minutes=minutes_ago)
     row = {
@@ -1299,6 +1315,7 @@ TARGETS = {
     "grouped": shot_gantt_grouped,
     "color-by": shot_gantt_color_by,
     "kanban": shot_kanban,
+    "my-work-history": shot_my_work_history,
     "settings-audit-log": shot_settings_audit_log,
     "settings-audit-log-entry": shot_settings_audit_log_entry,
     "settings-general-retention": shot_settings_general_retention,

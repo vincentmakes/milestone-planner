@@ -167,6 +167,7 @@ the default General section.
 | `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* project field (collapsible pill sections) |
 | `color-by` | `gantt-color-by.png` | The Gantt chart's *Colour by* dropdown, open, with *Project type* selected |
 | `date-picker` | `date-range-picker.png` | The Edit Phase dialog of Bioprocess Scale-Up's *Trial* phase with the two-month date calendar open from *Start Date* |
+| `my-work-history` | `my-work-history.png` | My Work signed in as the admin, *History* tab (*Decided by me*). Needs a request the admin decided: the seed has none, so approve one first (e.g. book Diana on a Catalyst Optimization phase and approve it from *My Approvals*) — the shot writes nothing |
 | `settings-audit-log` | `settings-audit-log.png` | Settings → General → Data management → *Open audit log*: the log, newest entries first. When the newest 12 rows cover fewer than three categories (a fresh seed holds only sign-ins), it serves a canned page of varied rows through `page.route` — nothing is written |
 | `settings-audit-log-entry` | `settings-audit-log-entry.png` | The same audit log sub-view, the *Entry detail* dialog of the newest *User updated* row with its Changes table (the same canned fallback, also used when the first page holds no `admin.user.updated` row) |
 | `settings-general-retention` | `settings-general-retention.png` | Settings → General scrolled to *Data management*: the *Audit log* row (retention hint, *Open audit log*), the retention field and its switch |
