@@ -622,6 +622,8 @@ export interface InstanceSettings {
    * custom project field ids
    */
   project_tooltip_rows?: string;
+  /** Days the audit log keeps its rows, `"0"` – `"3650"` (`"0"` = indefinitely; 2.4.0) */
+  audit_log_retention_days?: string;
   [key: string]: string | undefined;
 }
 
@@ -1217,4 +1219,66 @@ export interface DashboardDraft {
 export interface DashboardData {
   widgets: Record<string, MetricResult | MetricError>;
   loaded_at: string;
+}
+
+// =============================================================================
+// AUDIT LOG (2.4.0)
+// =============================================================================
+// GET /api/audit-log (system.audit_log): instance-wide, newest first, read-only.
+
+/** The four families of `audit_log.category` */
+export type AuditCategory = 'auth' | 'admin' | 'access' | 'change';
+
+export type AuditOutcome = 'success' | 'failure';
+
+/** One field's change; a long value is `{changed: true, length}`, a credential `"***"` */
+export interface AuditLogChange {
+  old: unknown;
+  new: unknown;
+}
+
+/** At most these four keys (`app/services/audit_log.py`'s contract) */
+export interface AuditLogDetails {
+  /** A reason code (`bad_password`, `throttled`, …) */
+  reason?: string;
+  changes?: Record<string, AuditLogChange>;
+  /** A list of flat objects */
+  items?: Record<string, unknown>[];
+  /** A flat object */
+  context?: Record<string, unknown>;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  /** UTC timestamp, `toISOString()` form */
+  created_at: string;
+  category: AuditCategory;
+  /** Dotted, past-tense key (`auth.login.failed`, `admin.user.updated`, `project.created`) */
+  action: string;
+  outcome: AuditOutcome;
+  /** Null once the actor is deleted (the email and name are snapshots) */
+  actor_user_id: number | null;
+  actor_email: string | null;
+  actor_name: string | null;
+  /** The account the event is about (a sign-in's email) */
+  subject_email: string | null;
+  target_type: string | null;
+  /** Always text (a role's key, a setting's key or a numeric id) */
+  target_id: string | null;
+  target_label: string | null;
+  project_id: number | null;
+  /** Null once the project is gone */
+  project_name: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  /** `web` | `system` */
+  origin: string;
+  details: AuditLogDetails | null;
+}
+
+export interface AuditLogPage {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  page_size: number;
 }

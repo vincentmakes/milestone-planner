@@ -779,6 +779,44 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     PRIMARY KEY (dashboard_id, user_id)
 );
 
+-- Audit log (2.4.0): one immutable row per recorded action -- sign-ins and
+-- failed attempts, admin changes, exports, content changes. The actor is a
+-- snapshot (actor_user_id SET NULL on delete, actor_email / actor_name kept);
+-- project_id has no FK; details is JSON text. Same DDL as
+-- tenant_provisioner.AUDIT_LOG_SCHEMA_STATEMENTS and
+-- migrations/add_audit_log.sql.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    category VARCHAR(16) NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    outcome VARCHAR(16) NOT NULL DEFAULT 'success',
+    actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    actor_email VARCHAR(255),
+    actor_name VARCHAR(255),
+    subject_email VARCHAR(255),
+    target_type VARCHAR(50),
+    target_id VARCHAR(100),
+    target_label VARCHAR(255),
+    project_id INTEGER,
+    ip VARCHAR(45),
+    user_agent VARCHAR(255),
+    origin VARCHAR(20) NOT NULL DEFAULT 'web',
+    details TEXT,
+    CONSTRAINT audit_log_category_check
+        CHECK (category IN ('auth', 'admin', 'access', 'change')),
+    CONSTRAINT audit_log_outcome_check
+        CHECK (outcome IN ('success', 'failure'))
+);
+
+CREATE INDEX IF NOT EXISTS ix_audit_log_created_at ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS ix_audit_log_category_created_at ON audit_log(category, created_at);
+CREATE INDEX IF NOT EXISTS ix_audit_log_action ON audit_log(action);
+CREATE INDEX IF NOT EXISTS ix_audit_log_actor_user_id ON audit_log(actor_user_id);
+CREATE INDEX IF NOT EXISTS ix_audit_log_subject_email ON audit_log(subject_email);
+CREATE INDEX IF NOT EXISTS ix_audit_log_ip ON audit_log(ip);
+CREATE INDEX IF NOT EXISTS ix_audit_log_project_id ON audit_log(project_id);
+
 -- Approval policies (per approvable action: does the project manager approve,
 -- and which roles), approval requests (an own booking awaiting a decision;
 -- assignment_id points into the assignment table chosen by level, hence no

@@ -137,6 +137,7 @@ same reason; use `run_migration.py` instead.
 | `add_dashboard_sharing` | Tenant | Dashboard sharing by site, team and person: `dashboard_sites`, `dashboard_teams` and `dashboard_users`, and the visibility value `roles` renamed `shared` (2.3.0, also applied automatically on startup; requires `add_dashboards` and `add_teams`) — see below |
 | `add_dashboard_widget_kinds` | Tenant | The widget kinds `gauge`, `heatmap`, `treemap` and `sankey` added to `dashboard_widgets_kind_check` — only for databases created from a pre-release 2.3.0 build (2.3.0, also applied automatically on startup; requires `add_dashboards`) — see below |
 | `add_dashboards` | Tenant | Dashboards: `dashboards`, `dashboard_roles` and `dashboard_widgets` (2.3.0, also applied automatically on startup, which also creates the *Overview* and *Capacity and flows* dashboards and grants the two dashboard permissions; requires `add_rbac`) — see below, and **let the application upgrade the tenant rather than running it first** |
+| `add_audit_log` | Tenant | The audit log: `audit_log`, one row per sign-in, failed attempt, admin change, export or content change (2.4.0, also applied automatically on startup; requires `users`) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -324,6 +325,16 @@ The application runs the same block **automatically** on every tenant pool creat
 
 ```bash
 python migrations/run_migration.py add_dashboard_widget_kinds
+```
+
+### Audit Log (2.4.0)
+
+`add_audit_log` creates `audit_log`, the tenant's audit trail: one row per sign-in, failed sign-in and sign-out, per change to a user, role, approval policy, setting, site or team, per export, and per project, booking or other content change. Each row keeps who acted (a snapshot of their e-mail and name, so the row still names them after the account is deleted), the account acted upon, the target, the project, the client's IP address and browser, and its details as JSON text — credentials are always masked. Rows are never edited; only the retention setting removes them. The table has an index on each column the log is filtered by and is granted to the tenant's database user. Nothing is seeded.
+
+The same statements run **automatically** when a tenant's connection pool is created (single-tenant: at start-up), in their own step: the table and its indexes when the table is missing, nothing otherwise. Running the file by hand is optional and changes nothing on an upgraded tenant.
+
+```bash
+python migrations/run_migration.py add_audit_log
 ```
 
 ### Writing New Migrations

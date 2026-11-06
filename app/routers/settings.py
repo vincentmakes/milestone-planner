@@ -16,9 +16,15 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_permission
 from app.models.settings import Settings, SSOConfig
 from app.models.user import User
-from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
+from app.routers.auth import (
+    _active_org_sso,
+    _reject_if_org_sso_active,
+    record_sso_update,
+    sso_audit_snapshot,
+)
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
+from app.services import audit_log
 from app.services.instance_settings import (
     KNOWN_SETTINGS,
     PROJECT_FIELD_SETTING_KEYS,
@@ -111,6 +117,7 @@ async def update_sso_settings(
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
 
+    before = sso_audit_snapshot(config)
     if not config:
         # Create new config
         config = SSOConfig(id=1)
@@ -124,7 +131,7 @@ async def update_sso_settings(
     if data.client_id is not None:
         config.client_id = data.client_id
     # Omitted or masked (****abcd) keeps the stored secret; stored encrypted.
-    apply_secret_update(config, data.client_secret)
+    key_replaced = apply_secret_update(config, data.client_secret)
     if data.redirect_uri is not None:
         config.redirect_uri = data.redirect_uri
     if data.auto_create_users is not None:
@@ -132,6 +139,7 @@ async def update_sso_settings(
     if data.default_role is not None:
         config.default_role = await ensure_sso_default_role(db, data.default_role)
 
+    await record_sso_update(db, request, admin, before, config, key_replaced)
     await db.commit()
     await db.refresh(config)
 
@@ -169,10 +177,45 @@ async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
         return SettingsResponse(key=key, value=default_for(key))
 
 
+async def _record_setting(
+    db: AsyncSession, request: Request, user: User, key: str, old: str | None, new: str | None
+) -> None:
+    """``admin.settings.updated`` for one key, before the commit; nothing when
+    the value did not change. A long value (a data-URL logo) is reported by
+    its length, a credential-named key masked (``audit_log.diff``)."""
+    changes = audit_log.diff({key: old}, {key: new}, keys=[key])
+    if not changes:
+        return
+    await audit_log.record(
+        db,
+        request,
+        action="admin.settings.updated",
+        category="admin",
+        actor=user,
+        target=("setting", key, key),
+        changes=changes,
+    )
+
+
+def _effective_value(key: str, stored: str | None) -> str | None:
+    """What ``key`` reads as: a known key's default when it has no row, its
+    canonical form otherwise (a stored value that no longer canonicalises is
+    taken as it is); any other key as stored."""
+    if key not in KNOWN_SETTINGS:
+        return stored
+    if stored is None:
+        return default_for(key)
+    try:
+        return canonicalise(key, stored)
+    except ValueError:
+        return stored
+
+
 @router.put("/settings/{key}", response_model=SettingsResponse)
 async def update_setting(
     key: str,
     data: SettingUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -211,12 +254,19 @@ async def update_setting(
     result = await db.execute(select(Settings).where(Settings.key == key))
     setting = result.scalar_one_or_none()
 
+    # The audit row compares effective values: a known key without a row is
+    # its default and a stored value counts in its canonical form, so saving
+    # the default (or resetting to it) records nothing.
+    old_value = _effective_value(key, setting.value if setting else None)
+
     if known and value is None:
         if setting:
+            await _record_setting(db, request, user, key, old_value, default_for(key))
             await db.delete(setting)
             await db.commit()
         return SettingsResponse(key=key, value=default_for(key))
 
+    await _record_setting(db, request, user, key, old_value, value)
     if setting:
         # Update existing
         setting.value = value

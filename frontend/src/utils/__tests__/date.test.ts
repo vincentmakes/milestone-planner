@@ -1,6 +1,7 @@
 /**
  * date.ts helpers that are not timezone-specific (those live in
- * date.newYork.test.ts): period navigation, business days, ISO weeks, ranges.
+ * date.newYork.test.ts): period navigation, business days, ISO weeks, ranges,
+ * the medium date and the date-time of a timestamp.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -16,6 +17,7 @@ import {
   formatDateISO,
   formatQuarter,
   formatMediumDate,
+  formatDateTime,
 } from '../date';
 
 const ymd = (d: Date) => formatDateISO(d);
@@ -97,5 +99,27 @@ describe('formatMediumDate', () => {
 
   it('is empty for no date', () => {
     expect(formatMediumDate('')).toBe('');
+  });
+});
+
+describe('formatDateTime', () => {
+  const dateTime = new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  it('shows a timestamp as local date and time, short month, no seconds', () => {
+    const iso = '2026-11-03T08:07:09.000Z';
+    expect(formatDateTime(iso)).toBe(dateTime.format(new Date(iso)));
+    expect(formatDateTime(iso)).toMatch(/2026/);
+    expect(formatDateTime(iso)).not.toMatch(/:09/); // the seconds are dropped
+  });
+
+  it('is empty for a value that is not a timestamp (the caller picks the placeholder)', () => {
+    expect(formatDateTime('not a date')).toBe('');
+    expect(formatDateTime('')).toBe('');
   });
 });

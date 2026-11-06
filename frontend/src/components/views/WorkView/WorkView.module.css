@@ -74,38 +74,6 @@
   margin-left: auto;
 }
 
-.filter {
-  display: inline-flex;
-  padding: 2px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-}
-
-.filterChip {
-  height: 30px;
-  padding: 0 0.75rem;
-  font-family: inherit;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.filterChip:hover {
-  color: var(--text-primary);
-}
-
-.activeChip,
-.activeChip:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-  box-shadow: var(--shadow-sm);
-}
-
 .body {
   flex: 1;
   overflow-y: auto;

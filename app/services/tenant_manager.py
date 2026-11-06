@@ -23,6 +23,9 @@ from app.models.tenant import Tenant, TenantCredentials
 from app.services.encryption import decrypt
 from app.services.tenant_provisioner import (
     ABSENCE_TYPES_SEED_SQL,
+    AUDIT_LOG_PROBE_SQL,
+    AUDIT_LOG_SCHEMA_STATEMENTS,
+    AUDIT_LOG_TABLE,
     BOOKING_SEGMENT_COLUMN_STATEMENTS,
     COMPANY_EVENT_SITES_BACKFILL_SQL,
     COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
@@ -944,6 +947,22 @@ class TenantConnectionManager:
                 slug,
                 e,
             )
+            await _rollback_quietly(conn)
+
+        # Audit log (add_audit_log.sql, 2.4.0): the table and its indexes,
+        # only while the probe finds no table (no seed), committed only in the
+        # run that creates it -- an up-to-date tenant pays the probe alone.
+        # actor_user_id references users. One statement per execute.
+        try:
+            probe = await conn.execute(text(AUDIT_LOG_PROBE_SQL))
+            if AUDIT_LOG_TABLE not in {row[0] for row in probe.fetchall()}:
+                logger.info("Auto-migration: Adding the audit log on tenant %s...", slug)
+                for statement in AUDIT_LOG_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.commit()
+                logger.info("Auto-migration: Added the audit log on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (audit log) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Notification types (add_change_notifications.sql). Runs on every pool

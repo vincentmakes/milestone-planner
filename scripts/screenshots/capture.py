@@ -21,9 +21,11 @@ Usage
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
@@ -1079,6 +1081,139 @@ def shot_equipment_assign_modal(context: BrowserContext) -> None:
     page.close()
 
 
+def _audit_row(row_id: int, minutes_ago: int, action: str, category: str, **fields) -> dict:
+    when = datetime.now(UTC) - timedelta(minutes=minutes_ago)
+    row = {
+        "id": row_id,
+        "created_at": when.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "category": category,
+        "action": action,
+        "outcome": "success",
+        "actor_user_id": 1,
+        "actor_email": EMAIL,
+        "actor_name": "Admin User",
+        "subject_email": None,
+        "target_type": None,
+        "target_id": None,
+        "target_label": None,
+        "project_id": None,
+        "project_name": None,
+        "ip": "203.0.113.24",
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36",
+        "origin": "web",
+        "details": None,
+    }
+    row.update(fields)
+    return row
+
+
+def _canned_audit_rows() -> list[dict]:
+    """A page of varied audit rows for the Audit log shots when the instance
+    has recorded too little to show (a fresh seed holds only sign-ins)."""
+    diana = {"actor_user_id": 5, "actor_email": "diana.davis@demo.local", "actor_name": "Diana Davis"}
+    return [
+        _audit_row(112, 2, "access.audit_log.exported", "access", target_type="audit_log",
+                   details={"context": {"rows": 112}}),
+        _audit_row(111, 6, "approval_request.updated", "change", target_type="approval_request", target_id="2",
+                   target_label="Analytics", project_id=1, project_name="Bioprocess Scale-Up"),
+        _audit_row(110, 9, "approval_request.created", "change", target_type="approval_request", target_id="2",
+                   target_label="Analytics", project_id=1, project_name="Bioprocess Scale-Up", **diana),
+        _audit_row(109, 14, "phase.created", "change", target_type="phase", target_id="31",
+                   target_label="Scale-up validation", project_id=2, project_name="Catalyst Optimization"),
+        _audit_row(108, 21, "admin.settings.updated", "admin", target_type="setting",
+                   target_id="audit_log_retention_days", target_label="audit_log_retention_days",
+                   details={"changes": {"audit_log_retention_days": {"old": "365", "new": "180"}}}),
+        # A user row names the account (subject_email) and a role change the roles' names,
+        # as the server records them.
+        _audit_row(107, 26, "admin.user.updated", "admin", target_type="user", target_id="4",
+                   target_label="Charlie Clark", subject_email="charlie.clark@demo.local",
+                   details={"changes": {"job_title": {"old": "Process Engineer", "new": "Senior Process Engineer"},
+                                        "role": {"old": "User", "new": "Team Lead"}}}),
+        _audit_row(106, 33, "auth.login.succeeded", "auth", subject_email=EMAIL),
+        _audit_row(105, 34, "auth.login.failed", "auth", outcome="failure", subject_email=EMAIL,
+                   details={"reason": "bad_password"}),
+        _audit_row(104, 47, "access.export.site", "access", target_type="site", target_id="1",
+                   target_label="Winterthur"),
+        _audit_row(103, 58, "staff_assignment.deleted", "change", target_type="staff_assignment", target_id="77",
+                   project_id=3, project_name="Analytical Method Transfer"),
+        _audit_row(102, 65, "auth.logout", "auth", subject_email="diana.davis@demo.local", **diana),
+        _audit_row(101, 80, "auth.login.failed", "auth", outcome="failure", actor_user_id=None, actor_email=None,
+                   actor_name=None, subject_email="d.davis@demo.local", ip="198.51.100.7",
+                   details={"reason": "unknown_user"}),
+    ]
+
+
+def _open_audit_log(page: Page, needs: str | None = None) -> None:
+    """Settings -> General -> Data management -> Open audit log (the log has
+    no section of its own); serves a canned page (nothing written) when the
+    newest 12 rows cover fewer than three categories, as on a fresh seed, or
+    when the first page holds no `needs` action."""
+    resp = page.request.get(f"{URL}api/audit-log?page_size=50")
+    items = resp.json().get("items", []) if resp.ok else []
+    thin = len({row["category"] for row in items[:12]}) < 3
+    if thin or (needs is not None and all(row["action"] != needs for row in items)):
+        rows = _canned_audit_rows()
+        page_body = json.dumps({"items": rows, "total": len(rows), "page": 1, "page_size": 50})
+        actions_body = json.dumps({"actions": sorted({row["action"] for row in rows})})
+        page.route(re.compile(r".*/api/audit-log\?.*"),
+                   lambda route: route.fulfill(status=200, content_type="application/json", body=page_body))
+        page.route(re.compile(r".*/api/audit-log/actions$"),
+                   lambda route: route.fulfill(status=200, content_type="application/json", body=actions_body))
+        log("  (audit log: canned rows)")
+    open_settings_section(page, "General")
+    page.get_by_label("Retention period (days)").wait_for(timeout=8000)
+    page.get_by_role("heading", name="Data management").evaluate(
+        "el => el.scrollIntoView({block: 'start'})"
+    )
+    page.get_by_role("button", name="Open audit log").click()
+    page.get_by_role("button", name="Back to General").wait_for(timeout=5000)
+    page.get_by_role("table").locator("tbody tr").first.wait_for(timeout=10000)
+    page.wait_for_timeout(800)
+
+
+def shot_settings_audit_log(context: BrowserContext) -> None:
+    """The audit log sub-view of Settings -> General: the newest entries (sign-ins, a failed sign-in,
+    user and settings changes, a phase, approval requests, an export)."""
+    page = context.new_page()
+    login(page)
+    _open_audit_log(page)
+    page.screenshot(path=str(OUT / "settings-audit-log.png"))
+    log("[done] settings-audit-log.png")
+    page.close()
+
+
+def shot_settings_audit_log_entry(context: BrowserContext) -> None:
+    """The audit log sub-view, the Entry detail dialog of the newest
+    'User updated' row with its Changes table (Field / Before / After)."""
+    page = context.new_page()
+    login(page)
+    _open_audit_log(page, needs="admin.user.updated")
+    page.get_by_role("row", name=re.compile("User updated")).first.click()
+    page.get_by_role("dialog", name="Entry detail").get_by_role("table").wait_for(timeout=5000)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "settings-audit-log-entry.png"))
+    log("[done] settings-audit-log-entry.png")
+    page.keyboard.press("Escape")
+    page.close()
+
+
+def shot_settings_general_retention(context: BrowserContext) -> None:
+    """Settings -> General scrolled to Data management: the Audit log row
+    (retention hint, Open audit log), the retention field and its 'Keep audit
+    entries indefinitely' switch."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "General")
+    page.get_by_label("Retention period (days)").wait_for(timeout=8000)
+    page.get_by_role("heading", name="Data management").evaluate(
+        "el => el.scrollIntoView({block: 'start'})"
+    )
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "settings-general-retention.png"))
+    log("[done] settings-general-retention.png")
+    page.close()
+
+
 def shot_dark_theme(context: BrowserContext) -> None:
     """Gantt in the dark theme. Fresh context so the shared (light) context
     is untouched; must run last anyway to keep run order deterministic."""
@@ -1164,6 +1299,9 @@ TARGETS = {
     "grouped": shot_gantt_grouped,
     "color-by": shot_gantt_color_by,
     "kanban": shot_kanban,
+    "settings-audit-log": shot_settings_audit_log,
+    "settings-audit-log-entry": shot_settings_audit_log_entry,
+    "settings-general-retention": shot_settings_general_retention,
     "dark-theme": shot_dark_theme,  # keep last: the only intentionally dark shot
 }
 

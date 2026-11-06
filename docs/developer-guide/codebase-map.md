@@ -51,7 +51,7 @@ Code described: the whole repository — `app/`, `frontend/`, `migrations/`, `sc
 - **Site** — a physical location *within* a tenant (labs/offices). Most data (projects, equipment, holidays, events) is site-scoped; users belong to one or more sites via `user_sites`, equipment via `equipment_sites`, company events via `company_event_sites`. **Sites scope access**: without `sites.view_all` (admin-only by default) a user reads and writes only the data of their *visible sites* (their live `user_sites`), see [Tenant role model](auth-and-tenancy.md#tenant-role-model).
 - **Organization** — a master-DB grouping of tenants that share one Microsoft Entra SSO configuration.
 - **Tenant role** (`users.role`, FK → `roles.key`) — a named **permission set**: one mode per catalogue key (`allow`, `approval` on the three own-booking keys, or deny). Three system roles are seeded — `admin` (every key, in code; not editable), `superuser` and `user` (editable defaults reproducing the pre-1.13 behaviour) — and admins add custom roles in Settings → Roles. See [Tenant role model](auth-and-tenancy.md#tenant-role-model).
-- **Permission key** — one entry of the catalogue in `app/services/permissions.py` (60 keys, 18 groups), e.g. `projects.create`, `sites.view_all`. Locked: `projects.view` (always allow) and `roles.manage` (admin only). The **PM bundle** is the 6 keys a holder of `projects.manage_as_pm` gets on the projects whose `pm_id` they are.
+- **Permission key** — one entry of the catalogue in `app/services/permissions.py` (61 keys, 18 groups), e.g. `projects.create`, `sites.view_all`. Locked: `projects.view` (always allow) and `roles.manage` (admin only). The **PM bundle** is the 6 keys a holder of `projects.manage_as_pm` gets on the projects whose `pm_id` they are.
 - **Visible sites** — the sites a user reads and writes: every site with `sites.view_all`, otherwise their live `user_sites`.
 - **Approval request** — an own booking (`assignments.self_*` in approval mode) waiting for an approver; its pending create is a real assignment row with `approval_status = 'pending'`.
 - **My Work** — the per-user view replacing My Todos (2.0.0; personal tasks were removed): **My Approvals** (requests the user may decide), **My Assignments** (their approved bookings, derived client-side) and **My Requests** (their own requests).
@@ -128,6 +128,8 @@ app/
     rbac.py            # Role, RolePermission, ApprovalPolicy, ApprovalPolicyRole, ApprovalRequest
     dashboard.py       # Dashboard (widgets, roles / sites / teams / users + their *_ids), DashboardRole,
                        #   DashboardSite, DashboardTeam, DashboardUser, DashboardWidget (2.3.0)
+    audit_log.py       # AuditLog — the tenant audit log (2.4.0): immutable rows, details as JSON text;
+                       #   AUDIT_LOG_CATEGORIES / AUDIT_LOG_OUTCOMES (the CHECKs)
     note.py            # Note — tablename is staff_notes
     settings.py        # Settings (KV), PredefinedPhase, SSOConfig (singleton)
     session.py         # Session (express-session compatible)
@@ -141,6 +143,8 @@ app/
     approvals.py       # Approval requests: list (mine / to_decide / all), detail, approve / reject /
                        #   cancel (the workflow lives in services/approvals.py)
     assignments.py     # Staff assignments (3 levels; own bookings may answer 202) + equipment assignments
+    audit_log.py       # Audit log read API (system.audit_log): filtered list (page/total), /actions,
+                       #   CSV /export (recorded, committed first); lazy retention purge on read
     auth.py            # Login/logout/me, password change, SSO config/login/callback
     custom_columns.py  # Custom column + value CRUD
     dashboards.py      # Dashboards CRUD (sharing targets + shared_with) + /shareable-users (people picker)
@@ -171,11 +175,17 @@ app/
                        #   project_field.py the field / item bodies; project.py carries field_values;
                        #   TagCreate / TagUpdate are extra="forbid", so a stale group_id is a 422;
                        #   sso.py the SSO test request/response shared by org and tenant tests;
-                       #   dashboard.py the MetricQuery spec + dashboard / widget bodies)
+                       #   dashboard.py the MetricQuery spec + dashboard / widget bodies;
+                       #   audit_log.py AuditLogEntryOut / AuditLogPage / AuditLogActions)
   services/
     approvals.py       # Own-booking approval workflow: submit_request (202), resolve_row_write,
                        #   plan_placement / apply_shrink (auto-placed second booking), approve / reject / cancel, approver_user_ids / can_decide (live),
                        #   expire_overtaken / cancel_for_entity hooks, publish (broadcast + pushes)
+    audit_log.py       # The one write path into audit_log: record (adds + flushes, never commits),
+                       #   diff / redact / validate_details, change_action; one JSON line per row
+                       #   on the milestone.audit logger (ship it like any log; the table is the record);
+                       #   record_detached (derived tiers), retention_days / purge_old
+                       #   (audit_log_retention_days, default 365, 0 = forever)
     auth.py            # Shared admin-session validation
     card_access.py     # require_card_status_write: kanban.move_any, or an approved assignee
     card_status.py     # apply_status / apply_completion — the only writers of status/completion
@@ -191,6 +201,8 @@ app/
                        #   field_ids) (the two base dashboards + the demo extras: the Overview's two
                        #   field widgets, the Capacity gauge; widgets only in the run that creates
                        #   their dashboard; callable standalone on a seeded tenant)
+    csv_safety.py      # safe_cell / FORMULA_TRIGGERS: the spreadsheet formula-injection guard of
+                       #   every export (site .xlsx, project CSV, audit-log CSV)
     date_range.py      # parse_day / parse_day_range (400 on bad/inverted/>366-day ranges),
                        #   ensure_date_order (422) for partial updates
     encryption.py      # AES-256-GCM credentials + bcrypt/PBKDF2 password hashing
@@ -282,7 +294,8 @@ frontend/
                        #   sites, skills, staff, tags, projectFields (projectFieldsApi), teams, users,
                        #   vacations, roles
                        #   (rolesApi), health (getAppVersion), importChunks (postInChunks), kanban,
-                       #   notifications, approvals (approvalsApi, isPendingResponse), mentionableCache
+                       #   notifications, approvals (approvalsApi, isPendingResponse), auditLog
+                       #   (auditLogApi: list / actions / exportCsv), mentionableCache
                        #   (the @-mention list per site for the session), sso (testTenantSSOConfig,
                        #   SSOTestResult — re-exported by admin for the organization test)
     components/
@@ -316,7 +329,9 @@ frontend/
                        #   defaults), Roles (RolesPanel + RoleForm, PermissionMatrix, ApprovalPoliciesForm),
                        #   Sites, Teams, BankHolidays,
                        #   CompanyEvents, Users, Skills, AbsenceTypes, Equipment, EquipmentTypes,
-                       #   PredefinedPhases, ProjectFields (+ ProjectFieldsPreview), Tags, SSO + helpers ColorSwatchPicker, SiteChecklist,
+                       #   PredefinedPhases, ProjectFields (+ ProjectFieldsPreview), Tags, SSO,
+                       #   audit-log/ (AuditLogPanel + AuditLogEntryModal, AuditChip, auditFilters,
+                       #   auditDetails) + helpers ColorSwatchPicker, SiteChecklist,
                        #   SiteForm, TeamForm, TeamScope, calendarUtils, useDragReorder)
       modals/          # ModalContainer (lazy) + dialogs: Project/Phase/Subphase, Assignment
                        #   (Staff/Equipment), EquipmentBlock, KanbanCardModal, TagPicker
@@ -342,6 +357,8 @@ frontend/
                        #   DateRangeField/ (DateRangeField + DateField on one react-day-picker
                        #   calendar panel, DatePickerPopover, dateRangeLogic click rules),
                        #   ErrorBoundary/ (Notice + Retry; wraps the lazy Dashboards view),
+                       #   FilterChips/ (segmented aria-pressed filter chips: My Work, audit log),
+                       #   Pagination/ (First / Previous / "Page n of m" / Next / Last),
                        #   useSubmitGuard.ts (double-submit guard)
       layout/          # MainLayout, Header/ (density tiers + HeaderOverflowMenu, SyncStatus
                        #   "Offline" badge, WhatIfToggle + Apply-failure banner, UserMenu, …),
@@ -364,7 +381,7 @@ frontend/
                        #   projectFilters,
                        #   kanbanCards, mentions, equipmentOverlap, subphaseUtils, persistFailure,
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
-                       #   roles, pendingBookings (+ assignmentLock), myAssignments, metrics, viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
+                       #   roles, pendingBookings (+ assignmentLock), myAssignments, auditLabels, metrics, viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
                        #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel /
                        #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals / tooltipRowGate),
                        #   projectFieldsPreview (the Project fields preview's sample project)

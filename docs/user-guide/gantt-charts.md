@@ -30,7 +30,7 @@ The right side shows horizontal bars representing duration of each project, phas
 - **Subphase bars** support unlimited nesting depth
 - A red vertical line marks today's date, and the current month is highlighted in the header
 - Week numbers follow **ISO 8601**: weeks start on Monday and week 1 is the week containing the first Thursday of the year, so 1–3 January 2027 show as week 53 (of 2026)
-- The timeline opens centred on today in every view
+- The timeline opens centred on today in every view, after every refresh; switching to another view and back keeps your place
 - Bank holidays and company events are highlighted on the background at week and month zoom; a company event marked as a [site closure](settings.md#site-closures) gets a stronger, hatched tint
 - A thin strip in the timeline header, under the day labels, names every holiday and company event of a day — see [Holidays and events on the timeline](#holidays-and-events-on-the-timeline)
 - Staff assignment bars are marked on days the person is away — an unavailable absence, or a closure of one of their sites

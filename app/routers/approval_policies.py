@@ -10,7 +10,7 @@ the policy. Every signed-in user reads the policies; only admins change them
 touch requests already pending.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,7 @@ from app.middleware.auth import get_current_user, require_admin
 from app.models.rbac import ApprovalPolicy, Role
 from app.models.user import User
 from app.schemas.role import ApprovalPolicyResponse, ApprovalPolicyUpdate
+from app.services import audit_log
 from app.services.permissions import PERMISSIONS
 
 router = APIRouter(prefix="/approval-policies", tags=["approval policies"])
@@ -71,6 +72,7 @@ async def get_approval_policies(
 async def update_approval_policy(
     action: str,
     data: ApprovalPolicyUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -95,11 +97,31 @@ async def update_approval_policy(
     policy = (
         await db.execute(select(ApprovalPolicy).where(ApprovalPolicy.action == action))
     ).scalar_one_or_none()
+    # A missing row reads as the seeded default: the PM approves, no roles.
+    before = (
+        {"pm_approves": True, "role_ids": []}
+        if policy is None
+        else {"pm_approves": bool(policy.pm_approves), "role_ids": sorted(policy.role_ids)}
+    )
     if policy is None:
         policy = ApprovalPolicy(action=action)
         db.add(policy)
     policy.pm_approves = data.pm_approves
     policy.roles = roles
 
+    changes = audit_log.diff(
+        before,
+        {"pm_approves": bool(data.pm_approves), "role_ids": sorted(r.id for r in roles)},
+    )
+    if changes:
+        await audit_log.record(
+            db,
+            request,
+            action="admin.approval_policy.updated",
+            category="admin",
+            actor=admin,
+            target=("approval_policy", action, action),
+            changes=changes,
+        )
     await db.commit()
     return _policy_response(action, data.pm_approves, [role.id for role in roles])

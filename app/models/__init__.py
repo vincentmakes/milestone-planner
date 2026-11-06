@@ -5,6 +5,7 @@ All models inherit from the Base class defined in database.py.
 
 from app.models.absence_type import AbsenceType
 from app.models.assignment import PhaseStaffAssignment, ProjectAssignment, SubphaseStaffAssignment
+from app.models.audit_log import AuditLog
 from app.models.card_comment import CardComment
 from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.dashboard import (
@@ -118,6 +119,7 @@ __all__ = [
     "DashboardTeam",
     "DashboardUser",
     "DashboardWidget",
+    "AuditLog",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",

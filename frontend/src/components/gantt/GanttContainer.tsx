@@ -20,7 +20,7 @@ import { StaffView } from '@/components/views/StaffView/StaffView';
 import { EquipmentView } from '@/components/views/EquipmentView/EquipmentView';
 import { orderSiteProjects, setProjectOrder, moveProjectInOrder } from '@/utils/storage';
 import { canManageAnyProject } from '@/utils/permissions';
-import { ganttDefaultPanel } from '@/utils/instanceSettings';
+import { ganttDefaultPanel, selectShowWeekends } from '@/utils/instanceSettings';
 import styles from './GanttContainer.module.css';
 
 export function GanttContainer() {
@@ -36,7 +36,7 @@ export function GanttContainer() {
   // Company events narrowed by the header team filter
   const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const currentUser = useAppStore((s) => s.currentUser);
-  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  const showWeekends = useAppStore(selectShowWeekends);
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);

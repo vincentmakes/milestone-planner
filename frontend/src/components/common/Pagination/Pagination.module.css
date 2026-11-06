@@ -1,0 +1,15 @@
+/* Pagination: First / Previous / "Page n of m" / Next / Last */
+
+.pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.status {
+  padding: 0 0.5rem;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

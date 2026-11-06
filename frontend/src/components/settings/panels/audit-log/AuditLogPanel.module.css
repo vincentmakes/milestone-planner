@@ -1,0 +1,350 @@
+/* AuditLogPanel (Settings hub > General > Audit log) and its Entry detail dialog */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+}
+
+.intro {
+  margin: 0 0 0.75rem;
+  max-width: 760px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.toolbarChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Filter bar (wraps at narrow widths) */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.filterLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.searchField {
+  width: 16rem;
+  max-width: 100%;
+}
+
+.ipField {
+  width: 11rem;
+  max-width: 100%;
+}
+
+.pickerField {
+  width: 14rem;
+  max-width: 100%;
+}
+
+.dateField {
+  width: 10rem;
+  max-width: 100%;
+}
+
+.notice {
+  margin-bottom: 0.75rem;
+}
+
+/* Table */
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  /* Fixed columns (the <colgroup>): the free-text ones share the rest and cut
+     with an ellipsis, so the table fits the hub. Below its min-width the
+     wrapper scrolls instead of crushing the columns. */
+  table-layout: fixed;
+  min-width: 52rem;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.colWhen {
+  width: 10rem;
+}
+
+.colCategory {
+  width: 8rem;
+}
+
+.colAction {
+  width: 11.5rem;
+}
+
+.colOutcome {
+  width: 6rem;
+}
+
+.colIp {
+  width: 7.5rem;
+}
+
+.table th {
+  text-align: left;
+  padding: 0.625rem 0.5rem;
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table td {
+  padding: 0.625rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+
+.row {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.row:hover,
+.row:focus-within {
+  background: var(--bg-hover);
+}
+
+/* The When cell's button: reads as the cell's text (the row is the target). */
+.table .rowButton {
+  height: auto;
+  max-width: 100%;
+  padding: 0;
+  justify-content: flex-start;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.table .rowButton:hover:not(:disabled) {
+  background: transparent;
+  color: inherit;
+}
+
+.nowrap {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.busy {
+  opacity: 0.6;
+}
+
+.loading,
+.empty {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Footer: Per page + Pagination */
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.perPage {
+  width: 7rem;
+}
+
+/* Chips */
+.chip {
+  --chip-color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 22px;
+  padding: 0 0.5rem;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: var(--radius-full);
+  color: var(--chip-color);
+}
+
+.outlined {
+  border: 1px solid color-mix(in srgb, var(--chip-color) 60%, transparent);
+  background: transparent;
+}
+
+.filled {
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--chip-color) 18%, transparent);
+}
+
+.toneInfo {
+  --chip-color: var(--status-info);
+}
+
+.toneWarning {
+  --chip-color: var(--status-warning);
+}
+
+.toneAccent {
+  --chip-color: var(--accent-purple);
+}
+
+.toneNeutral {
+  --chip-color: var(--text-secondary);
+}
+
+.toneSuccess {
+  --chip-color: var(--status-success);
+}
+
+.toneError {
+  --chip-color: var(--status-error);
+}
+
+.code {
+  font-family: monospace;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+/* Entry detail */
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.entryHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.entryAction {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.entryChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.definitions {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.375rem 1rem;
+  margin: 0;
+}
+
+.definitions dt {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.definitions dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.breakAll {
+  word-break: break-all;
+}
+
+.entrySection {
+  margin: 0.5rem 0 0;
+  padding-bottom: 0.375rem;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.entrySubsection {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.changes {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.changes th,
+.changes td {
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+  overflow-wrap: anywhere;
+}
+
+.changes thead th {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.changes tbody th {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.items {
+  margin: 0;
+  padding-left: 1.25rem;
+}

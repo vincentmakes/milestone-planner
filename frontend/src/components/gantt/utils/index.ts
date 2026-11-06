@@ -7,6 +7,9 @@ export {
   calculateTodayCenterScrollLeft,
   findTodayCell,
   findCellIndex,
+  leftEdgeDate,
+  scrollLeftForDate,
+  openingScrollLeft,
 } from './timeline';
 
 export type { CellEvent, TimelineCell, TimelineHeader } from './timeline';

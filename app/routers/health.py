@@ -116,6 +116,7 @@ async def ws_debug_broadcast(
         project_id=0,
         action="update",
         summary="ws-debug ping",
+        audit=False,
     )
     tenant_id = get_tenant_from_request(request)
     return {

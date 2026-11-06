@@ -111,6 +111,7 @@ def test_schema_creates_tables_added_by_auto_migrations(schema_sql):
         "dashboard_sites",
         "dashboard_teams",
         "dashboard_users",
+        "audit_log",
     ):
         assert f"CREATE TABLE IF NOT EXISTS {table} (" in schema_sql, table
 

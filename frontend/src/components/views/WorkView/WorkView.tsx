@@ -15,6 +15,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Notice } from '@/components/common/Notice';
+import { FilterChips } from '@/components/common/FilterChips';
+import type { FilterChipOption as ChipOption } from '@/components/common/FilterChips';
 import { useWorkStore } from '@/stores/workStore';
 import type { WorkTab } from '@/stores/workStore';
 import { useAppStore } from '@/stores/appStore';
@@ -37,37 +39,6 @@ const EMPTY_SITES: ReadonlyMap<number, string> = new Map();
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
-}
-
-interface ChipOption<T extends string> {
-  value: T;
-  label: string;
-}
-
-function FilterChips<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: ReadonlyArray<ChipOption<T>>;
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className={styles.filter} role="group" aria-label="Show">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          className={`${styles.filterChip} ${value === option.value ? styles.activeChip : ''}`}
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 const REQUEST_FILTERS: ReadonlyArray<ChipOption<'open' | 'done'>> = [
@@ -256,10 +227,15 @@ export function WorkView() {
 
         <div className={styles.toolbarRight}>
           {activeTab === 'requests' && (
-            <FilterChips options={REQUEST_FILTERS} value={requestsFilter} onChange={setRequestsFilter} />
+            <FilterChips label="Show" options={REQUEST_FILTERS} value={requestsFilter} onChange={setRequestsFilter} />
           )}
           {activeTab === 'assignments' && (
-            <FilterChips options={ASSIGNMENT_FILTERS} value={assignmentsFilter} onChange={setAssignmentsFilter} />
+            <FilterChips
+              label="Show"
+              options={ASSIGNMENT_FILTERS}
+              value={assignmentsFilter}
+              onChange={setAssignmentsFilter}
+            />
           )}
         </div>
       </div>

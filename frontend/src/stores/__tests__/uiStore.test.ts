@@ -172,9 +172,13 @@ describe('transient UI', () => {
   });
 
   it('bumps scroll and zoom triggers', () => {
-    const before = ui().scrollToTodayTrigger;
     ui().triggerScrollToToday();
-    expect(ui().scrollToTodayTrigger).toBe(before + 1);
+    const first = ui().scrollToTodayTrigger;
+    expect(first).toEqual({ timestamp: expect.any(Number) });
+    ui().triggerScrollToToday();
+    expect(ui().scrollToTodayTrigger).not.toBe(first); // a new click is a new trigger
+    ui().clearScrollToTodayTrigger();
+    expect(ui().scrollToTodayTrigger).toBeNull();
     ui().triggerScrollToDate('2026-05-01');
     expect(ui().scrollToDateTrigger?.date).toBe('2026-05-01');
     ui().clearScrollToDateTrigger();

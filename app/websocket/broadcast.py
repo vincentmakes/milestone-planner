@@ -21,6 +21,7 @@ import logging
 from fastapi import Request
 
 from app.models.user import User
+from app.services import audit_log
 from app.utils import utcnow_naive
 from app.websocket.manager import manager
 
@@ -76,9 +77,12 @@ async def broadcast_change(
     project_id: int = 0,
     action: str = "update",
     summary: str | None = None,
+    *,
+    audit: bool = True,
 ) -> None:
     """
-    Broadcast a change event to all connected users in the tenant.
+    Broadcast a change event to all connected users in the tenant, then
+    record it in the audit log (derived tier 2a).
 
     Args:
         request: FastAPI request (used to determine tenant)
@@ -88,6 +92,10 @@ async def broadcast_change(
         project_id: Parent project ID
         action: Action type (create, update, delete, move)
         summary: Optional human-readable summary
+        audit: Also write a ``change`` row ``<entity_type>.<past-tense verb>``
+            (``audit_log.change_action``) on a session of its own
+            (``audit_log.record_detached``: never raises, a failed row never
+            fails the change). False only for the ws-debug ping.
     """
     tenant_id = get_tenant_from_request(request)
     user_name = format_user_name(user)
@@ -108,6 +116,16 @@ async def broadcast_change(
         action=action,
         summary=summary,
     )
+
+    if audit:
+        await audit_log.record_detached(
+            request,
+            action=audit_log.change_action(entity_type, action),
+            category="change",
+            actor=user,
+            target=(entity_type, entity_id, summary),
+            project_id=project_id or None,
+        )
 
 
 async def send_notification(request: Request, user_id: int, payload: dict) -> None:

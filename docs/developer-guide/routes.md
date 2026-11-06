@@ -21,7 +21,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie. Throttled: 10 failures / 15 min per (tenant, IP, e-mail) → 429 + `Retry-After`; password > 72 bytes → 400 |
+| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie. Throttled: 10 failures / 15 min per (tenant, IP, e-mail) → 429 + `Retry-After`; password > 72 bytes → 400. Audit: `auth.login.failed` per failure, capped per (tenant, IP) at 100 in the window (then one row with `context.suppressed` at most once per window, then none) |
 | POST | `/auth/logout` | session | Destroy session, clear cookie |
 | GET | `/auth/me` | public | Current user (fresh from DB) with `roleName`, `permissions` (allow keys; admin: every key; feature-disabled keys left out — `effective_permission_set`), `approvalRequired` (keys in approval mode), `canSeeAllSites` and `isResource`, or `{user: null}` (login answers the same shape) |
 | POST | `/auth/change-password` | user | Change own password (verifies current; new ≥ 8 chars) |
@@ -34,6 +34,8 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | POST | `/auth/sso/test` | admin (`settings.sso`) | Test the entered tenant SSO values against Microsoft, nothing saved (`app/services/sso_test.py`) → `{credentialsOk, summary, checks[]}`. A missing, blank or masked secret tests the stored one; 409 while org SSO is active; `tenant_id` limited to `[A-Za-z0-9.-]` (422) |
 | GET | `/auth/sso/login` | public | Build the Entra authorization URL (HMAC-signed `state` carries the slug + a nonce; sets the one-time `sso_nonce` cookie, 10 min) |
 | GET | `/auth/sso/callback` | public | OAuth callback: verify state **and** that its nonce matches this browser's `sso_nonce` cookie (cleared whatever the outcome), token exchange, Graph `/me`, group validation, find/auto-create user, create session |
+
+Audit rows: the sign-in events (`auth.*`, [Authentication and tenancy](auth-and-tenancy.md#audit-rows-of-the-sign-in-flow)); the three SSO config PUTs `admin.sso.updated` (changed fields; the client secret as `***` / null only), `POST /auth/sso/test` `admin.sso.tested` (outcome per `credentialsOk`, reason the first failed check's fixed `kind` — `sso_test.SSO_CHECK_KINDS`, never derived from its label; `kind` is not in the response — or `rejected`).
 
 ### Users & staff (`users.py`, `staff.py`)
 
@@ -49,6 +51,8 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/staff/{id}/assignments` | user (`views.staff`) | All assignments for a staff member at visible sites, with `approval_status` (in `assignments.py`) |
 
 User list/detail responses carry `team_ids` + `team_names` (sorted by id).
+
+Audit rows: `admin.user.created` (context `role`), `admin.user.updated` (`changes` of first/last name, email, job title, role — the roles' **names**, read when recorded —, capacity, `is_resource`, site / team / skill id lists; `sessions_revoked`; nothing when nothing changed), `admin.user.password_set` (no diff), `admin.user.activated` / `deactivated` (`sessions_revoked`) — from toggle-active and from a `PUT` that moves `active`, which records the direction row first and `admin.user.updated` only for the other fields —, `admin.user.deleted` — target `("user", id, name)`, `subject_email` the account's. `sessions_revoked` goes on the first row of a request.
 
 ### Sites, holidays & events (`sites.py`)
 
@@ -70,6 +74,8 @@ User list/detail responses carry `team_ids` + `team_names` (sorted by id).
 | POST / DELETE | `/sites/{id}/events`, `…/{eid}` | superuser (`company_events.manage`) | Legacy single-site create / unlink (event deleted only when no site is left) |
 
 All holiday/event writes also require every site involved to be visible (`ensure_site_access` from `app/services/site_access.py`; `sites.view_all` holders any site), and the calendar reads 403 on a site outside the visible ones.
+
+Audit rows: `admin.site.created` / `updated` / `deleted`, target `("site", id, name)`, `changes` of name, location, city, country, region, timezone and active (nothing when unchanged). The holiday and event routes are recorded by `BroadcastMiddleware` (`admin.bank_holiday.*`, `admin.company_event.*`, target id = the trailing path segment when numeric, none for a create or import).
 
 ### Projects, phases & subphases (`projects.py`)
 
@@ -173,6 +179,8 @@ Reads: any user; writes: `project_fields.manage` (admin-only by default). Coarse
 | PUT | `/teams/{id}` | superuser (`teams.manage`) | Partial update (site cannot change); explicit `null` clears `description` / `color`; `member_ids` replaces the members (same 400 rule) |
 | DELETE | `/teams/{id}` | superuser (`teams.manage`) | Delete; its member, project, tag, field-item, event and equipment links cascade. 409 while a project of the team would keep a tag or field item limited to other teams of the site (`team_rules.count_projects_stranded_by_team_delete`) |
 
+Audit rows: `admin.team.created` / `updated` / `deleted`, target `("team", id, name)`, `changes` of name, description, colour, active and the sorted `member_ids` (nothing when nothing changed); context `site_id` on create and delete.
+
 Writes are What-If-exempt (configuration) and coarse-broadcast as `change:team` (refreshes the `teams`, `staff`, `projects`, `tags`, `projectFields`, `equipment` and `siteCalendar` slices).
 
 ### Kanban (`kanban.py`, prefix `/kanban`)
@@ -215,6 +223,8 @@ Role writes use `require_admin` (the lockout-proof surface: `roles.manage` is lo
 | PUT | `/roles/{id}` | `require_admin` | Partial update; the admin role is 403 (`Administrator permissions cannot be edited`); a different `key` is 422 (the key never changes); `permissions` replaces the matrix (same 422 rules); explicit `null` clears `description` |
 | DELETE | `/roles/{id}` | `require_admin` | 204; a system role 403; a role held by users 409 `N users hold this role. Give them another role first.` |
 
+Audit rows: `admin.role.created` / `updated` (name, description, sort order) / `deleted`, and `admin.role.permissions_updated` with `{key: {old, new}}` per permission whose mode moved (`allow` / `approval` / null = not granted); target `("role", key, name)`.
+
 A matrix edit applies on the holders' next request (`get_current_user` resolves the role live) and, through `change:role`, refreshes `/auth/me` in open clients.
 
 ### Approval policies (`approval_policies.py`, prefix `/approval-policies`)
@@ -223,6 +233,8 @@ A matrix edit applies on the holders' next request (`get_current_user` resolves 
 |--------|------|------|-------------|
 | GET | `/approval-policies` | user | One entry per approvable action, in catalogue order: `{action, label, pm_approves, role_ids}` (a missing row reads as the seeded default: PM approves, no roles) |
 | PUT | `/approval-policies/{action}` | `require_admin` | Full replace `{pm_approves, role_ids}`; unknown action or role id → 404. Admins approve whatever the policy says |
+
+Audit row: `admin.approval_policy.updated`, target `("approval_policy", action, action)`, `changes` of `pm_approves` and the sorted `role_ids` (a missing row reads as PM approves, no roles); nothing when unchanged.
 
 ### Approval requests (`approvals.py`, prefix `/approval-requests`)
 
@@ -252,6 +264,18 @@ Instance-wide; every query is cut to the caller's visible sites, so a shared das
 
 **Engine rules** (`app/services/metrics.py`, contract `FACT_CASES` in `tests/test_metrics.py`): booking measures are **planned** time — approved bookings at all three levels (pending excluded), dates = `effective_dates` **clipped to the card**, `booked_days` = Σ allocation / 100 × working days of (span ∩ period ∩ bucket), `booked_weeks` = / 5; a **working day** is Monday–Friday and not a bank holiday of the **project's** site (multi-day holidays included; site-less projects skip weekends only; counted arithmetically with `bisect`, never by expanding days); absences and closures do **not** subtract; project-level and card-level rows of one person both count (the Staff availability endpoint, which counts project rows only, differs). `team` = the booked person's teams **at the project's site** (a person in two teams counts in both; *No team* otherwise), `project_team` = the project's teams. Distinct measures (`booking_count`, `people_booked`, `project_count`, `project_volume`, `phase_count`, `phases_due`, `phases_overdue`, `equipment_booking_count`, `equipment_booked`) recompute totals, *Other* and percentage denominators over distinct facts; `project_volume`, `people_booked` and `equipment_booked` refuse a `period` dimension. **Delivery**: `phases_due` files a phase once on its end (a milestone on its date), `phases_overdue` = due before today and `status != 'done'`; `status` dimension in Kanban order; `milestones` filter `include` / `only` / `exclude`; `phase_count` / `phase_weeks` read top-level phases only, while `phases_due` / `phases_overdue` also read `Facts.milestones` — every `project_subphases` row with `is_milestone` (any depth) inside the period, `start = end` = its date, `type` = its top phase's (`_top_phase`; its own name when the walk fails), its own status, counted apart from the phases (`_ident` `("subphase_milestone", id)`). **Capacity** (`CapacityFact`): every active `is_resource` user who is a member of a visible site (all, site-less included, when visible is `None`), weekdays minus their off days (`person_off_days`: bank holidays of any of their sites, unavailable absences — untyped = unavailable, recurring only on their weekdays —, closures by the `getClosureOn` rule) × `max_capacity` / 100; the booked side counts only bookings of people with a capacity fact, still cut to projects at the visible sites; `site` / `team` and the Sites / Teams / People filters read the **person** on both sides; `utilisation` = booked / capacity × 100 (weighted per group), `available_days` = capacity − booked, `people_over_capacity` = distinct people with booked > capacity (+1e-9; zero capacity with booked time counts). **Equipment**: `equipment_booked_days` = whole working days of the **project's** site, no allocation; `equipment_utilisation` = booked days over availability (`EquipmentAvailabilityFact`: active equipment linked to a visible site, weekdays minus the holidays of its sites and its blocks, `equipment_off_days`), `site` = the equipment's sites; overlapping bookings and bookings inside a block add up (over 100 % = conflict); its booked side, like capacity's, counts only bookings of projects at the visible sites (`_equipment_booking_statement` is cut to the project scope). Known differences: booked time follows the project's site calendar while capacity / availability follow the person's / equipment's; the Staff heatmap is per day without bank holidays. A ratio with booked time over zero capacity is `null` (the client shows "–"), 0 with neither; `utilisation` / `equipment_utilisation` / `available_days` (`FLOAT_MEASURES`) keep two decimals; they and `people_over_capacity` (counted per bucket, so a bucket is not a part of the total) refuse `percent_of` (`NO_PERCENT_MEASURES`, JSON `no_percent`) — the builder then shows no *Percent of*, and a KPI of one has no dimension. Periods: `this_year`, `last_year`, `next_year`, `this_quarter`, `last_quarter`, `next_quarter`, `this_month`, `last_month`, `next_month`, `last_12_months`, `next_12_months` (both include the current month), `all`, or `{from, to}` ≤ 5 years; "today" = the server's UTC date; `all` = the extent of the projects in scope, and when longer than five years it ends at most a year after today and starts five years before that end (`truncated: true`, *Period cut to five years*). ISO weeks are labelled with their ISO year (`2027-W01`).
 
+### Audit log (`audit_log.py`, prefix `/audit-log`)
+
+Every route requires `system.audit_log` (admins by default; never under `/settings`, whose `GET /settings/{key}` is public). Rows are immutable: there is no write route; the rows themselves are written by `audit_log.record` (see [Audit log tiers](conventions-in-depth.md#audit-log-tiers)). The log is **instance-wide**: no visible-sites clause, and `project_name` is shown whatever the reader's visible sites (the key is admin-only by default).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/audit-log?category=&action=&outcome=&actor_user_id=&q=&ip=&since=&until=&project_id=&page=&page_size=` | `system.audit_log` | Newest first (`created_at DESC, id DESC`) → `{items, total, page, page_size}`. `category` `auth`/`admin`/`access`/`change`, `outcome` `success`/`failure` (422 otherwise); `action` exact, or a **prefix** when it ends with `.` (`auth.login.`); `q` a case-insensitive substring over actor email, actor name, subject email and target label (`%` / `_` escaped); `ip` exact; `since` / `until` inclusive dates (`until` = to the end of that day); `page` ≥ 1, `page_size` 1–200 (default 50). Items: every column, `details` parsed, plus `project_name` (outer join: null once the project is gone). **Purges first** |
+| GET | `/audit-log/actions` | `system.audit_log` | `{actions: [...]}` — every distinct action present, sorted (the filter's options) |
+| GET | `/audit-log/export` | `system.audit_log` | The same filters as CSV (`text/csv; charset=utf-8`, `attachment; filename="audit-log.csv"`), at most `AUDIT_EXPORT_MAX_ROWS` = 50 000 rows newest first; columns `CSV_COLUMNS` (every column + `project_name`, `details` compact JSON, `created_at` in the API's UTC form `2026-11-03T08:00:00.000Z`); a cell starting with `= + - @ \t \r` gets a `'` prefix (`csv_safety.safe_cell`). Records `access.audit_log.exported` (context `rows`) and **commits before the body is built** (built in a worker thread, `asyncio.to_thread`). **Purges first** |
+
+**Retention (lazy):** the list and the export first delete the rows created on or before now minus `audit_log_retention_days` (`audit_log.purge_old`, then a commit); `0` keeps everything. The only delete of an audit row; `/actions` does not purge.
+
 ### Custom columns (`custom_columns.py`, prefix `/custom-columns`)
 
 | Method | Path | Auth | Description |
@@ -279,6 +303,7 @@ Instance-wide; every query is cut to the caller's visible sites, so a shared das
 | `project_fields_hidden` | compact JSON array ⊆ `customer`/`sales_pm`/`volume` in that order (`confirmed` → 422) | `[]` | Built-in fields hidden from the dialog and the views (`isBuiltInFieldHidden`); values stay stored and writable (UI only) |
 | `volume_decimals` | `any` / `0` / `1` / `2` / `3` | `1` | Volume's Format (2.1.0): `POST /projects` and `PUT /projects/{id}` round `volume` half-up to it (`round_field_number`, read once per request, only when `volume` is sent), and the site export's Projects sheet shows it rounded; `any` = as typed. Stored volumes are never rewritten, and a PUT whose rounded `volume` equals the stored one rounded keeps the stored value (provisioned tenants store `volume REAL`: 12.7 reads back as 12.699999809…, so a dialog echo is no change and notifies nobody). Reader `volume_decimals_from` never raises (missing / malformed → 1); client `volumeDecimals(settings)`, used by `ProjectModal` (`NumberFieldInput`) |
 | `project_tooltip_rows` | compact JSON array: built-in row keys among `customer`/`pm`/`sales_pm`/`volume`/`confirmed`/`tags`/`period`/`completion`/`work_days`/`total_days`/`staff` in that order (`PROJECT_TOOLTIP_ROWS`), then custom project field ids ascending; duplicates dropped; unknown key, `true`/`false`, id ≤ 0, more than 500 ids → 422 | `["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]` | The rows of the Gantt's Shift-hover project details (2.3.0) — a shown-list, so Volume and new fields stay off until listed. Field ids are not checked: a deleted field's id is ignored by the readers, and the panel drops it on its next write of the key. A hidden field's key is removed by the panel (cascade: hiding Customer / Sales PM / Volume also writes this key without it). Client `parseTooltipRows` (missing / malformed → the default, `[]` → no row), `tooltipRowGate` / `isTooltipRowShown` (listed and, for Customer / Sales PM / Volume, not hidden), `tooltipRowsValue`; read by `ShiftTooltip`, edited by the *In Gantt details* switches of Settings → Project fields (written at once; two admins changing the list together: the last write wins on the whole list) |
+| `audit_log_retention_days` | a whole number `0`–`3650` (`_int_range`; `" 090"` → `90`) | `365` | `audit_log.purge_old`: the rows the list and the export purge first; `0` = kept indefinitely (2.4.0) |
 
 Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `true` / `false`. Saving a key broadcasts `change:settings`, which refreshes the `settings` **and** `currentUser` slices (the Kanban switch changes `/auth/me`); the saving admin is excluded from the broadcast, so `DefaultsPanel` re-reads `/auth/me` itself after a `kanban_enabled` change.
 
@@ -290,6 +315,8 @@ Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `tru
 | GET | `/settings`, `/settings/{key}` | ⚠ none | Instance settings (no auth dependency — do not store secrets in `settings`). Known keys without a row read as their default (merged into `GET /settings`; nothing written) |
 | PUT | `/settings/{key}` | admin (`settings.general`; `project_field_labels` / `project_fields_hidden` / `volume_decimals` / `project_tooltip_rows` also `project_fields.manage`) | Update setting. A known key stores its canonical form (422 `Invalid value for <key>` otherwise) and `value: null` deletes its row (answered with the default); any other key is stored as given |
 | GET / PUT | `/settings/sso` | none / admin (`settings.sso`) | Tenant SSO settings (read / write) |
+
+Audit row of `PUT /settings/{key}`: `admin.settings.updated`, target `("setting", key, key)`, `changes = {key: {old, new}}` (a value over 200 characters — a data-URL logo — as `{changed: true, length}`); values are compared as they read: a known key without a row is its default, a stored value counts in its canonical form, so saving the current value or the default (or resetting to it) records nothing, and a first save shows the default as `old`. `PUT /settings/sso`: `admin.sso.updated` (see Authentication).
 
 ### Import & export (`mpp_import.py`, `export.py`)
 
@@ -304,6 +331,8 @@ Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `tru
 | GET | `/export/site/{sid}/excel` | superuser (`sites.export`) | Full site export of a visible site to `.xlsx` (see [Site Export contract](codebase-map.md#site-export-to-excel)) |
 
 All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (`MAX_IMPORT_UPLOAD_BYTES`, else 413) — and parsing runs via `run_in_threadpool` so mpxj/JPype never blocks the event loop.
+
+Audit rows (`access`, after the file is built, committed by `get_db`): `access.export.msproject` and `access.export.csv` (target `("project", id, name)`, `project_id`, context `rows` = task count; the GET CSV route records once), `access.export.site` (target `("site", id, name)`). The project import's `broadcast_change` records `project.created` (tier 2a).
 
 ### Admin portal (`routers/admin/*` → `/api/admin/*`, master DB, `admin_session` cookie)
 

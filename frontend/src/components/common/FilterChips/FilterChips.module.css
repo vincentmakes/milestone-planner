@@ -1,0 +1,34 @@
+/* FilterChips: a segmented row of filter chips (moved from WorkView.module.css) */
+
+.group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.chip {
+  height: 30px;
+  padding: 0 0.75rem;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.chip:hover {
+  color: var(--text-primary);
+}
+
+.active,
+.active:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  box-shadow: var(--shadow-sm);
+}

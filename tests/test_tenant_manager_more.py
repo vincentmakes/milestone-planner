@@ -267,6 +267,7 @@ ALL_KNOWN_NAMES = [
     *tp.PROJECT_FIELD_TABLES,
     *tp.DASHBOARD_TABLES,
     *tp.DASHBOARD_SHARING_TABLES,
+    tp.AUDIT_LOG_TABLE,
 ]
 
 
@@ -355,6 +356,7 @@ LEGACY_CHANGES = [
     tp.DASHBOARD_NAMED_SEED_SQL,
     tp.DASHBOARD_PERMISSION_BACKFILL_SQL,
     *tp.DASHBOARD_SHARING_SCHEMA_STATEMENTS,
+    *tp.AUDIT_LOG_SCHEMA_STATEMENTS,
     # The notification-types widening runs on every pool creation (own gate).
     *(s for s in tp.RBAC_SCHEMA_STATEMENTS if s != tp.NOTIFICATIONS_TYPE_CHECK_SQL),
 ]
@@ -396,9 +398,9 @@ async def test_legacy_tenant_gets_every_step():
         tp.DASHBOARD_WIDGET_KIND_CHECK_SQL
     )
     # One commit per step (card status: one per table; dashboard sharing: its
-    # tables, then its visibility block; the widget-kinds block its own), 29
-    # in all.
-    assert conn.log.count("COMMIT") == 29
+    # tables, then its visibility block; the widget-kinds block its own; the
+    # audit log, +1 in 2.4.0), 30 in all.
+    assert conn.log.count("COMMIT") == 30
 
 
 @pytest.mark.asyncio
@@ -441,7 +443,9 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     # booking-segments step, the equipment-note step, the project-field
     # decimals step, the project-comments step, the dashboard-sharing step (its
     # probe, then its visibility block), the widget-kinds block (its own
-    # commit, +1 in 2.3.0) and the notification-types step.
+    # commit, +1 in 2.3.0) and the notification-types step. The audit-log
+    # step (2.4.0) commits only when it creates the table: none here.
+    assert conn.ran(tp.AUDIT_LOG_PROBE_SQL)
     assert conn.log.count("COMMIT") == 11
 
 

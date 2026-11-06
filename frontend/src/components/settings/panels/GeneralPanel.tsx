@@ -7,11 +7,16 @@
  *   are saved with PUT /settings, which only admins may call, so they and the
  *   Save button are rendered for admins only. Their unsaved changes are
  *   reported to the hub, which asks before switching section or closing.
+ * - Data management (`system.audit_log`): an "Open audit log" row that shows
+ *   the AuditLogPanel in place of the form, with a "Back to General" link —
+ *   a panel-internal sub-view, like a Users edit form. The form stays mounted
+ *   (hidden) meanwhile, so its unsaved edits survive the trip and keep the
+ *   hub's guard armed; closing the hub unmounts both.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Notice } from '@/components/common/Notice';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -27,7 +32,11 @@ import {
 import type { SettingsPanelProps } from '../types';
 import styles from './GeneralPanel.module.css';
 import { can } from '@/utils/permissions';
-import { Icon, CloseIcon, UploadIcon } from '@/components/common/Icon';
+import { Icon, AdminPanelSettingsIcon, BackIcon, CloseIcon, UploadIcon } from '@/components/common/Icon';
+
+const AuditLogPanel = lazy(() =>
+  import('./audit-log/AuditLogPanel').then((m) => ({ default: m.AuditLogPanel }))
+);
 
 interface SettingsData {
   instance_title: string;
@@ -37,6 +46,8 @@ interface SettingsData {
   auto_expand_projects: string;
   header_logo_dark: string;
   header_logo_light: string;
+  /** Days the audit log keeps its entries, '0' = indefinitely */
+  audit_log_retention_days: string;
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -47,7 +58,20 @@ const DEFAULT_SETTINGS: SettingsData = {
   auto_expand_projects: 'false',
   header_logo_dark: '',
   header_logo_light: '',
+  audit_log_retention_days: '365',
 };
+
+/** The longest audit log retention the server accepts (`MAX_RETENTION_DAYS`). */
+const MAX_RETENTION_DAYS = 3650;
+/** What turning "Keep audit entries indefinitely" off restores. */
+const DEFAULT_RETENTION_DAYS = '365';
+
+/** Why a retention value would be refused, or null: a whole number from 0 to 3650. */
+function retentionError(value: string): string | null {
+  const text = value.trim();
+  if (/^\d+$/.test(text) && Number(text) <= MAX_RETENTION_DAYS) return null;
+  return `Enter a whole number of days from 0 to ${MAX_RETENTION_DAYS}.`;
+}
 
 const VIEW_OPTIONS = [
   { value: 'week', label: 'Week' },
@@ -61,21 +85,132 @@ const WEEK_START_OPTIONS = [
   { value: 'sunday', label: 'Sunday' },
 ];
 
+/** "Kept 365 days", or "Kept indefinitely" for 0, as the audit log's chip reads (a missing or malformed value is the default 365). */
+function retentionText(value: string | undefined): string {
+  const parsed = Number.parseInt(value ?? '', 10);
+  const days = Number.isFinite(parsed) && parsed >= 0 ? parsed : 365;
+  return days === 0 ? 'Kept indefinitely' : `Kept ${days} days`;
+}
+
+/** Resets the scrolled ancestor (the hub's content pane), so a sub-view opens at its top. */
+function scrollAncestorToTop(element: HTMLElement | null): void {
+  for (let node = element?.parentElement ?? null; node; node = node.parentElement) {
+    if (node.scrollTop > 0) {
+      node.scrollTop = 0;
+      return;
+    }
+  }
+}
+
 export function GeneralPanel({ onDirtyChange }: SettingsPanelProps) {
   const canEditInstance = useAppStore((s) => can(s.currentUser, 'settings.general'));
+  const canViewAuditLog = useAppStore((s) => can(s.currentUser, 'system.audit_log'));
+  const [auditLogOpen, setAuditLogOpen] = useState(false);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  // Focus goes back to "Open audit log" on Back, not on the first render
+  const returnFocus = useRef(false);
 
-  if (!canEditInstance) {
-    return (
-      <div className={styles.container}>
-        <AppearanceSection />
-        <p className={styles.hint}>
-          Instance-wide settings (title, branding, display defaults) are managed by administrators.
-        </p>
+  useEffect(() => {
+    if (!auditLogOpen && returnFocus.current) {
+      returnFocus.current = false;
+      openButtonRef.current?.focus();
+    }
+  }, [auditLogOpen]);
+
+  const auditLogRow = canViewAuditLog ? (
+    <AuditLogRow buttonRef={openButtonRef} onOpen={() => setAuditLogOpen(true)} />
+  ) : null;
+
+  const form = canEditInstance ? (
+    <InstanceSettingsForm
+      onDirtyChange={onDirtyChange}
+      appearance={<AppearanceSection />}
+      auditLogRow={auditLogRow}
+    />
+  ) : (
+    <div className={styles.container}>
+      <AppearanceSection />
+      {auditLogRow && (
+        <section className={styles.section}>
+          <h3 className={styles.sectionTitle}>Data management</h3>
+          {auditLogRow}
+        </section>
+      )}
+      <p className={styles.hint}>
+        Instance-wide settings (title, branding, display defaults) are managed by administrators.
+      </p>
+    </div>
+  );
+
+  return (
+    <>
+      <div hidden={auditLogOpen}>{form}</div>
+      {auditLogOpen && (
+        <AuditLogView
+          onBack={() => {
+            returnFocus.current = true;
+            setAuditLogOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+// =============================================================================
+// AUDIT LOG (Data management row and sub-view, system.audit_log)
+// =============================================================================
+
+interface AuditLogRowProps {
+  buttonRef: Ref<HTMLButtonElement>;
+  onOpen: () => void;
+}
+
+function AuditLogRow({ buttonRef, onOpen }: AuditLogRowProps) {
+  const retention = useAppStore((s) => s.instanceSettings?.audit_log_retention_days);
+
+  return (
+    <div className={styles.toggleField}>
+      <div className={styles.toggleInfo}>
+        <span className={styles.label}>Audit log</span>
+        <span className={styles.hint}>Who signed in, what changed and who exported what.</span>
+        <span className={styles.hint}>{retentionText(retention)}</span>
       </div>
-    );
-  }
+      <Button
+        ref={buttonRef}
+        type="button"
+        variant="ghost"
+        icon={<Icon icon={AdminPanelSettingsIcon} />}
+        onClick={onOpen}
+      >
+        Open audit log
+      </Button>
+    </div>
+  );
+}
 
-  return <InstanceSettingsForm onDirtyChange={onDirtyChange} appearance={<AppearanceSection />} />;
+function AuditLogView({ onBack }: { onBack: () => void }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    scrollAncestorToTop(rootRef.current);
+    backRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  return (
+    <div ref={rootRef} className={styles.subView}>
+      <div className={styles.subViewHeader}>
+        <h3>Audit log</h3>
+        <Button ref={backRef} type="button" variant="ghost" icon={<Icon icon={BackIcon} />} onClick={onBack}>
+          Back to General
+        </Button>
+      </div>
+      <Suspense fallback={<div className={styles.loading}>Loading…</div>}>
+        <AuditLogPanel />
+      </Suspense>
+    </div>
+  );
 }
 
 // =============================================================================
@@ -123,9 +258,11 @@ function AppearanceSection() {
 interface InstanceSettingsFormProps extends SettingsPanelProps {
   /** Rendered between the Instance and Branding sections */
   appearance: ReactNode;
+  /** The "Open audit log" row, first in Data management (null without system.audit_log) */
+  auditLogRow: ReactNode;
 }
 
-function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFormProps) {
+function InstanceSettingsForm({ onDirtyChange, appearance, auditLogRow }: InstanceSettingsFormProps) {
   const instanceSettings = useAppStore((s) => s.instanceSettings);
   const setInstanceSettings = useAppStore((s) => s.setInstanceSettings);
   
@@ -187,6 +324,9 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
   
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   
+  const retentionProblem = retentionError(settings.audit_log_retention_days);
+  const keepForever = retentionProblem === null && Number(settings.audit_log_retention_days.trim()) === 0;
+
   const handleSave = async () => {
     if (!beginSave()) return; // a save is already running
     setError(null);
@@ -196,7 +336,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
       // Save changed settings
       for (const key of Object.keys(settings) as (keyof SettingsData)[]) {
         if (settings[key] !== originalSettings[key]) {
-          await updateSetting(key, settings[key]);
+          await updateSetting(key, key === 'audit_log_retention_days' ? settings[key].trim() : settings[key]);
         }
       }
       
@@ -205,6 +345,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
         ...instanceSettings,
         instance_title: settings.instance_title,
         show_weekends: settings.show_weekends,
+        audit_log_retention_days: settings.audit_log_retention_days.trim(),
       };
       setInstanceSettings(newInstanceSettings);
       
@@ -381,6 +522,49 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
             </div>
           </section>
           
+          {/* Data management: the audit log and its retention */}
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>Data management</h3>
+
+            {auditLogRow}
+
+            <div className={styles.field}>
+              <span className={styles.label}>Audit log retention</span>
+              <div className={styles.retentionRow}>
+                <Input
+                  className={styles.retentionInput}
+                  fullWidth
+                  label="Retention period (days)"
+                  hint="0 = keep indefinitely. Maximum 3650 days."
+                  error={retentionProblem ?? undefined}
+                  id="audit-log-retention-days"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={MAX_RETENTION_DAYS}
+                  step={1}
+                  value={settings.audit_log_retention_days}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSettings(prev => ({ ...prev, audit_log_retention_days: value }));
+                    setSuccess(null);
+                  }}
+                />
+                <ToggleSwitch
+                  label="Keep audit entries indefinitely"
+                  checked={keepForever}
+                  onChange={(on) => {
+                    setSettings(prev => ({
+                      ...prev,
+                      audit_log_retention_days: on ? '0' : DEFAULT_RETENTION_DAYS,
+                    }));
+                    setSuccess(null);
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
           {/* Messages */}
           {error && (
             <Notice tone="error">{error}</Notice>
@@ -403,7 +587,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
               )}
               <Button 
                 onClick={handleSave} 
-                disabled={!hasChanges || isSaving}
+                disabled={!hasChanges || isSaving || retentionProblem !== null}
                 loading={isSaving}
               >
                 Save Changes

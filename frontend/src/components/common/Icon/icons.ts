@@ -202,3 +202,9 @@ export { default as PinIcon } from '@mui/icons-material/PushPin';
 export { default as PinOffIcon } from '@mui/icons-material/PushPinOutlined';
 /** Auto-calculated dates */
 export { default as SparklesIcon } from '@mui/icons-material/AutoAwesomeOutlined';
+/** Settings section: Audit log */
+export { default as AdminPanelSettingsIcon } from '@mui/icons-material/AdminPanelSettingsOutlined';
+/** Pagination: first page */
+export { default as FirstPageIcon } from '@mui/icons-material/FirstPageOutlined';
+/** Pagination: last page */
+export { default as LastPageIcon } from '@mui/icons-material/LastPageOutlined';

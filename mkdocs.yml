@@ -87,6 +87,7 @@ nav:
     - Installation: admin-guide/installation.md
     - Multi-Tenant Management: admin-guide/multi-tenant.md
     - Organization & SSO: admin-guide/organizations-sso.md
+    - Audit Log: admin-guide/audit-log.md
     - Database & Migrations: admin-guide/database.md
     - Backup & Recovery: admin-guide/backup-recovery.md
     - Monitoring & Troubleshooting: admin-guide/monitoring.md

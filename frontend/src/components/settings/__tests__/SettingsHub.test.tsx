@@ -402,4 +402,26 @@ describe('canOpenSettings / getVisibleSections', () => {
     render(<SettingsHub />);
     expect(await screen.findByText('Roles panel')).toBeInTheDocument();
   });
+
+  it('has no Audit log section (General → Data management opens it), yet system.audit_log alone opens the hub at General', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    const adminSections = getVisibleSections(makeUser({ role: 'admin' }));
+    expect(adminSections.map((s) => s.label)).not.toContain('Audit log');
+    expect(adminSections.filter((s) => s.group === 'General').map((s) => s.label)).toEqual([
+      'General',
+      'Features & defaults',
+      'Roles',
+    ]);
+    expect(canOpenSettings(makeUser({ role: 'x', permissions: ['system.audit_log'] }))).toBe(true);
+    expect(ids(['system.audit_log'])).toEqual(['general']);
+    expect(canOpenSettings(makeUser({ role: 'x', permissions: ['projects.view'] }))).toBe(false);
+
+    setRole('x', ['system.audit_log']);
+    act(() => useUIStore.getState().openSettings());
+    render(<SettingsHub />);
+    expect(await screen.findByText('General panel')).toBeInTheDocument();
+    expect(sectionTitle()).toBe('General');
+    expect(navButton('Audit log')).not.toBeInTheDocument();
+  });
 });

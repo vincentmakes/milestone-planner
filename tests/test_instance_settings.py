@@ -42,6 +42,7 @@ DEFAULTS = {
     "project_tooltip_rows": (
         '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]'
     ),
+    "audit_log_retention_days": "365",
 }
 
 BOOLEAN_KEYS = [

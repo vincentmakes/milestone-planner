@@ -20,6 +20,7 @@ import {
   parseIdList,
   parseNameList,
   parseTooltipRows,
+  selectShowWeekends,
   tooltipRowGate,
   tooltipRowLabel,
   tooltipRowsValue,
@@ -280,5 +281,14 @@ describe('Gantt details rows (project_tooltip_rows)', () => {
     const shows = tooltipRowGate(settings);
     expect((['customer', 'pm', 'volume', 4, 5] as TooltipRow[]).map((row) => shows(row))).toEqual([false, true, false, true, false]);
     expect(tooltipRowGate(null)('staff')).toBe(true);
+  });
+});
+
+describe('selectShowWeekends', () => {
+  it('shows weekends unless the switch is exactly false (unloaded settings included)', () => {
+    expect(selectShowWeekends({ instanceSettings: null })).toBe(true);
+    expect(selectShowWeekends({ instanceSettings: {} as never })).toBe(true);
+    expect(selectShowWeekends({ instanceSettings: { show_weekends: 'true' } as never })).toBe(true);
+    expect(selectShowWeekends({ instanceSettings: { show_weekends: 'false' } as never })).toBe(false);
   });
 });

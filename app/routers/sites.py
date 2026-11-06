@@ -41,6 +41,7 @@ from app.schemas.site import (
     SiteResponse,
     SiteUpdate,
 )
+from app.services import audit_log
 from app.services.date_range import MAX_DAY_RANGE, exceeds_max_span, parse_day
 from app.services.holidays import (
     custom_holiday_dates,
@@ -163,9 +164,25 @@ async def get_site(
     return site
 
 
+SITE_AUDIT_FIELDS: tuple[str, ...] = (
+    "name",
+    "location",
+    "city",
+    "country_code",
+    "region_code",
+    "timezone",
+    "active",
+)
+
+
+def _site_fields(site: Site) -> dict:
+    return {field: getattr(site, field) for field in SITE_AUDIT_FIELDS}
+
+
 @router.post("/sites", response_model=SiteResponse, status_code=201)
 async def create_site(
     data: SiteCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_permission("sites.manage")),
 ):
@@ -187,6 +204,16 @@ async def create_site(
 
     try:
         db.add(site)
+        await db.flush()  # the id, for the audit row of the same transaction
+        await audit_log.record(
+            db,
+            request,
+            action="admin.site.created",
+            category="admin",
+            actor=admin,
+            target=("site", site.id, site.name),
+            changes=audit_log.diff({}, _site_fields(site), keys=SITE_AUDIT_FIELDS),
+        )
         await db.commit()
         await db.refresh(site)
     except Exception as e:
@@ -209,6 +236,7 @@ async def create_site(
 async def update_site(
     site_id: int,
     data: SiteUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_permission("sites.manage")),
 ):
@@ -225,6 +253,7 @@ async def update_site(
         raise HTTPException(status_code=404, detail="Site not found")
 
     old_country_code = site.country_code
+    before = _site_fields(site)
 
     # Update fields if provided. Name and timezone are required columns, so
     # null means "unchanged" there; the optional fields distinguish an absent
@@ -240,6 +269,18 @@ async def update_site(
         site.timezone = data.timezone
     if data.active is not None:
         site.active = data.active
+
+    changes = audit_log.diff(before, _site_fields(site), keys=SITE_AUDIT_FIELDS)
+    if changes:
+        await audit_log.record(
+            db,
+            request,
+            action="admin.site.updated",
+            category="admin",
+            actor=admin,
+            target=("site", site.id, site.name),
+            changes=changes,
+        )
 
     try:
         await db.commit()
@@ -282,6 +323,7 @@ async def update_site(
 @router.delete("/sites/{site_id}")
 async def delete_site(
     site_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_permission("sites.manage")),
 ):
@@ -345,6 +387,14 @@ async def delete_site(
     )
     option_ids = list(linked.scalars().all())
 
+    await audit_log.record(
+        db,
+        request,
+        action="admin.site.deleted",
+        category="admin",
+        actor=admin,
+        target=("site", site.id, site.name),
+    )
     await db.delete(site)
     await db.flush()
 

@@ -7,7 +7,7 @@
 
 import { useMemo, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import { isBuiltInFieldHidden } from '@/utils/instanceSettings';
+import { isBuiltInFieldHidden, selectShowWeekends } from '@/utils/instanceSettings';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom } from '@/hooks';
@@ -30,7 +30,7 @@ export function CrossSiteView() {
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   // Company events narrowed by the header team filter
   const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
-  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  const showWeekends = useAppStore(selectShowWeekends);
   // A hidden Customer field (Settings → Project fields) is left out
   const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
   const viewMode = useViewStore((s) => s.viewMode);
@@ -38,6 +38,7 @@ export function CrossSiteView() {
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
+  const clearScrollToTodayTrigger = useUIStore((s) => s.clearScrollToTodayTrigger);
   // The header team filter belongs to the current site: it narrows that lane only.
   const { projectMatches } = useTeamFilter();
   
@@ -59,16 +60,16 @@ export function CrossSiteView() {
   
   const totalWidth = cells.length * cellWidth;
   
-  // Scroll to today when trigger changes
+  // Today button / Home, once: the trigger is cleared here.
   useEffect(() => {
     if (!scrollToTodayTrigger || !timelineScrollRef.current) return;
-    
+    clearScrollToTodayTrigger();
     const scrollContainer = timelineScrollRef.current;
     // Centre today's cell, or the next working day on a hidden weekend day
     const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
     if (scrollTo === null) return;
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
-  }, [scrollToTodayTrigger, cells, cellWidth]);
+  }, [scrollToTodayTrigger, clearScrollToTodayTrigger, cells, cellWidth]);
 
   // Open on today: the timeline starts months before the current date.
   const hasPositioned = useRef(false);

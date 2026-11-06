@@ -16,8 +16,10 @@ to queue on ``mock_db_session.execute.side_effect``::
 selects -- ``"card_lock"`` then ``"placement"`` for ``approvals.plan_placement``,
 ``"author"`` / ``"mentioned"`` for a request note posted on approve) and its builders (``approval_request``,
 ``pending_phase_row``, ``approvable_db``, ...) a statement-dispatching session
-for app/services/approvals.py. Prefer these over redefining the helpers per file
-(tests/test_domain_routes_misc.py keeps its own private copies).
+for app/services/approvals.py. ``audit_log_step(sql)`` answers the audit-log
+probe for the fake connections of the tenant auto-migration tests. Prefer these
+over redefining the helpers per file (tests/test_domain_routes_misc.py keeps its
+own private copies).
 """
 
 from datetime import date
@@ -37,6 +39,7 @@ from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.rbac import ApprovalPolicy, ApprovalRequest, RolePermission
 from app.models.user import User, UserSite
 from app.services.approvals import ACTION_CREATE
+from app.services.tenant_provisioner import AUDIT_LOG_PROBE_SQL, AUDIT_LOG_TABLE
 from tests.conftest import FakeUser
 
 
@@ -91,6 +94,28 @@ def unique_scalar_result(value: Any) -> MagicMock:
     result = MagicMock()
     result.unique.return_value.scalar_one_or_none.return_value = value
     result.unique.return_value.scalar_one.return_value = value
+    return result
+
+
+def audit_log_step(sql: str) -> MagicMock | None:
+    """The audit-log step's answer for a fake auto-migration connection.
+
+    ``_run_auto_migrations`` probes for ``audit_log`` (``AUDIT_LOG_PROBE_SQL``)
+    on every pool creation; a fake that does not answer it raises, and the
+    step logs an unexpected ``ROLLBACK``. Call it first in a fake's
+    ``execute``::
+
+        if (probe := audit_log_step(sql)) is not None:
+            return probe
+
+    For the probe it returns a result whose ``fetchall()`` names the table
+    (up to date: the step runs no DDL and commits nothing); for any other
+    statement ``None``. tests/test_audit_log_schema.py drives the step itself.
+    """
+    if sql != AUDIT_LOG_PROBE_SQL:
+        return None
+    result = MagicMock()
+    result.fetchall.return_value = [(AUDIT_LOG_TABLE,)]
     return result
 
 

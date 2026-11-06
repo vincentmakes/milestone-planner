@@ -54,6 +54,7 @@ export const PERMISSION_KEYS = [
   'skills.manage',
   'staff_notes.manage',
   'system.api_docs',
+  'system.audit_log',
   'system.ws_debug',
   'tags.manage',
   'teams.manage',

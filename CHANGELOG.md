@@ -5,6 +5,18 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-11-05
+
+### Added
+- An audit log, opened from Settings → General → Data management → Open audit log, for roles with the new `system.audit_log` permission (admins by default): every sign-in, sign-out, failed or locked attempt and SSO sign-in, every change to users, roles, approval policies, settings, SSO, sites and teams with the old and new values (credentials are masked), every export, and every project, phase, booking, comment and other planning change, each with the account, IP address and origin.
+- The Audit log can be filtered by search text, category, outcome, action, actor, IP address and dates, shows an entry's reason, changes and context in a detail dialog, and exports the filtered list to CSV (up to 50 000 rows; the export is itself recorded). Every entry is also written as a JSON line on the `milestone.audit` logger for log collectors.
+- Settings → General → Audit log retention: how long audit entries are kept (default 365 days, 0 keeps them indefinitely, at most 3 650).
+
+### Fixed
+- Settings → General: the selected Default view and Week starts on options are readable again.
+- The Gantt opened months ahead of today after a refresh on instances that hide weekends; it now always opens on today.
+- After a click on Today, Previous / Next period, zooming or switching views no longer jumps the timeline back to today.
+
 ## [2.3.0] - 2026-10-30
 
 ### Added

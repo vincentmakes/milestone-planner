@@ -226,10 +226,15 @@ function sectionListed(section: SettingsSection, user: UserLike | null | undefin
 
 /**
  * Whether the user has anything to configure: at least one section gated by a
- * key they hold. General alone (appearance) does not open the hub.
+ * key they hold, or the audit log (`system.audit_log`), which has no section of
+ * its own — General → Data management opens it. General alone (appearance)
+ * does not open the hub.
  */
 export function canOpenSettings(user: UserLike | null | undefined): boolean {
-  return SETTINGS_SECTIONS.some((section) => section.permission !== null && sectionListed(section, user));
+  return (
+    can(user, 'system.audit_log') ||
+    SETTINGS_SECTIONS.some((section) => section.permission !== null && sectionListed(section, user))
+  );
 }
 
 /** Sections the user may open, in registry order; none without a gated one. */

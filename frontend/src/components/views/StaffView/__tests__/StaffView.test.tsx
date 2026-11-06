@@ -11,6 +11,7 @@ import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores'
 import { tagFilterKey } from '@/utils/tags';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { formatDateISO } from '@/utils/date';
+import { generateTimelineCells } from '@/components/gantt/utils/timeline';
 import { buildEventDateSet } from '@/api';
 import type { CompanyEvent } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
@@ -599,5 +600,70 @@ describe('StaffView event strip', () => {
     useAppStore.setState({ companyEvents: stripEvents, companyEventDates: buildEventDateSet(stripEvents) });
     const { container } = render(<StaffView embedded />);
     expect(container.querySelector('[class*="markerLayer"]')).toBeNull();
+  });
+});
+
+describe('StaffView timeline position', () => {
+  const nextFrame = () => act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+  const anchor = () => useViewStore.getState().timelineAnchorDate;
+  function renderScroller(ui: React.ReactElement) {
+    const { container } = render(ui);
+    const scroller = container.querySelector('[class*="timelineScroll"]') as HTMLDivElement;
+    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 600 });
+    return scroller;
+  }
+
+  it("standalone: opens on the session's anchor date and anchors the left-edge date on scroll", async () => {
+    seed();
+    const now = new Date();
+    useViewStore.setState({ viewMode: 'month', currentDate: now, cellWidth: 30, timelineAnchorDate: isoOffset(-20) });
+    const cells = generateTimelineCells(now, 'month', new Set(), []);
+    const index = cells.findIndex((c) => c.dateStr === isoOffset(-20));
+    const scroller = renderScroller(<StaffView />);
+    await nextFrame();
+    expect(scroller.scrollLeft).toBe(index * 30);
+
+    scroller.scrollLeft = (index + 5) * 30;
+    fireEvent.scroll(scroller);
+    await waitFor(() => expect(anchor()).toBe(cells[index + 5].dateStr));
+  });
+
+  it('standalone: Today centres once, clears the trigger and anchors that place', async () => {
+    seed();
+    const now = new Date();
+    useViewStore.setState({ viewMode: 'month', currentDate: now, cellWidth: 30, timelineAnchorDate: null });
+    const cells = generateTimelineCells(now, 'month', new Set(), []);
+    const scroller = renderScroller(<StaffView />);
+    scroller.scrollTo = vi.fn() as unknown as typeof scroller.scrollTo;
+    await nextFrame();
+    act(() => useUIStore.getState().triggerScrollToToday());
+    const left = Math.max(0, cells.findIndex((c) => c.isToday) * 30 - 300 + 15);
+    expect(scroller.scrollTo).toHaveBeenCalledTimes(1);
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left, behavior: 'smooth' });
+    expect(useUIStore.getState().scrollToTodayTrigger).toBeNull();
+    expect(anchor()).toBe(cells[Math.floor(left / 30)].dateStr);
+    act(() => useViewStore.getState().navigatePeriod(1));
+    expect(scroller.scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('embedded: leaves Today to the Gantt (the trigger stays for it)', async () => {
+    seed();
+    const scroller = renderScroller(<StaffView embedded />);
+    scroller.scrollTo = vi.fn() as unknown as typeof scroller.scrollTo;
+    await nextFrame();
+    act(() => useUIStore.getState().triggerScrollToToday());
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
+    expect(useUIStore.getState().scrollToTodayTrigger).not.toBeNull();
+  });
+
+  it('embedded: leaves the position and the anchor to the Gantt', async () => {
+    seed();
+    const scroller = renderScroller(<StaffView embedded />);
+    await nextFrame();
+    expect(scroller.scrollLeft).toBe(0);
+    scroller.scrollLeft = 300;
+    fireEvent.scroll(scroller);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(anchor()).toBeNull();
   });
 });

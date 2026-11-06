@@ -37,7 +37,10 @@ relative_files = true
 # 1.13.0 from a local run (91 %, Python 3.13), not a CI total; raised to 92
 # with 2.1.0 from a local run; raised to 93 with 2.3.0 (local 93.56 %,
 # 93.57 % after the rebase onto 2.2.0).
-fail_under = 93
+# 2.4.0 (audit log, without the approval history) measures 93.88 % from the
+# repo root as CI runs it (the CI total of the combined branch was 93.9 %):
+# raised to 93.5.
+fail_under = 93.5
 show_missing = true
 skip_covered = true
 

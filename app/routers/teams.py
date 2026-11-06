@@ -18,6 +18,7 @@ from app.models.site import Site
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.team import TeamCreate, TeamResponse, TeamUpdate
+from app.services import audit_log
 from app.services.site_access import (
     ensure_site_access,
     ensure_site_visible,
@@ -101,6 +102,17 @@ async def _commit_team(db: AsyncSession, name: str) -> None:
         ) from e
 
 
+async def _flush_team(db: AsyncSession, name: str) -> None:
+    """Flush; like ``_commit_team``, a lost unique-name race is a 400."""
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_duplicate_name_detail(name)
+        ) from e
+
+
 async def _refresh_team(db: AsyncSession, team: Team) -> None:
     """
     Reload the team after a commit, members included.
@@ -155,6 +167,16 @@ async def get_team(
     return TeamResponse.model_validate(team)
 
 
+TEAM_AUDIT_FIELDS: tuple[str, ...] = ("name", "description", "color", "active", "member_ids")
+
+
+def _team_fields(team: Team, members: list | None = None) -> dict:
+    """The audited view of ``team``; ``members`` overrides its loaded list."""
+    fields = {field: getattr(team, field) for field in TEAM_AUDIT_FIELDS[:4]}
+    fields["member_ids"] = sorted(m.id for m in (team.members if members is None else members))
+    return fields
+
+
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
 async def create_team(
     data: TeamCreate,
@@ -191,6 +213,17 @@ async def create_team(
         members=members,
     )
     db.add(team)
+    await _flush_team(db, name)  # the id, for the audit row of the same transaction
+    await audit_log.record(
+        db,
+        request,
+        action="admin.team.created",
+        category="admin",
+        actor=current_user,
+        target=("team", team.id, team.name),
+        changes=audit_log.diff({}, _team_fields(team, members), keys=TEAM_AUDIT_FIELDS),
+        context={"site_id": data.site_id},
+    )
     await _commit_team(db, name)
     await _refresh_team(db, team)
 
@@ -228,6 +261,7 @@ async def update_team(
         members = await load_site_members(db, team.site_id, data.member_ids)
 
     # Every check passed: apply. An explicit null clears description / color.
+    before = _team_fields(team)
     fields = data.model_fields_set
     if name is not None:
         team.name = name
@@ -240,6 +274,17 @@ async def update_team(
     if members is not None:
         team.members = members
 
+    changes = audit_log.diff(before, _team_fields(team), keys=TEAM_AUDIT_FIELDS)
+    if changes:
+        await audit_log.record(
+            db,
+            request,
+            action="admin.team.updated",
+            category="admin",
+            actor=current_user,
+            target=("team", team.id, team.name),
+            changes=changes,
+        )
     await _commit_team(db, team.name)
     await _refresh_team(db, team)
 
@@ -271,6 +316,15 @@ async def delete_team(
             detail=team_delete_strands_projects_detail(stranded),
         )
 
+    await audit_log.record(
+        db,
+        request,
+        action="admin.team.deleted",
+        category="admin",
+        actor=current_user,
+        target=("team", team.id, team.name),
+        context={"site_id": team.site_id},
+    )
     await db.execute(
         delete(Team).where(Team.id == team_id).execution_options(synchronize_session=False)
     )
