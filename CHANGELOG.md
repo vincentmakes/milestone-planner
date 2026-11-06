@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Settings → General: the selected Default view and Week starts on options are readable again.
 - The Gantt opened months ahead of today after a refresh on instances that hide weekends; it now always opens on today.
+- After a click on Today, Previous / Next period, zooming or switching views no longer jumps the timeline back to today.
 
 ## [2.3.0] - 2026-10-30
 

@@ -31,18 +31,23 @@ describe('view mode and simple settings', () => {
     expect(view().cellWidth).toBe(36);
   });
 
-  it('sets the current view, resource tab, scroll offset and date', () => {
+  it('sets the current view, resource tab, anchor date and date', () => {
     const date = new Date(2026, 4, 1);
     view().setCurrentView('kanban');
     view().setCurrentResourceTab('equipment');
-    view().setTimelineScrollLeft(420);
+    view().setTimelineAnchorDate('2026-04-27');
     view().setCurrentDate(date);
     expect(view()).toMatchObject({
       currentView: 'kanban',
       currentResourceTab: 'equipment',
-      timelineScrollLeft: 420,
+      timelineAnchorDate: '2026-04-27',
       currentDate: date,
     });
+  });
+
+  it('holds no pixel offset of the timeline at all', () => {
+    expect(view()).not.toHaveProperty('timelineScrollLeft');
+    expect(view()).not.toHaveProperty('setTimelineScrollLeft');
   });
 
   it('goToToday moves the date back to now and drops the anchor date', () => {
@@ -53,11 +58,12 @@ describe('view mode and simple settings', () => {
     expect(view().timelineAnchorDate).toBeNull();
   });
 
-  it('resetTimelinePosition and resetView forget the offset and the anchor date', () => {
-    view().setTimelineScrollLeft(420);
+  it('resetTimelinePosition and resetView forget the anchor date', () => {
     view().setTimelineAnchorDate('2026-03-10');
+    view().setCurrentDate(new Date(2000, 0, 1));
     view().resetTimelinePosition();
-    expect(view()).toMatchObject({ timelineScrollLeft: 0, timelineAnchorDate: null });
+    expect(view().timelineAnchorDate).toBeNull();
+    expect(view().currentDate.toDateString()).toBe(new Date().toDateString());
     view().setTimelineAnchorDate('2026-03-10');
     view().resetView();
     expect(view().timelineAnchorDate).toBeNull();
@@ -262,11 +268,11 @@ describe('level-by-level expansion', () => {
 });
 
 describe('persistence', () => {
-  it('persists the expansion Sets as arrays and not the scroll offset or date', () => {
+  it('persists the expansion Sets as arrays and not the anchor date or date', () => {
     view().setViewMode('week');
     view().setExpandedProjects(new Set([1, 2]));
     view().ensureSubphaseExpanded(7);
-    view().setTimelineScrollLeft(999);
+    view().setTimelineAnchorDate('2026-03-10');
     view().toggleStaffExpanded(3);
     const raw = JSON.parse(localStorage.getItem(KEY) as string);
     expect(raw.state).toMatchObject({
@@ -275,27 +281,52 @@ describe('persistence', () => {
       expandedProjects: [1, 2],
       expandedSubphases: [7],
     });
-    expect(raw.state).not.toHaveProperty('timelineScrollLeft');
+    expect(raw.state).not.toHaveProperty('timelineAnchorDate');
     expect(raw.state).not.toHaveProperty('currentDate');
     expect(raw.state).not.toHaveProperty('expandedStaff');
   });
 
   // The Gantt opens on today after a reload: no place in the timeline — a
-  // date or a pixel offset — may ever be persisted (Timeline.scroll.test.tsx
-  // pins the in-session side). Do not weaken.
-  it('persists no place in the timeline: no date and no pixel offset', () => {
-    view().setTimelineScrollLeft(999);
+  // date, an anchor or a pixel offset — may ever be persisted
+  // (Timeline.scroll.test.tsx pins the in-session side). Every key added to
+  // this list is a conscious edit: it is everything that survives a reload.
+  // Do not weaken, and never add currentDate or timelineAnchorDate to it.
+  const PERSISTED_KEYS = [
+    'cellWidth',
+    'collapsedGanttSections',
+    'currentResourceTab',
+    'currentView',
+    'expandedPhases',
+    'expandedProjects',
+    'expandedSubphases',
+    'ganttColorBy',
+    'ganttGrouping',
+    'kanbanGrouping',
+    'kanbanGroupingColumnId',
+    'kanbanMyTodoOnly',
+    'kanbanProjectId',
+    'lastDashboardId',
+    'projectFilters',
+    'resourcePanelCollapsed',
+    'showEquipmentOverview',
+    'showStaffOverview',
+    'sidebarCollapsed',
+    'sidebarDashboardsExpanded',
+    'teamFilters',
+    'viewMode',
+  ];
+
+  it('persists exactly the allowlisted keys: no date, anchor or offset', () => {
     view().setTimelineAnchorDate('2026-03-10');
     view().setCurrentDate(new Date(2026, 2, 10));
+    const partialize = useViewStore.persist.getOptions().partialize!;
+    expect(Object.keys(partialize(view()) as object).sort()).toEqual(PERSISTED_KEYS);
+    expect(PERSISTED_KEYS).not.toContain('currentDate');
+    expect(PERSISTED_KEYS).not.toContain('timelineAnchorDate');
+
     view().setViewMode('week'); // any write persists
     const persisted = JSON.parse(localStorage.getItem(KEY) as string).state as Record<string, unknown>;
-    for (const field of ['timelineScrollLeft', 'timelineAnchorDate', 'currentDate']) {
-      expect(persisted).not.toHaveProperty(field);
-    }
-    const values = JSON.stringify(persisted);
-    expect(values).not.toMatch(/\d{4}-\d{2}-\d{2}/); // no date anywhere
-    expect(values).not.toContain('999');
-    expect(Object.keys(persisted).filter((k) => /scroll|date|anchor/i.test(k))).toEqual([]);
+    expect(Object.keys(persisted).sort()).toEqual(PERSISTED_KEYS);
   });
 
   it('restores persisted fields and turns arrays back into Sets', async () => {

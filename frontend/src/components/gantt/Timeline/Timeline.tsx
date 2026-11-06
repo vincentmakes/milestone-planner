@@ -39,11 +39,11 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
     const totalWidth = cells.length * cellWidth;
     const horizontalScrollRef = useRef<HTMLDivElement>(null);
     const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
+    const clearScrollToTodayTrigger = useUIStore((s) => s.clearScrollToTodayTrigger);
     const scrollToDateTrigger = useUIStore((s) => s.scrollToDateTrigger);
     const clearScrollToDateTrigger = useUIStore((s) => s.clearScrollToDateTrigger);
     const zoomTrigger = useUIStore((s) => s.zoomTrigger);
     const clearZoomTrigger = useUIStore((s) => s.clearZoomTrigger);
-    const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
     const showStaffOverview = useViewStore((s) => s.showStaffOverview);
     const showEquipmentOverview = useViewStore((s) => s.showEquipmentOverview);
     const lastZoomTimestampRef = useRef<number>(0);
@@ -64,7 +64,7 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
     // the debounced save. The timeline opens on today; an in-session remount
     // restores an anchor *date*, never a pixel offset, and a reload never
     // restores (see useTimelinePosition and Timeline.scroll.test.tsx).
-    const { onScroll: savePositionOnScroll, positionedRef } = useTimelinePosition({
+    const { onScroll: savePositionOnScroll, anchorAt, positionedRef } = useTimelinePosition({
       containerRef: horizontalScrollRef,
       cells,
       cellWidth,
@@ -120,13 +120,11 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
       if (centerDate) {
         requestAnimationFrame(() => {
           scrollToCenterDate(centerDate);
-          // Update the stored scroll position
-          setTimelineScrollLeft(scrollContainer.scrollLeft);
-          // Sync with other timelines
+          // Sync with other timelines (the scroll event anchors the new place)
           syncScrollPosition(scrollContainer.scrollLeft);
         });
       }
-    }, [zoomTrigger, clearZoomTrigger, getCenterDate, scrollToCenterDate, setTimelineScrollLeft, syncScrollPosition]);
+    }, [zoomTrigger, clearZoomTrigger, getCenterDate, scrollToCenterDate, syncScrollPosition]);
 
     // Save the position on scroll (debounced, with its left-edge date) and
     // sync with the other timelines (Staff & Equipment overviews)
@@ -143,18 +141,21 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
       handleSyncScroll(e);
     }, [positionedRef, savePositionOnScroll, handleSyncScroll]);
 
-    // Find today's cell index and scroll to it when trigger changes
+    // Today button / Home: centre today once. The trigger is one-shot (cleared
+    // here), so a later navigation, zoom or remount does not re-centre.
     useEffect(() => {
-      if (scrollToTodayTrigger === 0) return; // Don't scroll on initial mount
+      if (!scrollToTodayTrigger) return;
       
       const scrollContainer = horizontalScrollRef.current;
       if (!scrollContainer) return;
+      clearScrollToTodayTrigger();
       
       // Centre today's cell — or the next working day when today is a hidden
       // weekend day (see findTodayCell).
       const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
       
       if (scrollTo !== null) {
+        anchorAt(scrollTo);
         // For smooth scroll with sync, we need to sync after animation completes
         // Use scrollTo without smooth when panels are open to avoid conflicts
         if (showAnyOverview) {
@@ -168,7 +169,7 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
           });
         }
       }
-    }, [scrollToTodayTrigger, cells, cellWidth, showAnyOverview, syncScrollPosition]);
+    }, [scrollToTodayTrigger, clearScrollToTodayTrigger, cells, cellWidth, showAnyOverview, syncScrollPosition, anchorAt]);
 
     // Scroll to specific date when trigger changes
     useEffect(() => {

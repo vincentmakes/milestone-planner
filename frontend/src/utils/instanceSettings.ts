@@ -64,6 +64,14 @@ export function isSettingOn(
   return settings?.[key] !== 'false';
 }
 
+/**
+ * Weekends shown on the timelines (the `show_weekends` switch) — the one
+ * selector the cell generators use: `useAppStore(selectShowWeekends)`.
+ */
+export function selectShowWeekends(state: { instanceSettings: InstanceSettings | null }): boolean {
+  return isSettingOn(state.instanceSettings, 'show_weekends');
+}
+
 /** The overview panel the Gantt opens with; anything unknown is `none`. */
 export function ganttDefaultPanel(settings: InstanceSettings | null | undefined): GanttDefaultPanel {
   const value = settings?.gantt_default_panel;

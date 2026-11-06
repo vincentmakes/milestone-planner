@@ -159,10 +159,10 @@ describe('DateNavigation', () => {
   it('jumps to today and asks the timeline to scroll there', () => {
     useViewStore.setState({ currentDate: at(2000, 0, 1) });
     render(<DateNavigation />);
-    const before = useUIStore.getState().scrollToTodayTrigger;
+    expect(useUIStore.getState().scrollToTodayTrigger).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     expect(useViewStore.getState().currentDate.toDateString()).toBe(new Date().toDateString());
-    expect(useUIStore.getState().scrollToTodayTrigger).toBe(before + 1);
+    expect(useUIStore.getState().scrollToTodayTrigger).toEqual({ timestamp: expect.any(Number) });
   });
 });
 

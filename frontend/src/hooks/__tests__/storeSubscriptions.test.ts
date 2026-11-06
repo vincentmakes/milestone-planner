@@ -62,7 +62,7 @@ describe('store subscriptions', () => {
       // Tooltip / indicator / modal state the hooks do not read.
       useUIStore.setState({ activeModal: 'phase' });
       useUIStore.getState().showTooltip('x', 10, 10);
-      useViewStore.setState({ timelineScrollLeft: 1234 });
+      useViewStore.setState({ timelineAnchorDate: '2026-01-12' });
     });
 
     expect(renders()).toBe(before);
@@ -76,7 +76,7 @@ describe('store subscriptions', () => {
 
     act(() => {
       useAppStore.setState({ projects: [{ id: 98 } as Project] });
-      useViewStore.setState({ timelineScrollLeft: 4321 });
+      useViewStore.setState({ timelineAnchorDate: '2026-02-09' });
       useViewStore.getState().setGanttGrouping(2, 7);
       useViewStore.getState().toggleGanttSection(2, 'none');
     });
@@ -96,7 +96,7 @@ describe('store subscriptions', () => {
 
     act(() => {
       useAppStore.setState({ projects: [{ id: 97 } as Project] });
-      useViewStore.setState({ timelineScrollLeft: 5678 });
+      useViewStore.setState({ timelineAnchorDate: '2026-03-09' });
       useViewStore.getState().setGanttColorBy(2, 7);
       useViewStore.getState().setGanttGrouping(1, 7);
     });

@@ -282,7 +282,8 @@ interface UIState {
   // ---------------------------------------------
   // TIMELINE SCROLL STATE
   // ---------------------------------------------
-  scrollToTodayTrigger: number; // increment to trigger scroll
+  /** One-shot: set by the Today button / Home, cleared by the timeline that handles it. */
+  scrollToTodayTrigger: { timestamp: number } | null;
   scrollToDateTrigger: { date: string; timestamp: number } | null; // trigger scroll to specific date
   
   // Zoom trigger: { direction: 1 for in, -1 for out, newCellWidth }
@@ -418,6 +419,7 @@ interface UIState {
   // ACTIONS - Timeline Scroll
   // ---------------------------------------------
   triggerScrollToToday: () => void;
+  clearScrollToTodayTrigger: () => void;
   triggerScrollToDate: (date: string) => void;
   clearScrollToDateTrigger: () => void;
   triggerZoom: (direction: 1 | -1, newCellWidth: number) => void;
@@ -531,7 +533,7 @@ const initialState = {
   openModalCount: 0,
   
   // Timeline scroll
-  scrollToTodayTrigger: 0,
+  scrollToTodayTrigger: null,
   scrollToDateTrigger: null,
   
   // Zoom trigger
@@ -853,9 +855,9 @@ export const useUIStore = create<UIState>()((set) => ({
   // -----------------------------------------
   // TIMELINE SCROLL ACTIONS
   // -----------------------------------------
-  triggerScrollToToday: () => set((state) => ({
-    scrollToTodayTrigger: state.scrollToTodayTrigger + 1,
-  })),
+  triggerScrollToToday: () => set({ scrollToTodayTrigger: { timestamp: Date.now() } }),
+
+  clearScrollToTodayTrigger: () => set({ scrollToTodayTrigger: null }),
   
   triggerScrollToDate: (date: string) => set({
     scrollToDateTrigger: { date, timestamp: Date.now() },

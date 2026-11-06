@@ -45,7 +45,7 @@ import { canBookSelf, canManageAbsencesOf, canManageAnyProject } from '@/utils/p
 import { isPendingAssignment } from '@/utils/kanbanCards';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
-import { parseIdList } from '@/utils/instanceSettings';
+import { parseIdList, selectShowWeekends } from '@/utils/instanceSettings';
 import styles from './StaffView.module.css';
 import { bookingSpan } from '@/utils/bookingSegments';
 import { Icon, PlusIcon, CloseIcon, RepeatIcon, ChevronRightIcon, DragDotsIcon, CheckIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
@@ -108,13 +108,14 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const staffTeamIds = useAppStore(selectStaffTeamIds);
   const teamSiteById = useAppStore(selectTeamSiteById);
   const { staffMatches } = useTeamFilter();
-  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  const showWeekends = useAppStore(selectShowWeekends);
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const { openVacationModal } = useUIStore();
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
+  const clearScrollToTodayTrigger = useUIStore((s) => s.clearScrollToTodayTrigger);
   
   // Drag and drop for staff assignment
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
@@ -242,26 +243,28 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   
   const totalWidth = cells.length * cellWidth;
   
-  // Scroll to today when trigger changes (only when not embedded - Gantt handles this)
-  useEffect(() => {
-    if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
-
-    const scrollContainer = timelineScrollRef.current;
-    // Centre today's cell, or the next working day on a hidden weekend day
-    const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
-    if (scrollTo === null) return;
-    scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
-  }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
-
   // Position the timeline (standalone only — Gantt's Timeline handles it when
   // embedded): today, or this session's anchor date; never a pixel offset.
-  const { onScroll: savePositionOnScroll } = useTimelinePosition({
+  const { onScroll: savePositionOnScroll, anchorAt } = useTimelinePosition({
     containerRef: timelineScrollRef,
     cells,
     cellWidth,
     viewMode,
     enabled: !embedded,
   });
+
+  // Today button / Home, once (standalone only — embedded, the Gantt handles
+  // and clears it): centre today and anchor that place.
+  useEffect(() => {
+    if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
+    clearScrollToTodayTrigger();
+    const scrollContainer = timelineScrollRef.current;
+    // Centre today's cell, or the next working day on a hidden weekend day
+    const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
+    if (scrollTo === null) return;
+    anchorAt(scrollTo);
+    scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
+  }, [embedded, scrollToTodayTrigger, clearScrollToTodayTrigger, cells, cellWidth, anchorAt]);
 
   // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
   const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {

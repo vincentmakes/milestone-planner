@@ -109,6 +109,10 @@ describe('CrossSiteView', () => {
 
     act(() => useUIStore.getState().triggerScrollToToday());
     expect(scroller.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+    // One-shot: handled and cleared, so a later navigation does not re-centre.
+    expect(useUIStore.getState().scrollToTodayTrigger).toBeNull();
+    act(() => useViewStore.getState().navigatePeriod(1));
+    expect(scroller.scrollTo).toHaveBeenCalledTimes(1);
   });
 
   it('with an active team filter, narrows only the current site\'s lane', () => {

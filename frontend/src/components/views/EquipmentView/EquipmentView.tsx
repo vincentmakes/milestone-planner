@@ -30,7 +30,7 @@ import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
 import { confirmAction } from '@/utils/confirmDialog';
-import { parseNameList } from '@/utils/instanceSettings';
+import { parseNameList, selectShowWeekends } from '@/utils/instanceSettings';
 import styles from './EquipmentView.module.css';
 import { Icon, PlusIcon, CloseIcon, ChevronRightIcon, DragDotsIcon, CheckIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
 
@@ -80,12 +80,13 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   // Company events narrowed by the header team filter
   const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
-  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  const showWeekends = useAppStore(selectShowWeekends);
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
+  const clearScrollToTodayTrigger = useUIStore((s) => s.clearScrollToTodayTrigger);
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
   const currentUser = useAppStore((s) => s.currentUser);
   const { equipmentMatches } = useTeamFilter();
@@ -237,26 +238,28 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   
   const totalWidth = cells.length * cellWidth;
   
-  // Scroll to today when trigger changes (only when not embedded - Gantt handles sync)
-  useEffect(() => {
-    if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
-    
-    const scrollContainer = timelineScrollRef.current;
-    // Centre today's cell, or the next working day on a hidden weekend day
-    const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
-    if (scrollTo === null) return;
-    scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
-  }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
-
   // Position the timeline (standalone only — Gantt's Timeline handles it when
   // embedded): today, or this session's anchor date; never a pixel offset.
-  const { onScroll: savePositionOnScroll } = useTimelinePosition({
+  const { onScroll: savePositionOnScroll, anchorAt } = useTimelinePosition({
     containerRef: timelineScrollRef,
     cells,
     cellWidth,
     viewMode,
     enabled: !embedded,
   });
+
+  // Today button / Home, once (standalone only — embedded, the Gantt handles
+  // and clears it): centre today and anchor that place.
+  useEffect(() => {
+    if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
+    clearScrollToTodayTrigger();
+    const scrollContainer = timelineScrollRef.current;
+    // Centre today's cell, or the next working day on a hidden weekend day
+    const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
+    if (scrollTo === null) return;
+    anchorAt(scrollTo);
+    scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
+  }, [embedded, scrollToTodayTrigger, clearScrollToTodayTrigger, cells, cellWidth, anchorAt]);
 
   // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
   const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {

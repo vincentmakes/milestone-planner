@@ -50,7 +50,7 @@ beforeEach(() => {
   counters.projectRows = 0;
   counters.rowPositions.clear();
   useUIStore.setState({ phantomSiblingMode: null });
-  useViewStore.setState({ viewMode: 'month', timelineScrollLeft: 0 });
+  useViewStore.setState({ viewMode: 'month', timelineAnchorDate: null });
 });
 
 describe('TimelineBody render isolation', () => {

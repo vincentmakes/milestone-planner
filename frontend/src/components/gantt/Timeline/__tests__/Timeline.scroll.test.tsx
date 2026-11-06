@@ -15,6 +15,7 @@ import { generateTimelineCells, generateTimelineHeaders } from '../../utils';
 import { calculateTodayScrollLeft } from '../../utils/timeline';
 import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
 import { formatDateISO } from '@/utils/date';
+import { selectShowWeekends } from '@/utils/instanceSettings';
 import type { TimelineCell } from '../../utils';
 import type { ViewMode } from '@/types';
 
@@ -59,7 +60,6 @@ beforeEach(() => {
   resetAllStores();
   useViewStore.setState({
     viewMode: 'month',
-    timelineScrollLeft: 0,
     timelineAnchorDate: null,
     showStaffOverview: false,
     showEquipmentOverview: false,
@@ -82,7 +82,6 @@ describe('Timeline initial position', () => {
     const { scroller } = renderTimeline();
     await nextFrame();
     expect(scroller.scrollLeft).toBe(indexOf(marchCells, '2026-03-10') * CW);
-    expect(useViewStore.getState().timelineScrollLeft).toBe(scroller.scrollLeft);
   });
 
   it('restores the anchor date on another cell set; a hidden weekend day falls to the Monday', async () => {
@@ -99,8 +98,16 @@ describe('Timeline initial position', () => {
     expect(weekdayMarchCells[scroller.scrollLeft / CW].dateStr).toBe('2026-03-09');
   });
 
-  it('never opens on a stored pixel offset', async () => {
-    useViewStore.setState({ timelineScrollLeft: 450 });
+  it('unmounted before its frame: writes nothing, touches nothing; the next mount opens on today', async () => {
+    const writes = vi.fn();
+    const unsubscribe = useViewStore.subscribe(writes);
+    const throwAway = renderTimeline(nowCells);
+    throwAway.unmount();
+    await nextFrame();
+    unsubscribe();
+    expect(writes).not.toHaveBeenCalled();
+    expect(throwAway.scroller.scrollLeft).toBe(0); // the frame was cancelled
+
     const { scroller } = renderTimeline(nowCells);
     await nextFrame();
     expect(scroller.scrollLeft).toBe(calculateTodayScrollLeft(nowCells, CW, 600));
@@ -203,21 +210,66 @@ describe('Timeline triggers', () => {
     expect(useUIStore.getState().zoomTrigger).toBeNull();
     await nextFrame();
     expect(scroller.scrollLeft).toBe(40 * CW + CW / 2 - 300);
-    expect(useViewStore.getState().timelineScrollLeft).toBe(scroller.scrollLeft);
+  });
+});
+
+describe('Timeline Today button (one-shot)', () => {
+  const todayLeft = () => Math.max(0, nowCells.findIndex((c) => c.isToday) * CW - 300 + CW / 2);
+  const nextMonthCells = () => {
+    const next = new Date();
+    next.setMonth(next.getMonth() + 1);
+    return generateTimelineCells(next, 'month', new Set(), []);
+  };
+
+  it('centres today once, clears the trigger and anchors that place', async () => {
+    const { scroller } = renderTimeline(nowCells);
+    await nextFrame();
+    act(() => useUIStore.getState().triggerScrollToToday());
+    expect(scroller.scrollTo).toHaveBeenCalledTimes(1);
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: todayLeft(), behavior: 'smooth' });
+    expect(useUIStore.getState().scrollToTodayTrigger).toBeNull();
+    expect(anchor()).toBe(nowCells[Math.floor(todayLeft() / CW)].dateStr);
+  });
+
+  it('a Previous / Next period after Today navigates instead of re-centring', async () => {
+    useViewStore.setState({ showStaffOverview: true }); // instant scrolls, readable in jsdom
+    const { scroller, rerender } = renderTimeline(nowCells);
+    await nextFrame();
+    act(() => useUIStore.getState().triggerScrollToToday());
+    expect(scroller.scrollLeft).toBe(todayLeft());
+
+    const next = nextMonthCells();
+    rerender('month', next); // the window shifts under the same offset
+    await nextFrame();
+    expect(scroller.scrollLeft).toBe(todayLeft());
+    expect(next[Math.floor(todayLeft() / CW)].dateStr > nowCells[Math.floor(todayLeft() / CW)].dateStr).toBe(true);
+    expect(anchor()).toBe(next[Math.floor(todayLeft() / CW)].dateStr);
+  });
+
+  it('a remount after Today restores the anchor, not a re-centre', async () => {
+    const first = renderTimeline(nowCells);
+    await nextFrame();
+    act(() => useUIStore.getState().triggerScrollToToday());
+    first.scroller.scrollLeft = 40 * CW; // then the user scrolls away
+    fireEvent.scroll(first.scroller);
+    await waitFor(() => expect(anchor()).toBe(nowCells[40].dateStr));
+    first.unmount();
+
+    const { scroller } = renderTimeline(nowCells);
+    await nextFrame();
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
+    expect(scroller.scrollLeft).toBe(40 * CW);
   });
 });
 
 describe('Timeline scrolling and view modes', () => {
-  it('saves the scroll offset and its left-edge date after a short pause', async () => {
+  it('saves the left-edge date after a short pause', async () => {
     const { scroller } = renderTimeline();
     await nextFrame();
-    const before = useViewStore.getState().timelineScrollLeft;
     scroller.scrollLeft = 210;
     fireEvent.scroll(scroller);
-    expect(useViewStore.getState().timelineScrollLeft).toBe(before);
     expect(anchor()).toBeNull();
-    await waitFor(() => expect(useViewStore.getState().timelineScrollLeft).toBe(210));
-    expect(anchor()).toBe(marchCells[7].dateStr);
+    await waitFor(() => expect(anchor()).toBe(marchCells[7].dateStr));
   });
 
   it('anchors nothing for a pane that is hidden or gone before the save', async () => {
@@ -226,7 +278,7 @@ describe('Timeline scrolling and view modes', () => {
     Object.defineProperty(hidden.scroller, 'clientWidth', { configurable: true, value: 0 });
     hidden.scroller.scrollLeft = 210;
     fireEvent.scroll(hidden.scroller);
-    await waitFor(() => expect(useViewStore.getState().timelineScrollLeft).toBe(210));
+    await new Promise((r) => setTimeout(r, 250));
     expect(anchor()).toBeNull();
     hidden.unmount();
 
@@ -307,9 +359,9 @@ describe('opens on today — regression guard, do not weaken', () => {
     cells[Math.floor((scroller.scrollLeft + WIDTH / 2) / cw)].dateStr;
 
   function GanttLike() {
-    // The same inputs as GanttContainer's cells: the instance setting decides
-    // the weekend cells, the view store the rest.
-    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+    // The same inputs as GanttContainer's cells (its selectShowWeekends for the
+    // weekend cells, the view store for the rest).
+    const showWeekends = useAppStore(selectShowWeekends);
     const viewMode = useViewStore((s) => s.viewMode);
     const currentDate = useViewStore((s) => s.currentDate);
     const cellWidth = useViewStore((s) => s.cellWidth);

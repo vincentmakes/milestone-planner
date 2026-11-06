@@ -628,6 +628,34 @@ describe('StaffView timeline position', () => {
     await waitFor(() => expect(anchor()).toBe(cells[index + 5].dateStr));
   });
 
+  it('standalone: Today centres once, clears the trigger and anchors that place', async () => {
+    seed();
+    const now = new Date();
+    useViewStore.setState({ viewMode: 'month', currentDate: now, cellWidth: 30, timelineAnchorDate: null });
+    const cells = generateTimelineCells(now, 'month', new Set(), []);
+    const scroller = renderScroller(<StaffView />);
+    scroller.scrollTo = vi.fn() as unknown as typeof scroller.scrollTo;
+    await nextFrame();
+    act(() => useUIStore.getState().triggerScrollToToday());
+    const left = Math.max(0, cells.findIndex((c) => c.isToday) * 30 - 300 + 15);
+    expect(scroller.scrollTo).toHaveBeenCalledTimes(1);
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left, behavior: 'smooth' });
+    expect(useUIStore.getState().scrollToTodayTrigger).toBeNull();
+    expect(anchor()).toBe(cells[Math.floor(left / 30)].dateStr);
+    act(() => useViewStore.getState().navigatePeriod(1));
+    expect(scroller.scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('embedded: leaves Today to the Gantt (the trigger stays for it)', async () => {
+    seed();
+    const scroller = renderScroller(<StaffView embedded />);
+    scroller.scrollTo = vi.fn() as unknown as typeof scroller.scrollTo;
+    await nextFrame();
+    act(() => useUIStore.getState().triggerScrollToToday());
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
+    expect(useUIStore.getState().scrollToTodayTrigger).not.toBeNull();
+  });
+
   it('embedded: leaves the position and the anchor to the Gantt', async () => {
     seed();
     const scroller = renderScroller(<StaffView embedded />);

@@ -6,12 +6,14 @@
  * - A remount in the same session (Gantt → Kanban → Gantt) restores
  *   `viewStore.timelineAnchorDate`, the *date* last at the left edge — never a
  *   pixel offset: the same pixel is another date on another cell set.
- * - A reload never restores: the anchor is not persisted.
- * - The mount never writes the anchor. After a reload App renders the Gantt
+ * - A reload never restores: the anchor is not persisted, and the store holds
+ *   no pixel offset at all.
+ * - The mount never writes the anchor (nor anything else). After a reload App renders the Gantt
  *   once before the data load, with no settings (weekends shown); that mount
  *   is thrown away, and a position it stored sent the real one, on
- *   weekday-only cells, months ahead. Only a scroll, a navigation or a
- *   cell-set change of a positioned, visible timeline writes it.
+ *   weekday-only cells, months ahead. Only a scroll, a navigation, the Today
+ *   button (`anchorAt`) or a cell-set change of a positioned, visible
+ *   timeline writes it. A mount unmounted before its frame does nothing.
  *
  * Shared by the Gantt Timeline and the standalone Staff / Equipment views.
  */
@@ -45,7 +47,6 @@ export function useTimelinePosition({
   enabled = true,
   onPositioned,
 }: UseTimelinePositionOptions) {
-  const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
   const setTimelineAnchorDate = useViewStore((s) => s.setTimelineAnchorDate);
   /** Set once the opening position is scheduled; scrolls count from then on. */
   const positionedRef = useRef(false);
@@ -61,12 +62,11 @@ export function useTimelinePosition({
 
   const save = useCallback(
     (container: HTMLDivElement) => {
-      setTimelineScrollLeft(container.scrollLeft);
       // A detached or hidden pane is not where the user is.
       if (!container.isConnected || container.clientWidth === 0 || !leftDateRef.current) return;
       setTimelineAnchorDate(leftDateRef.current);
     },
-    [setTimelineScrollLeft, setTimelineAnchorDate]
+    [setTimelineAnchorDate]
   );
 
   // Open on the session's anchor date, else on today — once per mount.
@@ -75,15 +75,22 @@ export function useTimelinePosition({
     if (!enabled || !container || positionedRef.current || cells.length === 0) return;
     positionedRef.current = true;
     previousRef.current = { cells, cellShape };
-    const anchor = useViewStore.getState().timelineAnchorDate;
-    requestAnimationFrame(() => {
+    let frame = requestAnimationFrame(() => {
+      frame = 0;
+      // Read at the frame: a Today click handled since (anchorAt) counts.
+      const anchor = useViewStore.getState().timelineAnchorDate;
       container.scrollLeft = openingScrollLeft(cells, cellWidth, container.clientWidth, anchor);
       leftDateRef.current = leftEdgeDate(cells, cellWidth, container.scrollLeft);
-      // The pane-sync offset only; deliberately not the anchor (see above).
-      setTimelineScrollLeft(container.scrollLeft);
       onPositioned?.(container.scrollLeft);
     });
-  }, [enabled, containerRef, cells, cellShape, cellWidth, setTimelineScrollLeft, onPositioned]);
+    // Unmounted (or re-run) before the frame: nothing was positioned, so
+    // nothing is written and the next run positions afresh.
+    return () => {
+      if (frame === 0) return;
+      cancelAnimationFrame(frame);
+      positionedRef.current = false;
+    };
+  }, [enabled, containerRef, cells, cellShape, cellWidth, onPositioned]);
 
   // The cells changed after the opening position.
   useEffect(() => {
@@ -123,6 +130,20 @@ export function useTimelinePosition({
     []
   );
 
+  /**
+   * The timeline was sent to `scrollLeft` (the Today button): anchor its
+   * left-edge date now, without waiting for the (smooth) scroll to end.
+   */
+  const anchorAt = useCallback(
+    (scrollLeft: number) => {
+      const container = containerRef.current;
+      if (!enabled || !container) return;
+      leftDateRef.current = leftEdgeDate(cells, cellWidth, scrollLeft);
+      save(container);
+    },
+    [enabled, containerRef, cells, cellWidth, save]
+  );
+
   /** Call from the container's scroll handler. */
   const onScroll = useCallback(() => {
     const container = containerRef.current;
@@ -132,5 +153,5 @@ export function useTimelinePosition({
     saveTimeout.current = setTimeout(() => save(container), SCROLL_SAVE_DELAY);
   }, [enabled, containerRef, cells, cellWidth, save]);
 
-  return { onScroll, positionedRef, leftDateRef };
+  return { onScroll, anchorAt, positionedRef, leftDateRef };
 }
