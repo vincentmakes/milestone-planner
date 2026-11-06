@@ -46,6 +46,8 @@ DEFAULTS = {
         '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]'
     ),
     "audit_log_retention_days": "365",
+    "show_weekends": "true",
+    "weekend_working_days": "false",
 }
 
 
@@ -197,6 +199,9 @@ async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_sess
         ("nager_enabled", "0", "false"),
         ("new_project_preselect_phases", "Yes", "true"),
         ("gantt_completion_badges", "off", "false"),
+        ("show_weekends", "True", "true"),
+        ("weekend_working_days", " ON ", "true"),
+        ("weekend_working_days", "0", "false"),
         (
             "project_field_labels",
             '{"confirmed": " Won ", "customer": "Client"}',
@@ -250,6 +255,8 @@ async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_se
         ("nager_enabled", ""),
         ("new_project_preselect_phases", "2"),
         ("gantt_completion_badges", "hidden"),
+        ("show_weekends", "sometimes"),
+        ("weekend_working_days", "weekends"),
         ("project_field_labels", '{"name": "Title"}'),
         ("project_field_labels", '{"customer": "   "}'),
         ("project_field_labels", '{"customer": "' + "x" * 61 + '"}'),

@@ -43,6 +43,8 @@ interface SettingsData {
   default_view: string;
   week_start: string;
   show_weekends: string;
+  /** Saturdays and Sundays are working days: exactly 'true' or 'false' (off by default) */
+  weekend_working_days: string;
   auto_expand_projects: string;
   header_logo_dark: string;
   header_logo_light: string;
@@ -55,6 +57,7 @@ const DEFAULT_SETTINGS: SettingsData = {
   default_view: 'month',
   week_start: 'monday',
   show_weekends: 'true',
+  weekend_working_days: 'false',
   auto_expand_projects: 'false',
   header_logo_dark: '',
   header_logo_light: '',
@@ -345,6 +348,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance, auditLogRow }: Instan
         ...instanceSettings,
         instance_title: settings.instance_title,
         show_weekends: settings.show_weekends,
+        weekend_working_days: settings.weekend_working_days,
         audit_log_retention_days: settings.audit_log_retention_days.trim(),
       };
       setInstanceSettings(newInstanceSettings);
@@ -491,7 +495,8 @@ function InstanceSettingsForm({ onDirtyChange, appearance, auditLogRow }: Instan
               <div className={styles.toggleInfo}>
                 <label className={styles.label}>Show Weekends</label>
                 <span className={styles.hint}>
-                  Display Saturday and Sunday columns in the timeline
+                  Display Saturday and Sunday columns in the timeline. Whether they count as working days is the
+                  setting below.
                 </span>
               </div>
               <ToggleSwitch
@@ -499,6 +504,24 @@ function InstanceSettingsForm({ onDirtyChange, appearance, auditLogRow }: Instan
                 aria-label="Show Weekends"
                 onChange={(on) => {
                   setSettings(prev => ({ ...prev, show_weekends: on ? 'true' : 'false' }));
+                  setSuccess(null);
+                }}
+              />
+            </div>
+
+            <div className={styles.toggleField}>
+              <div className={styles.toggleInfo}>
+                <label className={styles.label}>Weekends are working days</label>
+                <span className={styles.hint}>
+                  Count Saturday and Sunday as working days in dashboards, capacity and availability. Off: Monday to
+                  Friday only.
+                </span>
+              </div>
+              <ToggleSwitch
+                checked={settings.weekend_working_days === 'true'}
+                aria-label="Weekends are working days"
+                onChange={(on) => {
+                  setSettings(prev => ({ ...prev, weekend_working_days: on ? 'true' : 'false' }));
                   setSuccess(null);
                 }}
               />

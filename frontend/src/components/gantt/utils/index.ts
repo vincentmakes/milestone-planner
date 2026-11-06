@@ -14,7 +14,7 @@ export {
 
 export type { CellEvent, TimelineCell, TimelineHeader } from './timeline';
 
-export { assignEventLanes, MAX_LANES } from './eventLanes';
+export { assignEventLanes, cellHasHit, MAX_LANES } from './eventLanes';
 export type { EventRun } from './eventLanes';
 
 export {

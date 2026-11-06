@@ -10,7 +10,7 @@ open the description, digits 0-6 only, comma-separated, no spaces); both
 sides share ``PATTERN_CASES`` in ``tests/test_absence_patterns.py`` -- change
 one, change both.
 
-Import-light: no models, no SQLAlchemy.
+Import-light: no models, no SQLAlchemy (``working_days`` is import-light too).
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from datetime import date, timedelta
+
+from app.services.working_days import is_working_day
 
 # ``^\[R:([0-6](?:,[0-6])*)\]`` in recurringVacation.ts (``re.match`` anchors
 # at the start like ``^``).
@@ -42,14 +44,22 @@ def parse_recurring_days(description: str | None) -> frozenset[int] | None:
     return frozenset(int(digit) for digit in match.group(1).split(","))
 
 
-def absence_weekdays(start: date, end: date, days: frozenset[int] | None) -> Iterator[date]:
+def absence_weekdays(
+    start: date,
+    end: date,
+    days: frozenset[int] | None,
+    *,
+    weekends_working: bool = False,
+) -> Iterator[date]:
     """
-    The Monday-to-Friday days of ``[start, end]`` an absence takes: every one
-    for a plain absence (``days`` None), else those whose ``js_weekday`` is in
-    ``days`` (a Saturday or Sunday pattern day takes no weekday).
+    The working days of ``[start, end]`` an absence takes
+    (``working_days.is_working_day``: Monday to Friday, every day with
+    ``weekends_working``): every one for a plain absence (``days`` None), else
+    those whose ``js_weekday`` is in ``days`` (with weekends off, a Saturday or
+    Sunday pattern day takes nothing).
     """
     day = start
     while day <= end:
-        if day.weekday() < 5 and (days is None or js_weekday(day) in days):
+        if is_working_day(day, weekends_working) and (days is None or js_weekday(day) in days):
             yield day
         day += timedelta(days=1)

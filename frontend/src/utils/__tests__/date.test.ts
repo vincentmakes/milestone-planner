@@ -1,13 +1,11 @@
 /**
  * date.ts helpers that are not timezone-specific (those live in
- * date.newYork.test.ts): period navigation, business days, ISO weeks, ranges,
+ * date.newYork.test.ts): period navigation, ISO weeks, ranges,
  * the medium date and the date-time of a timestamp.
  */
 import { describe, it, expect } from 'vitest';
 import {
   navigateDate,
-  getBusinessDaysBetween,
-  addBusinessDays,
   getISOWeekNumber,
   formatWeekNumber,
   getPeriodLabel,
@@ -32,19 +30,6 @@ describe('navigateDate', () => {
 
   it('steps whole weeks', () => {
     expect(ymd(navigateDate(new Date(2026, 2, 27), -1, 'week'))).toBe('2026-03-20');
-  });
-});
-
-describe('business days', () => {
-  it('counts weekdays inclusively', () => {
-    // Fri 2026-03-06 .. Mon 2026-03-09 → Fri + Mon
-    expect(getBusinessDaysBetween(new Date(2026, 2, 6), new Date(2026, 2, 9))).toBe(2);
-    expect(getBusinessDaysBetween(new Date(2026, 2, 7), new Date(2026, 2, 8))).toBe(0);
-  });
-
-  it('skips weekends when adding', () => {
-    expect(ymd(addBusinessDays(new Date(2026, 2, 6), 1))).toBe('2026-03-09');
-    expect(ymd(addBusinessDays(new Date(2026, 2, 6), 0))).toBe('2026-03-06');
   });
 });
 

@@ -5,9 +5,10 @@
  * project one from a sample project for its preview.
  */
 
-import { differenceInDays, eachDayOfInterval, isWeekend, format } from 'date-fns';
+import { differenceInDays } from 'date-fns';
 import type { Phase, Subphase, Project, ProjectField, Tag } from '@/types';
 import { parseLocalDate } from '@/utils/date';
+import { countWorkingDays } from '@/utils/workingDays';
 import { fieldValueItems, formatFieldValue, isDropdownField } from '@/utils/projectFields';
 
 export interface StaffInfo {
@@ -89,34 +90,21 @@ function resolveFieldRows(project: Project, fields: readonly ProjectField[]): To
   return rows;
 }
 
-// Calculate work days excluding weekends and holidays
-function calculateDurationStats(startDate: string, endDate: string, bankHolidayDates: ReadonlySet<string>) {
-  const start = parseLocalDate(startDate);
-  const end = parseLocalDate(endDate);
-
-  const totalDays = differenceInDays(end, start) + 1;
-
-  let workDays = 0;
-  let holidays = 0;
-
-  try {
-    const days = eachDayOfInterval({ start, end });
-    for (const day of days) {
-      const dateStr = format(day, 'yyyy-MM-dd');
-      const isBankHoliday = bankHolidayDates.has(dateStr);
-      const isWeekendDay = isWeekend(day);
-
-      if (isBankHoliday) {
-        holidays++;
-      } else if (!isWeekendDay) {
-        workDays++;
-      }
-    }
-  } catch {
-    // If dates are invalid, just use total days
-    workDays = totalDays;
-  }
-
+/**
+ * Calendar days, working days and bank holidays of a span, through the
+ * working-day rule (`utils/workingDays.ts`, the dashboards' rule): a holiday
+ * counts only on a working day, so a Saturday holiday with weekends off is
+ * neither a work day nor a holiday.
+ */
+function calculateDurationStats(
+  startDate: string,
+  endDate: string,
+  bankHolidayDates: ReadonlySet<string>,
+  weekendsWorking: boolean
+) {
+  const totalDays = differenceInDays(parseLocalDate(endDate), parseLocalDate(startDate)) + 1;
+  const workDays = countWorkingDays(startDate, endDate, { weekendsWorking, offDays: bankHolidayDates });
+  const holidays = countWorkingDays(startDate, endDate, { weekendsWorking }) - workDays;
   return { totalDays, workDays, holidays };
 }
 
@@ -170,13 +158,19 @@ function staffOf(assignments: Phase['staffAssignments']): StaffInfo[] {
   }));
 }
 
-/** The details of a phase bar. */
+/** The details of a phase bar (`weekendsWorking`: `selectWeekendsWorking`). */
 export function phaseTooltipData(
   phase: Phase,
   project: Project,
-  bankHolidayDates: ReadonlySet<string>
+  bankHolidayDates: ReadonlySet<string>,
+  weekendsWorking = false
 ): TooltipData {
-  const { totalDays, workDays, holidays } = calculateDurationStats(phase.start_date, phase.end_date, bankHolidayDates);
+  const { totalDays, workDays, holidays } = calculateDurationStats(
+    phase.start_date,
+    phase.end_date,
+    bankHolidayDates,
+    weekendsWorking
+  );
   const completionResult = getEffectiveCompletion(phase);
   return {
     type: 'phase',
@@ -198,12 +192,14 @@ export function subphaseTooltipData(
   subphase: Subphase,
   project: Project,
   parentPhase: Phase,
-  bankHolidayDates: ReadonlySet<string>
+  bankHolidayDates: ReadonlySet<string>,
+  weekendsWorking = false
 ): TooltipData {
   const { totalDays, workDays, holidays } = calculateDurationStats(
     subphase.start_date,
     subphase.end_date,
-    bankHolidayDates
+    bankHolidayDates,
+    weekendsWorking
   );
   const completionResult = getEffectiveCompletion(subphase);
   return {
@@ -228,6 +224,8 @@ interface ProjectTooltipContext {
   /** The store's project fields, in order (`appStore.projectFields`) */
   fields: readonly ProjectField[];
   bankHolidayDates: ReadonlySet<string>;
+  /** Saturdays and Sundays are working days (`selectWeekendsWorking`); default off */
+  weekendsWorking?: boolean;
 }
 
 /**
@@ -237,7 +235,7 @@ interface ProjectTooltipContext {
  */
 export function projectTooltipData(
   project: Project,
-  { tags, fields, bankHolidayDates }: ProjectTooltipContext
+  { tags, fields, bankHolidayDates, weekendsWorking = false }: ProjectTooltipContext
 ): TooltipData | null {
   // Calculate project dates from phases if not set
   const startDate = project.start_date || (project.phases?.[0]?.start_date ?? '');
@@ -246,7 +244,12 @@ export function projectTooltipData(
 
   if (!startDate || !endDate) return null;
 
-  const { totalDays, workDays, holidays } = calculateDurationStats(startDate, endDate, bankHolidayDates);
+  const { totalDays, workDays, holidays } = calculateDurationStats(
+    startDate,
+    endDate,
+    bankHolidayDates,
+    weekendsWorking
+  );
 
   // Calculate overall project completion from phases
   let completion: number | null = null;

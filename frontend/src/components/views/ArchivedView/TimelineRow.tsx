@@ -27,6 +27,7 @@ export function TimelineRow({
 }: TimelineRowProps) {
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const renderWeekendMarkers = showHighlighting && showWeekends;
+  const renderWeekSeparators = showHighlighting && !showWeekends;
 
   // Calculate bar position
   const barPosition = useMemo(() => {
@@ -135,6 +136,17 @@ export function TimelineRow({
         return null;
       })}
       
+      {/* Week separator bands (when weekends are hidden) */}
+      {renderWeekSeparators && cells.map((cell, index) =>
+        cell.isFirstOfWeek && index > 0 ? (
+          <div
+            key={`week-sep-${index}`}
+            className={styles.weekSeparator}
+            style={{ left: index * cellWidth - 1 }}
+          />
+        ) : null
+      )}
+
       {/* Today marker */}
       {cells.map((cell, index) => {
         if (cell.isToday) {

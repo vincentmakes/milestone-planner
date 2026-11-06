@@ -103,6 +103,68 @@ describe('GeneralPanel', () => {
     expect(updateSetting).toHaveBeenCalledTimes(1);
   });
 
+  describe('Weekends are working days', () => {
+    const weekendsSwitch = () => screen.getByRole('switch', { name: 'Weekends are working days' });
+
+    it('sits under Show Weekends with both hints, off by default', async () => {
+      setRole('admin');
+      render(<GeneralPanel onDirtyChange={vi.fn()} />);
+      await screen.findByLabelText('Application Title');
+
+      expect(weekendsSwitch()).not.toBeChecked();
+      expect(getSetting).toHaveBeenCalledWith('weekend_working_days');
+      expect(
+        screen.getByText(
+          'Display Saturday and Sunday columns in the timeline. Whether they count as working days is the setting below.'
+        )
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Count Saturday and Sunday as working days in dashboards, capacity and availability. Off: Monday to Friday only.'
+        )
+      ).toBeInTheDocument();
+      const labels = screen.getAllByText(/^(Show Weekends|Weekends are working days)$/).map((l) => l.textContent);
+      expect(labels).toEqual(['Show Weekends', 'Weekends are working days']);
+    });
+
+    it('saves "true" and copies it into the instance settings, then "false"', async () => {
+      setRole('admin');
+      useAppStore.setState({ instanceSettings: { show_weekends: 'true' } });
+      const onDirtyChange = vi.fn();
+      render(<GeneralPanel onDirtyChange={onDirtyChange} />);
+      await screen.findByLabelText('Application Title');
+
+      fireEvent.click(weekendsSwitch());
+      expect(weekendsSwitch()).toBeChecked();
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+      expect(await screen.findByText('Settings saved successfully')).toBeInTheDocument();
+      expect(updateSetting).toHaveBeenCalledTimes(1);
+      expect(updateSetting).toHaveBeenCalledWith('weekend_working_days', 'true');
+      expect(useAppStore.getState().instanceSettings).toMatchObject({
+        show_weekends: 'true',
+        weekend_working_days: 'true',
+      });
+
+      fireEvent.click(weekendsSwitch());
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+      await vi.waitFor(() => expect(updateSetting).toHaveBeenLastCalledWith('weekend_working_days', 'false'));
+      await vi.waitFor(() =>
+        expect(useAppStore.getState().instanceSettings?.weekend_working_days).toBe('false')
+      );
+    });
+
+    it('loads a stored "true" as on', async () => {
+      setRole('admin');
+      getSetting.mockImplementation(async (key: string) => ({
+        value: key === 'weekend_working_days' ? 'true' : null,
+      }));
+      render(<GeneralPanel onDirtyChange={vi.fn()} />);
+      await screen.findByLabelText('Application Title');
+      await vi.waitFor(() => expect(weekendsSwitch()).toBeChecked());
+    });
+  });
+
   describe('Default View and Week Starts On toggles', () => {
     it('marks the selected option and moves the mark on click', async () => {
       setRole('admin');

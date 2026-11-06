@@ -14,6 +14,8 @@ import {
   selectAbsenceTypesById,
 } from '@/stores/appStore';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
+import { selectWeekendsWorking } from '@/utils/instanceSettings';
+import { isWorkingDay } from '@/utils/workingDays';
 import { canBookSelf, canManageAnyProject } from '@/utils/permissions';
 import { isPendingAssignment } from '@/utils/kanbanCards';
 import styles from './ResourceCard.module.css';
@@ -113,6 +115,7 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   const staffTeamIds = useAppStore(selectStaffTeamIds);
   const teamSiteById = useAppStore(selectTeamSiteById);
   const currentUser = useAppStore((s) => s.currentUser);
+  const weekendsWorking = useAppStore(selectWeekendsWorking);
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
   const overlapMap = useEquipmentOverlaps();
   const todayStatusMap = useEquipmentTodayStatus();
@@ -138,6 +141,9 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   const available = 100 - allocation;
 
   const isStaff = type === 'staff';
+  // A staff card on a day that is no working day (a weekend while weekends
+  // are not working days) reads "Weekend" instead of a percentage.
+  const nonWorkingToday = isStaff && !isWorkingDay(formatDateISO(new Date()), weekendsWorking);
   const staffResource = resource as Staff;
   const equipmentResource = resource as Equipment;
   
@@ -154,6 +160,7 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   // - At capacity: blue  
   // - Above capacity: red
   const getAvailabilityColor = () => {
+    if (nonWorkingToday) return 'var(--text-muted)';
     if (allocation > maxCapacity) return 'var(--accent-red)';
     if (allocation === maxCapacity) return 'var(--accent-blue)';
     return 'var(--accent-green)';
@@ -189,7 +196,7 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
           <div
             className={styles.fill}
             style={{
-              width: `${Math.max(0, Math.min(100, available))}%`,
+              width: nonWorkingToday ? 0 : `${Math.max(0, Math.min(100, available))}%`,
               backgroundColor: getAvailabilityColor(),
             }}
           />
@@ -198,7 +205,7 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
           className={styles.percent}
           style={{ color: getAvailabilityColor() }}
         >
-          {available}%
+          {nonWorkingToday ? 'Weekend' : `${available}%`}
         </span>
       </div>
     </div>

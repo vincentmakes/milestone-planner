@@ -23,6 +23,8 @@ from app.services.instance_settings import (
     is_enabled,
     volume_decimals,
     volume_decimals_from,
+    weekends_working,
+    weekends_working_from,
     with_defaults,
 )
 from app.services.permissions import DISABLEABLE_KEYS, PERMISSION_KEYS, PermissionSet
@@ -43,6 +45,8 @@ DEFAULTS = {
         '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]'
     ),
     "audit_log_retention_days": "365",
+    "show_weekends": "true",
+    "weekend_working_days": "false",
 }
 
 BOOLEAN_KEYS = [
@@ -50,6 +54,8 @@ BOOLEAN_KEYS = [
     "nager_enabled",
     "new_project_preselect_phases",
     "gantt_completion_badges",
+    "show_weekends",
+    "weekend_working_days",
 ]
 
 
@@ -452,6 +458,49 @@ async def test_is_enabled_defaults_to_on(stored, enabled):
     db.execute.return_value = scalar_result(stored)
 
     assert await is_enabled(db, "nager_enabled") is enabled
+
+
+# ---------------------------------------------------------------------------
+# Weekends are working days: a boolean, but not a switch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stored", "on"),
+    [
+        # Only a row reading true turns it on ...
+        ("true", True),
+        (" TRUE ", True),
+        # ... never a missing, empty or other row (a switch would read these as on).
+        (None, False),
+        ("", False),
+        ("false", False),
+        ("False", False),
+        ("1", False),
+        ("yes", False),
+        ("maybe", False),
+    ],
+)
+def test_weekends_working_is_on_only_when_stored_true(stored, on):
+    assert weekends_working_from(stored) is on
+
+
+def test_weekends_working_is_not_read_like_a_switch():
+    # The cases where the two rules part: no row and a stray value.
+    for stored in (None, "", "maybe"):
+        assert flag_enabled(stored) is True
+        assert weekends_working_from(stored) is False
+    assert "weekend_working_days" not in FLAG_DISABLES
+
+
+@pytest.mark.parametrize(("stored", "on"), [(None, False), ("true", True), ("false", False)])
+async def test_weekends_working_reads_the_setting(stored, on):
+    db = AsyncMock()
+    db.execute.return_value = scalar_result(stored)
+
+    assert await weekends_working(db) is on
+    sql = str(db.execute.await_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "settings.key = 'weekend_working_days'" in sql
 
 
 def test_project_field_setting_keys_are_the_four_known_field_settings():

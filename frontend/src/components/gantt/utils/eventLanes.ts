@@ -14,9 +14,24 @@
  * cell of its run. A run that finds no free lane is not drawn; it adds 1 to
  * `overflow` on each of its cells (the strip's "+N"). The input order is
  * total, so the result is deterministic.
+ *
+ * `cellHasHit` says which cells of the strip have a hit button and a panel;
+ * the header's day labels use it too.
  */
 
+import type { ViewMode } from '@/types';
 import type { CellEvent, TimelineCell } from './timeline';
+
+/**
+ * Whether a cell has something to show in the strip, i.e. a hit button and a
+ * panel: an event, or a bank holiday on a day cell (week / month zoom) while
+ * the holiday line is shown. Span cells (quarter, year) list events only.
+ */
+export function cellHasHit(cell: TimelineCell | undefined, viewMode: ViewMode, showHolidayLine = true): boolean {
+  if (!cell) return false;
+  const spanCells = viewMode === 'quarter' || viewMode === 'year';
+  return cell.companyEvents.length > 0 || (!spanCells && showHolidayLine && cell.isBankHoliday);
+}
 
 /** Lanes in the strip, the bank-holiday lane included */
 export const MAX_LANES = 3;

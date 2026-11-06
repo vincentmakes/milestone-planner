@@ -21,6 +21,7 @@ import { useAppStore } from '@/stores/appStore';
 import {
   builtInFieldLabel,
   isBuiltInFieldHidden,
+  selectWeekendsWorking,
   tooltipRowGate,
   volumeDecimals,
 } from '@/utils/instanceSettings';
@@ -99,9 +100,10 @@ function GanttDetailsPreview({
   bankHolidayDates: ReadonlySet<string>;
 }) {
   const storeTags = useAppStore((s) => s.tags);
+  const weekendsWorking = useAppStore(selectWeekendsWorking);
   const data = useMemo(
-    () => projectTooltipData(project, { tags: storeTags, fields, bankHolidayDates }),
-    [project, storeTags, fields, bankHolidayDates]
+    () => projectTooltipData(project, { tags: storeTags, fields, bankHolidayDates, weekendsWorking }),
+    [project, storeTags, fields, bankHolidayDates, weekendsWorking]
   );
   const shows = useMemo(() => tooltipRowGate(settings), [settings]);
   if (!data) return null;

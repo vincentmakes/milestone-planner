@@ -62,8 +62,13 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 |---------|-------------|
 | Default View | Initial timeline granularity: Week, Month, Quarter, or Year |
 | Week Starts On | Monday or Sunday |
-| Show Weekends | Toggle weekend columns on/off |
+| Show Weekends | Display Saturday and Sunday columns in the timeline (display only: whether they count as working days is the next setting) |
+| Weekends are working days | Count Saturday and Sunday as working days in dashboards, capacity and availability. Off by default: Monday to Friday only |
 | Auto-expand Projects | Automatically expand all projects on load |
+
+**Weekends are working days** decides one rule everywhere a day is counted: the [dashboards](dashboards.md#what-the-numbers-mean) (booked days and weeks, capacity, utilisation, equipment availability), the Staff & Calendar workload blocks and *X% available* badges, the resource panel cards and the Gantt's Shift-hover *Work days*. Off, a booking across a weekend books nothing on Saturday and Sunday (the heatmap leaves them blank, a staff card reads *Weekend* on those days) and a week has 5 working days; on, every day counts and a week has 7. Bank holidays, absences and closures still take their days off either way. It is saved with **Save Changes**, like the other General settings.
+
+![Settings → General, Display and Gantt Chart: Default View and Week Starts On, then Show Weekends (on) and Weekends are working days (off) with their hints, and Auto-expand Projects](../assets/screenshots/settings-general-gantt.png){ loading=lazy }
 
 ### Audit Log Retention
 

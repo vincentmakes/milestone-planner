@@ -95,7 +95,7 @@ A widget is one of nine kinds. Each takes one measure and up to two **dimensions
 
 Booked time is **planned** time — what the bookings in the Gantt chart say, not hours recorded afterwards. The [Measures](#measures) below say what each measure counts; these rules hold for all of them.
 
-- A **working day** is Monday to Friday, except the [bank holidays](settings.md#bank-holidays) of a site. Booked time counts the working days of the **project's site**; capacity counts those of the **person's** sites and equipment availability those of the **equipment's** sites
+- A **working day** is Monday to Friday, or every day when [*Weekends are working days*](settings.md#display-settings) is on, except the [bank holidays](settings.md#bank-holidays) of a site. Booked time counts the working days of the **project's site**; capacity counts those of the **person's** sites and equipment availability those of the **equipment's** sites
 - A booking on a phase or subphase counts only inside its card's dates; a booking on the whole project counts over its own dates. Someone booked both on the project and on one of its phases counts twice, as in the [Staff & Calendar](staff-management.md) view
 - **Bookings waiting for approval are not counted** until they are approved
 - Counts of projects and phases take those whose dates touch the period (in every month, quarter or year they touch, when broken down by period)
@@ -113,7 +113,7 @@ The **Measure** list of the widget editor is grouped by family. Each family has 
 | Measure | What it counts |
 |---------|----------------|
 | **Booked days** | For each booking, its allocation times the working days it covers inside the period. A booking at 50 % over two working weeks counts 5 days |
-| **Booked weeks** | Booked days divided by 5 |
+| **Booked weeks** | Booked days divided by 5 (by 7 when *Weekends are working days* is on) |
 | **Bookings** | Booking rows |
 | **People booked** | Different people with a booking |
 
@@ -129,7 +129,7 @@ Needs the **Staff & Calendar** permission. A breakdown by **Person** and the **P
 | **People over capacity** | Different people whose booked days in the period (or in the bar, line point or cell) are more than their capacity |
 
 - **Who counts**: every active person marked *Bookable as a resource* who is a member of one of your sites. Bookings of people no longer bookable, or deactivated, are left out on both sides
-- **Capacity** is the weekdays at **their** sites minus the bank holidays of those sites, their absences of a type that counts as unavailable (a recurring absence only on its weekdays; Home Office leaves them plannable) and the site closures that apply to them — the same closures the Staff & Calendar view shows
+- **Capacity** is the working days (Monday to Friday, or every day when *Weekends are working days* is on) at **their** sites minus the bank holidays of those sites, their absences of a type that counts as unavailable (a recurring absence only on its working days; Home Office leaves them plannable) and the site closures that apply to them — the same closures the Staff & Calendar view shows
 - **Sites and teams are the person's**: a breakdown by Site or Team, and the Sites, Teams and People filters, use the person's sites and teams on both sides of the ratio, not the project's. A person at two sites appears under each and once in the total
 - **The team figure is weighted**: a team's utilisation is the team's booked days over the team's capacity, not the average of its members' percentages. A KPI without a breakdown is the weighted figure of everyone in scope
 - A bar, line point or cell with booked time and no capacity (everyone off that week) shows **–**; with neither, 0 %
@@ -169,7 +169,7 @@ Needs the **Equipment view** permission.
 | **Equipment booked** | Different instruments with a booking |
 | **Equipment utilisation** | Booked days over the instrument's availability, in % |
 
-- **Availability** is the weekdays at the **equipment's** sites minus the bank holidays of those sites and its blocks, for every active instrument at one of your sites
+- **Availability** is the working days (Monday to Friday, or every day when *Weekends are working days* is on) at the **equipment's** sites minus the bank holidays of those sites and its blocks, for every active instrument at one of your sites
 - **Overlapping bookings add up**: two projects booking the same instrument the same week count twice, so utilisation **over 100 % flags a conflict**. A booking inside a block counts in full too — it is the same conflict
 - Equipment utilisation is broken down by Equipment, Equipment type, Site (the **equipment's** sites, like its Sites filter) or Period; the other equipment measures take the project breakdowns and filters as well
 - Booked days follow the project's site and availability the equipment's: a booking from a site with other bank holidays can read slightly over or under 100 %
@@ -261,7 +261,7 @@ When two people edit the same dashboard at once, the last one to save wins.
 ## Limits
 
 - A period covers at most **five years**. **All time** runs from the first to the last project in scope; when that is longer than five years it ends at most a year from today and the widget says *Period cut to five years*. All time spans the projects' dates at your sites: a booking placed outside its project's dates is counted only by a period that covers it
-- Bank holidays count only for the years an administrator **loaded** for the site (see [Bank Holidays](settings.md#bank-holidays)); in a year without holidays every weekday is a working day
+- Bank holidays count only for the years an administrator **loaded** for the site (see [Bank Holidays](settings.md#bank-holidays)); in a year without holidays every working day counts (Monday to Friday, or every day when *Weekends are working days* is on)
 - Bookings waiting for approval are never counted
 - "Today" and "this year" follow the server's date (UTC)
 - The **People** filter lists the people of the site selected in the header, although a dashboard covers every site you can see

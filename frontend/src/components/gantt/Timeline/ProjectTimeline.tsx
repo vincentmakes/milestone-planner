@@ -41,6 +41,8 @@ import {
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
 import { daysBetweenDateStrings, toDateOnly } from '@/utils/date';
+import { selectWeekendsWorking } from '@/utils/instanceSettings';
+import { isWorkingDay } from '@/utils/workingDays';
 import { armTouchGesture, isTouchEvent } from '@/utils/touchEvents';
 import { Icon, SparklesIcon } from '@/components/common/Icon';
 
@@ -1180,6 +1182,7 @@ const AssignmentBar = memo(function AssignmentBar({
   const staffSiteIds = useAppStore(selectStaffSiteIds);
   const staffTeamIds = useAppStore(selectStaffTeamIds);
   const teamSiteById = useAppStore(selectTeamSiteById);
+  const weekendsWorking = useAppStore(selectWeekendsWorking);
 
   // Live attribution: show "✨ Vincent D." on this bar if another user just
   // changed THIS specific assignment. Staff and equipment assignments live
@@ -1208,7 +1211,9 @@ const AssignmentBar = memo(function AssignmentBar({
   // Available absences (Home Office) get no marker. Each cell is judged by its
   // first day; [R:...] recurring absences are only shown in day-cell views
   // (week/month), where one cell is one day -- in week/month cells a single
-  // weekday would mark the whole cell.
+  // weekday would mark the whole cell. A day that is no working day (a
+  // weekend while weekends are not working days, utils/workingDays.ts) gets
+  // no marker: nothing is booked on it to conflict with.
   const vacationCellMarkers = useMemo(() => {
     if (!staffId || assignmentType !== 'staff') return [];
 
@@ -1224,6 +1229,7 @@ const AssignmentBar = memo(function AssignmentBar({
     const markers: Array<{ left: number; width: number; title: string; color?: string }> = [];
 
     cells.forEach((cell, index) => {
+      if (dayCells && !isWorkingDay(cell.dateStr, weekendsWorking)) return;
       let title: string;
       let color: string | undefined;
 
@@ -1258,7 +1264,7 @@ const AssignmentBar = memo(function AssignmentBar({
     });
 
     return markers;
-  }, [staffId, assignmentType, vacations, typesById, closureIndex, staffSiteIds, staffTeamIds, teamSiteById, cells, cellWidth, viewMode]);
+  }, [staffId, assignmentType, vacations, typesById, closureIndex, staffSiteIds, staffTeamIds, teamSiteById, cells, cellWidth, viewMode, weekendsWorking]);
 
   if (!barPosition) return null;
 

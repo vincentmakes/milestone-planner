@@ -72,6 +72,18 @@ export function selectShowWeekends(state: { instanceSettings: InstanceSettings |
   return isSettingOn(state.instanceSettings, 'show_weekends');
 }
 
+/**
+ * Saturdays and Sundays are working days (Settings → General → Weekends are
+ * working days, 2.5.0). **Not a switch**: it is off by default, so only the
+ * value `true` (case-insensitive, trimmed — the backend's
+ * `weekends_working_from`) turns it on --
+ * never read it with {@link isSettingOn}. The one selector the working-day
+ * rule's callers use: `useAppStore(selectWeekendsWorking)`.
+ */
+export function selectWeekendsWorking(state: { instanceSettings: InstanceSettings | null }): boolean {
+  return state.instanceSettings?.weekend_working_days?.trim().toLowerCase() === 'true';
+}
+
 /** The overview panel the Gantt opens with; anything unknown is `none`. */
 export function ganttDefaultPanel(settings: InstanceSettings | null | undefined): GanttDefaultPanel {
   const value = settings?.gantt_default_panel;

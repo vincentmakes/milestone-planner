@@ -566,7 +566,7 @@ Besides the tenant-wide `change:<entity>` events (now also `change:role`, `chang
 
 #### Instance settings
 
-The admin defaults and feature switches set in [Settings → Features & defaults](../user-guide/settings.md#features-defaults), and the built-in project field settings of [Settings → Project fields](../user-guide/settings.md#project-fields):
+The admin defaults and feature switches set in [Settings → Features & defaults](../user-guide/settings.md#features-defaults), the built-in project field settings of [Settings → Project fields](../user-guide/settings.md#project-fields), and the General settings the server knows ([Settings → General](../user-guide/settings.md#display-settings)):
 
 | Key | Stored value | Default | Effect |
 |-----|--------------|---------|--------|
@@ -581,8 +581,11 @@ The admin defaults and feature switches set in [Settings → Features & defaults
 | `project_fields_hidden` | JSON array, entries among `customer`, `sales_pm`, `volume` (`confirmed` → `422`), stored in that order | `[]` | Built-in project fields hidden from the dialog and the views; their values stay stored and writable |
 | `volume_decimals` | `any`, `0`, `1`, `2` or `3` | `1` | Volume's Format: `volume` is rounded half-up to it on project create and update, and in the site export; `any` keeps it as sent. Stored volumes are not rewritten when it changes |
 | `project_tooltip_rows` | JSON array of row keys among `customer`, `pm`, `sales_pm`, `volume`, `confirmed`, `tags`, `period`, `completion`, `work_days`, `total_days`, `staff` and positive project field ids (at most 500), stored keys first in that order then ids ascending, each once | `["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]` | The rows the Gantt's Shift-hover details of a project bar show (2.3.0). Field ids are not checked for existence |
+| `audit_log_retention_days` | a whole number from `0` to `3650` | `365` | How long audit-log entries are kept, in days; `0` = indefinitely (2.4.0) |
+| `show_weekends` | `true` or `false` | `true` | `false` hides the Saturday and Sunday columns of the timelines (display only) |
+| `weekend_working_days` | `true` or `false` | `false` | *Weekends are working days* (2.5.0): `true` counts Saturday and Sunday as working days in the dashboards, capacity and availability. Not a switch: only a stored `true` turns it on |
 
-Booleans also accept `1`/`0`, `yes`/`no` and `on`/`off` (any case) and are stored as `true`/`false`; a switch counts as on unless its value is exactly `false`. Only the shape is validated: ids of deleted skills and names of renamed types are accepted and ignored by the client. A change broadcasts `change:settings`.
+Booleans also accept `1`/`0`, `yes`/`no` and `on`/`off` (any case) and are stored as `true`/`false`; a switch counts as on unless its value is exactly `false` — except `weekend_working_days`, on only when exactly `true`. Only the shape is validated: ids of deleted skills and names of renamed types are accepted and ignored by the client. A change broadcasts `change:settings`.
 
 ### Permissions & Roles
 

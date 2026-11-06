@@ -256,7 +256,7 @@ export const TimelineBody = memo(forwardRef<HTMLDivElement, TimelineBodyProps>(
                 <div
                   key={`week-sep-${index}`}
                   className={styles.weekSeparator}
-                  style={{ left: index * cellWidth }}
+                  style={{ left: index * cellWidth - 1 }}
                 />
               ) : null
             )}

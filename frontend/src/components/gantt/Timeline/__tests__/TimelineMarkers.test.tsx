@@ -3,14 +3,18 @@
  * by lane, the "+N" pip, span-cell bands with a count, the hit cells' labels,
  * the hover / focus / pin state machine, the panel's listing (teams and
  * closures named) and the click to edit, plus the DOM hygiene the drag hooks
- * rely on (no `data-date`, no class with "row" / "bar").
+ * rely on (no `data-date`, no class with "row" / "bar"); `cellHasHit` and the
+ * handle the header's day labels open the hover panel through.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createRef } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { TimelineMarkers } from '../TimelineMarkers';
-import { generateTimelineCells } from '../../utils';
+import type { TimelineMarkersHandle } from '../TimelineMarkers';
+import { cellHasHit, generateTimelineCells } from '../../utils';
 import type { TimelineCell } from '../../utils';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -656,6 +660,110 @@ describe('TimelineMarkers — the panel', () => {
     fireEvent.mouseEnter(hit(indexOf(EASTER)));
     unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('cellHasHit', () => {
+  const cells = cellsFor('month');
+  const at = (dateStr: string) => cells.find((c) => c.dateStr === dateStr);
+
+  it('is true for a day with an event or a bank holiday', () => {
+    expect(cellHasHit(at('2026-04-20'), 'month')).toBe(true);
+    expect(cellHasHit(at(GOOD_FRIDAY), 'month')).toBe(true);
+    expect(cellHasHit(at(GOOD_FRIDAY), 'week')).toBe(true);
+  });
+
+  it('is false for a plain day and for no cell', () => {
+    expect(cellHasHit(at('2026-04-14'), 'month')).toBe(false);
+    expect(cellHasHit(undefined, 'month')).toBe(false);
+  });
+
+  it('drops a holiday-only day without the holiday line, and on span cells', () => {
+    expect(cellHasHit(at(GOOD_FRIDAY), 'month', false)).toBe(false);
+    expect(cellHasHit(at(EASTER), 'month', false)).toBe(true);
+    const holidayOnly = { ...at(GOOD_FRIDAY)!, companyEvents: [] };
+    expect(cellHasHit(holidayOnly, 'quarter')).toBe(false);
+    expect(cellHasHit(holidayOnly, 'year')).toBe(false);
+    expect(cellHasHit(at(EASTER), 'quarter')).toBe(true);
+  });
+});
+
+describe('TimelineMarkers — the handle (the header labels)', () => {
+  function renderWithHandle(showHolidayLine?: boolean) {
+    const ref = createRef<TimelineMarkersHandle>();
+    const cells = cellsFor('month');
+    const utils = render(
+      <TimelineMarkers ref={ref} cells={cells} cellWidth={WIDTH} viewMode="month" siteId={1} showHolidayLine={showHolidayLine} />
+    );
+    const indexOf = (dateStr: string) => cells.findIndex((c) => c.dateStr === dateStr);
+    const hit = (index: number) => utils.container.querySelector<HTMLButtonElement>(`button[data-cell-index="${index}"]`)!;
+    return { ...utils, ref, indexOf, hit };
+  }
+  const mouse = (buttons = 0) => ({ buttons }) as ReactMouseEvent;
+
+  it('opens the hover panel of a hit cell after 150 ms, anchored to its button, and leave closes it', () => {
+    vi.useFakeTimers();
+    const { ref, indexOf, hit } = renderWithHandle();
+    act(() => ref.current!.enter(indexOf(EASTER), mouse()));
+    advance(149);
+    expect(dialog()).toBeNull();
+    advance(1);
+    expect(screen.getByRole('dialog', { name: `Events on ${formatMediumDate(EASTER)}` })).toBeInTheDocument();
+    expect(hit(indexOf(EASTER))).toHaveAttribute('aria-expanded', 'true');
+
+    act(() => ref.current!.leave());
+    advance(149);
+    expect(dialog()).not.toBeNull();
+    advance(1);
+    expect(dialog()).toBeNull();
+  });
+
+  it('keeps the open panel when the same cell is entered again (label → strip)', () => {
+    vi.useFakeTimers();
+    const { ref, indexOf, hit } = renderWithHandle();
+    act(() => ref.current!.enter(indexOf(EASTER), mouse()));
+    advance(150);
+    act(() => ref.current!.leave());
+    fireEvent.mouseEnter(hit(indexOf(EASTER)));
+    advance(500);
+    expect(dialog()).not.toBeNull();
+  });
+
+  it('does nothing for a cell without a hit, nor a holiday-only one without the holiday line', () => {
+    vi.useFakeTimers();
+    const { ref, indexOf } = renderWithHandle(false);
+    act(() => ref.current!.enter(indexOf('2026-04-14'), mouse()));
+    act(() => ref.current!.enter(indexOf(GOOD_FRIDAY), mouse()));
+    act(() => ref.current!.enter(-1, mouse()));
+    advance(500);
+    expect(dialog()).toBeNull();
+  });
+
+  it('opens nothing while a mouse button is held or a bar is dragged', () => {
+    vi.useFakeTimers();
+    const { ref, indexOf } = renderWithHandle();
+    act(() => ref.current!.enter(indexOf(EASTER), mouse(1)));
+    advance(500);
+    expect(dialog()).toBeNull();
+
+    act(() => useUIStore.getState().startDrag('phase', 1));
+    try {
+      act(() => ref.current!.enter(indexOf(EASTER), mouse()));
+      advance(500);
+      expect(dialog()).toBeNull();
+    } finally {
+      act(() => useUIStore.getState().endDrag());
+    }
+  });
+
+  it('leaves a pinned panel alone', () => {
+    vi.useFakeTimers();
+    const { ref, indexOf, hit } = renderWithHandle();
+    fireEvent.click(hit(indexOf(EASTER)));
+    act(() => ref.current!.enter(indexOf('2026-04-20'), mouse()));
+    act(() => ref.current!.leave());
+    advance(500);
+    expect(screen.getByRole('dialog', { name: `Events on ${formatMediumDate(EASTER)}` })).toBeInTheDocument();
   });
 });
 

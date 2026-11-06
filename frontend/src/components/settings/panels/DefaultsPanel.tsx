@@ -40,7 +40,8 @@ import styles from './DefaultsPanel.module.css';
 
 /**
  * The settings of this panel (the built-in project field settings live in
- * Settings → Project fields, the audit log retention beside the audit log)
+ * Settings → Project fields; the audit log retention and the two weekend
+ * settings in Settings → General)
  */
 type DefaultsKey = Exclude<
   DefaultedSettingKey,
@@ -49,6 +50,8 @@ type DefaultsKey = Exclude<
   | 'volume_decimals'
   | 'project_tooltip_rows'
   | 'audit_log_retention_days'
+  | 'show_weekends'
+  | 'weekend_working_days'
 >;
 
 /** The seven settings as the backend stores them */

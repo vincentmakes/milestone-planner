@@ -4,7 +4,7 @@
  * collected from every level of the project tree) and a confirmed delete
  * for absences.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { StaffView } from '../StaffView';
 import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
@@ -31,6 +31,13 @@ vi.mock('@/api/endpoints/vacations', () => ({
   deleteVacation: vi.fn(),
   getVacations: vi.fn(),
 }));
+
+// "Today" is a Wednesday (only Date is faked): on a weekend the panel reads
+// "Weekend" instead of "X% available" while weekends are not working days.
+vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 2, 4, 10) });
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function isoOffset(days: number): string {
   const d = new Date();
@@ -213,6 +220,44 @@ describe('StaffView panel', () => {
     expect(rowFor('Alice Ames')).toHaveAttribute('draggable', 'false');
   });
 
+  describe('on a day that is no working day', () => {
+    afterEach(() => {
+      vi.setSystemTime(new Date(2026, 2, 4, 10));
+    });
+
+    it('reads "Weekend" instead of the availability on a Saturday', () => {
+      vi.setSystemTime(new Date(2026, 2, 7, 10)); // Saturday
+      seed();
+      render(<StaffView />);
+      const alice = rowFor('Alice Ames');
+      expect(within(alice).getByText('Weekend')).toBeInTheDocument();
+      expect(within(alice).queryByText(/% available/)).not.toBeInTheDocument();
+      expect(alice.querySelector('[class*="status"]')).toHaveClass(/nonWorking/);
+    });
+
+    it('keeps the availability on a Saturday when weekends are working days', () => {
+      vi.setSystemTime(new Date(2026, 2, 7, 10));
+      seed();
+      useAppStore.setState({ instanceSettings: { weekend_working_days: 'true' } });
+      render(<StaffView />);
+      expect(within(rowFor('Alice Ames')).getByText('50% available')).toBeInTheDocument();
+      expect(screen.queryByText('Weekend')).not.toBeInTheDocument();
+    });
+  });
+
+  it('reports zero availability while a closure shuts their site today', () => {
+    seed();
+    const today = isoOffset(0);
+    act(() =>
+      useAppStore.getState().setCompanyEvents(
+        [{ id: 90, site_id: 1, site_ids: [1], date: today, name: 'Shutdown', counts_as_unavailable: true }],
+        new Set([today])
+      )
+    );
+    render(<StaffView />);
+    expect(within(rowFor('Alice Ames')).getByText('0% available')).toBeInTheDocument();
+  });
+
   it('reports zero availability for someone absent today', () => {
     seed();
     useAppStore.setState({
@@ -382,11 +427,12 @@ describe('StaffView panel', () => {
       teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
     });
     render(<StaffView />);
-    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
-    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+    // The header's event strip names each event in its button's label
+    expect(screen.getAllByRole('button', { name: /Site audit/ }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('button', { name: /Team B review/ })).toHaveLength(0);
 
     act(() => useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [2], noTeam: false } } }));
-    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Team B review/ }).length).toBeGreaterThan(0);
   });
 });
 

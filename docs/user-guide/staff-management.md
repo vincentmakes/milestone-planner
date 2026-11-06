@@ -11,7 +11,7 @@ The **Staff & Calendar** view is a timeline centered on people rather than proje
 
 The left panel lists every person of the site who is **bookable as a resource** — whatever their role. Administrators are not bookable by default, so they appear only once an administrator turns on **Bookable as a resource** for them in [Settings → Users](settings.md#bookable-as-a-resource); people with the switch off are not listed and cannot be booked, but keep the bookings they already have. Each person is shown with:
 
-- **Status indicator**: Green (available) or Red (overallocated)
+- **Status indicator**: Green (available) or Red (overallocated); on a Saturday or Sunday the dot is grey and the row reads **Weekend** instead of its availability, unless [weekends are working days](settings.md#display-settings)
 - **Part-time badge**: Shows maximum capacity if less than 100%
 - **Role and allocation**: Job title and current total allocation percentage
 - **Drag handle**: Admins, superusers and project managers can drag staff onto the Gantt timeline to create assignments; everyone else can drag **their own** card when their role lets them book themselves (see [Adding Yourself to a Project](#adding-yourself-to-a-project))
@@ -24,10 +24,12 @@ The right side shows a horizontal timeline with:
 
 - **Assignment bars** — Colored by project, stacked when overlapping; a booking still [awaiting approval](#booking-yourself-when-approval-is-required) is hatched and does not count towards the workload
 - **Absence blocks** — Drawn in the color of their [absence type](vacations.md#absence-types). Only types that count as unavailable reduce capacity; a Home Office day is shown but leaves the person available
-- **Workload indicator** — Thin bar showing total utilization level
+- **Workload indicator** — Solid blocks under each person's bars showing their total utilization (week and month zoom). Consecutive days with the same allocation — or the same absence or closure — are one solid block with one label, also across hidden weekends; long runs are cut into blocks of at most 10 days so a label is always in view. Home Office days show as an underline inside the block, and work booked during a closure or an absence is one *0%* block whatever the amount (its tooltip gives the amount or the range). Hover a block for the details, its dates and its Home Office days
 - **Site closures** — Company events marked as closures make the staff of their sites unavailable; see [below](#site-closures-in-the-workload)
 - **Event strip** — The thin strip under the day labels of the timeline header lists every bank holiday and company event of a day, as on the [Gantt chart](gantt-charts.md#holidays-and-events-on-the-timeline)
 - **Bank holidays and company events** — Expandable rows at the bottom. Admins and superusers can click an entry to edit it, or **+** to add one, in [Settings](settings.md#bank-holidays); changes appear for other users straight away
+
+![The Gantt chart with the Staff & Calendar panel at month zoom and weekends hidden: each person's equal days form solid blocks of at most 10 days (25%, 75%, 100%), Home Office days are underlined, a darker band between the blocks marks the start of each week, and the Year-end shutdown closure shades the last week of December with 0% blocks](../assets/screenshots/staff-heatmap-month.png){ loading=lazy }
 
 ## Site Closures in the Workload
 
