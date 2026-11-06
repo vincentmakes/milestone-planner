@@ -9,9 +9,10 @@ import { describe, it, expect } from 'vitest';
 import {
   calculateWorkloadCells,
   getWorkloadTooltip,
-  getWorkloadBackground,
   workloadLabel,
   workloadRuns,
+  chunkRuns,
+  MAX_RUN_CELLS,
 } from '../useWorkloadCalculation';
 import type { WorkloadCell } from '../useWorkloadCalculation';
 import { indexAbsenceTypes } from '@/utils/recurringVacation';
@@ -100,7 +101,7 @@ describe('calculateWorkloadCells with site closures', () => {
       absenceName: undefined,
     });
     expect(getWorkloadTooltip(w)).toBe('Site closed: Site shutdown');
-    expect(getWorkloadBackground(w).background).toContain('#f97316');
+    expect(w.closureColor).toBe('#f97316');
   });
 
   it('flags assigned work during the closure as a conflict', () => {
@@ -228,31 +229,55 @@ describe('workloadRuns', () => {
     expect(workloadRuns(at([assignment], dates), dates)[0].availableAbsenceDays).toEqual([]);
   });
 
-  it('still splits a closure day that names an available absence from the plain closure days', () => {
+  describe('across a closure', () => {
     const shutdown: CompanyEvent = {
       id: 1,
       site_id: 1,
       site_ids: [1],
       date: '2026-03-02',
-      end_date: '2026-03-03',
+      end_date: '2026-03-04',
       name: 'Site shutdown',
       color: '#f97316',
       counts_as_unavailable: true,
     };
-    const shutdownDays = new Map([
-      ['2026-03-02', shutdown],
-      ['2026-03-03', shutdown],
-    ]);
-    const dates = days(2);
-    const remote: Vacation = { ...vacation(2), start_date: '2026-03-03', end_date: '2026-03-03' };
-    const cells = calculateWorkloadCells([], [remote], dates.map(cell), 100, byId, shutdownDays);
-    const runs = workloadRuns(cells, dates);
-    expect(spans(runs)).toEqual([
-      [0, 0, 'OFF'],
-      [1, 1, 'OFF'],
-    ]);
-    expect(runs[1].tooltip).toBe('Site closed: Site shutdown\nHome Office: Remote day');
-    expect(runs[1].availableAbsenceDays.map((d) => d.index)).toEqual([1]);
+    const closed = new Map(['2026-03-02', '2026-03-03', '2026-03-04'].map((d) => [d, shutdown]));
+    const dates = days(3);
+
+    it('keeps a Home Office day inside the closure block: one block, its day underlined and named', () => {
+      const remote: Vacation = { ...vacation(2), start_date: '2026-03-03', end_date: '2026-03-03' };
+      const cells = calculateWorkloadCells([], [remote], dates.map(cell), 100, byId, closed);
+      const runs = workloadRuns(cells, dates);
+      expect(spans(runs)).toEqual([[0, 2, 'OFF']]);
+      expect(runs[0].tooltip).toBe('Site closed: Site shutdown');
+      expect(runs[0].availableAbsenceDays).toEqual([
+        { index: 1, date: '2026-03-03', color: '#0ea5e9', label: 'Home Office: Remote day' },
+      ]);
+    });
+
+    it('joins conflict days that book different amounts: one "0%" block, the range in its tooltip', () => {
+      const extra = { ...assignment, id: 2, allocation: 120, start_date: '2026-03-03', end_date: '2026-03-03' };
+      const cells = calculateWorkloadCells([assignment, extra], [], dates.map(cell), 100, byId, closed);
+      expect(cells.map((w) => w.total)).toEqual([50, 170, 50]);
+      const runs = workloadRuns(cells, dates);
+      expect(spans(runs)).toEqual([[0, 2, '0%']]);
+      expect(runs[0].tooltip).toBe('Site closed: Site shutdown\n⚠️ Conflict: 50–170% assigned during site closure');
+    });
+
+    it('keeps the exact amount when every conflict day books the same', () => {
+      const cells = calculateWorkloadCells([assignment], [], dates.map(cell), 100, byId, closed);
+      const runs = workloadRuns(cells, dates);
+      expect(spans(runs)).toEqual([[0, 2, '0%']]);
+      expect(runs[0].tooltip).toBe('Site closed: Site shutdown\n⚠️ Conflict: 50% assigned during site closure');
+    });
+
+    it('still splits a closure conflict from a closure day without work', () => {
+      const short = { ...assignment, start_date: '2026-03-02', end_date: '2026-03-02' };
+      const cells = calculateWorkloadCells([short], [], dates.map(cell), 100, byId, closed);
+      expect(spans(workloadRuns(cells, dates))).toEqual([
+        [0, 0, '0%'],
+        [1, 2, 'OFF'],
+      ]);
+    });
   });
 
   it('skips non-working cells: a run stops before one', () => {
@@ -263,6 +288,58 @@ describe('workloadRuns', () => {
       [0, 1, '50%'],
       [3, 3, '50%'],
     ]);
+  });
+});
+
+describe('chunkRuns', () => {
+  const dates = Array.from({ length: 30 }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`);
+  const longBooking = { ...assignment, start_date: '2026-03-01', end_date: '2026-03-31' };
+  const lengths = (runs: ReturnType<typeof chunkRuns>) => runs.map((r) => r.to - r.from + 1);
+
+  it('cuts a run longer than MAX_RUN_CELLS into pieces of at most 10: 23 cells → 10, 10, 3', () => {
+    expect(MAX_RUN_CELLS).toBe(10);
+    const cells = calculateWorkloadCells([longBooking], [], dates.slice(0, 23).map(cell), 100, byId, undefined, true);
+    const runs = workloadRuns(cells, dates.slice(0, 23));
+    expect(runs).toHaveLength(1);
+    const pieces = chunkRuns(runs, dates);
+    expect(lengths(pieces)).toEqual([10, 10, 3]);
+    expect(pieces.map((p) => [p.from, p.to, p.startDate, p.endDate])).toEqual([
+      [0, 9, '2026-03-01', '2026-03-10'],
+      [10, 19, '2026-03-11', '2026-03-20'],
+      [20, 22, '2026-03-21', '2026-03-23'],
+    ]);
+    // Every piece keeps the run's workload and tooltip
+    expect(new Set(pieces.map((p) => p.tooltip))).toEqual(new Set(['50% allocated']));
+    expect(pieces.every((p) => p.workload === runs[0].workload)).toBe(true);
+  });
+
+  it('keeps a run of exactly 10 cells and a one-cell run whole', () => {
+    const run = (from: number, to: number) => ({
+      from,
+      to,
+      workload: calculateWorkloadCells([assignment], [], [cell('2026-03-02')], 100, byId)[0],
+      tooltip: '50% allocated',
+      startDate: dates[from],
+      endDate: dates[to],
+      availableAbsenceDays: [],
+    });
+    expect(lengths(chunkRuns([run(0, 9)], dates))).toEqual([10]);
+    expect(chunkRuns([run(4, 4)], dates)).toEqual([run(4, 4)]);
+    expect(chunkRuns([], dates)).toEqual([]);
+    // A smaller maximum, and a nonsensical one read as 1
+    expect(lengths(chunkRuns([run(0, 9)], dates, 4))).toEqual([4, 4, 2]);
+    expect(lengths(chunkRuns([run(0, 2)], dates, 0))).toEqual([1, 1, 1]);
+  });
+
+  it('gives each piece the available-absence days inside it', () => {
+    const remote = (id: number, date: string): Vacation => ({ ...vacation(2), id, start_date: date, end_date: date });
+    const twelve = dates.slice(0, 12);
+    const cells = calculateWorkloadCells(
+      [longBooking], [remote(2, '2026-03-02'), remote(3, '2026-03-11')], twelve.map(cell), 100, byId, undefined, true
+    );
+    const pieces = chunkRuns(workloadRuns(cells, twelve), twelve);
+    expect(lengths(pieces)).toEqual([10, 2]);
+    expect(pieces.map((p) => p.availableAbsenceDays.map((d) => d.index))).toEqual([[1], [10]]);
   });
 });
 

@@ -24,12 +24,12 @@ The right side shows a horizontal timeline with:
 
 - **Assignment bars** — Colored by project, stacked when overlapping; a booking still [awaiting approval](#booking-yourself-when-approval-is-required) is hatched and does not count towards the workload
 - **Absence blocks** — Drawn in the color of their [absence type](vacations.md#absence-types). Only types that count as unavailable reduce capacity; a Home Office day is shown but leaves the person available
-- **Workload indicator** — Thin bar showing total utilization level (week and month zoom). Consecutive days that read the same — the same allocation, the same absence or closure — form one block with one label, also across hidden weekends; a day with an absence that leaves the person available (Home Office) stays inside the block and is underlined in the absence type's color. Hover a block for the details, its dates and its Home Office days
+- **Workload indicator** — Solid blocks under each person's bars showing their total utilization (week and month zoom). Consecutive days with the same allocation — or the same absence or closure — are one solid block with one label, also across hidden weekends; long runs are cut into blocks of at most 10 days so a label is always in view. Home Office days show as an underline inside the block. Hover a block for the details, its dates and its Home Office days
 - **Site closures** — Company events marked as closures make the staff of their sites unavailable; see [below](#site-closures-in-the-workload)
 - **Event strip** — The thin strip under the day labels of the timeline header lists every bank holiday and company event of a day, as on the [Gantt chart](gantt-charts.md#holidays-and-events-on-the-timeline)
 - **Bank holidays and company events** — Expandable rows at the bottom. Admins and superusers can click an entry to edit it, or **+** to add one, in [Settings](settings.md#bank-holidays); changes appear for other users straight away
 
-![The Gantt chart with the Staff & Calendar panel at month zoom and weekends hidden: each person's equal days form one block (25%, 75%, 100%), a darker band marks the start of each week, and the Year-end shutdown closure shades the last week of December with 0% blocks](../assets/screenshots/staff-heatmap-month.png){ loading=lazy }
+![The Gantt chart with the Staff & Calendar panel at month zoom and weekends hidden: each person's equal days form solid blocks of at most 10 days (25%, 75%, 100%), Home Office days are underlined, a darker band between the blocks marks the start of each week, and the Year-end shutdown closure shades the last week of December with 0% blocks](../assets/screenshots/staff-heatmap-month.png){ loading=lazy }
 
 ## Site Closures in the Workload
 

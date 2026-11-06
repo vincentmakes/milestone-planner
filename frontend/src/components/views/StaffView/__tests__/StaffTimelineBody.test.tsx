@@ -181,13 +181,20 @@ describe('StaffTimelineBody workload blocks', () => {
     return { ...utils, cells, blocks };
   }
 
-  it('draws a 5-day 75 % booking as one block, five cells wide, with one badge', () => {
+  it('draws a 5-day 75 % booking as one solid block, five cells wide (1 px inset each side), with one label', () => {
     const { cells, blocks } = renderBookings([booking({})]);
     expect(blocks()).toHaveLength(1);
     const [block] = blocks();
     const monday = cells.findIndex((c) => c.dateStr === '2026-09-14');
-    expect(block.style.left).toBe(`${monday * 30}px`);
-    expect(block.style.width).toBe(`${5 * 30}px`);
+    expect(block.style.left).toBe(`${monday * 30 + 1}px`);
+    expect(block.style.width).toBe(`${5 * 30 - 2}px`);
+    // 14 px tall, 2 px under the indicator area's top (row 44 − area 18)
+    expect(block.style.top).toBe(`${44 - 18 + 2}px`);
+    expect(block.style.height).toBe('14px');
+    // Solid: the colour comes from the stylesheet's state class, no gradient fill
+    expect(block.className).toMatch(/partial/);
+    expect(block.style.background).toBe('');
+    expect(block.getAttribute('style')).not.toMatch(/gradient/);
     expect(block).toHaveTextContent(/^75%$/);
     expect(block.title).toBe(`75% allocated · ${formatMediumDate('2026-09-14')} – ${formatMediumDate('2026-09-18')}`);
   });
@@ -198,7 +205,7 @@ describe('StaffTimelineBody workload blocks', () => {
       booking({ id: 32, allocation: 25, start_date: '2026-09-18', end_date: '2026-09-18' }),
     ]);
     expect(blocks().map((b) => b.textContent)).toEqual(['75%', '25%']);
-    expect(blocks().map((b) => b.style.width)).toEqual(['120px', '30px']);
+    expect(blocks().map((b) => b.style.width)).toEqual(['118px', '28px']);
     expect(blocks()[1].title).toBe(`25% allocated · ${formatMediumDate('2026-09-18')}`);
   });
 
@@ -223,23 +230,41 @@ describe('StaffTimelineBody workload blocks', () => {
     ]);
     expect(blocks()).toHaveLength(1);
     const [block] = blocks();
-    expect(block.style.width).toBe(`${5 * 30}px`);
+    expect(block.style.width).toBe(`${5 * 30 - 2}px`);
     expect(block).toHaveTextContent(/^75%$/);
     const underlines = within(block).getAllByTestId('available-absence-day');
     expect(underlines).toHaveLength(2);
     // Days 0 and 2 of the run, one cell wide, in the absence type's colour
-    expect(underlines.map((u) => u.style.left)).toEqual([
-      'calc(0px - var(--run-border))',
-      'calc(60px - var(--run-border))',
-    ]);
+    // Under its own day: the block starts 1 px into its first cell
+    expect(underlines.map((u) => u.style.left)).toEqual(['-1px', '59px']);
     expect(underlines.map((u) => u.style.width)).toEqual(['30px', '30px']);
     expect(underlines[0].style.getPropertyValue('--absence-color')).toBe('#0ea5e9');
     expect(underlines[0].className).toMatch(/availableAbsenceDay/);
-    expect(cells.findIndex((c) => c.dateStr === '2026-09-14') * 30).toBe(parseInt(block.style.left, 10));
+    expect(cells.findIndex((c) => c.dateStr === '2026-09-14') * 30 + 1).toBe(parseInt(block.style.left, 10));
     expect(block.title).toBe(
       `75% allocated · ${formatMediumDate('2026-09-14')} – ${formatMediumDate('2026-09-18')}` +
         `\nHome Office: Remote day · ${formatMediumDate('2026-09-14')}, ${formatMediumDate('2026-09-16')}`
     );
+  });
+
+  it('cuts a 23-day run into blocks of 10, 10 and 3 days, each labelled and titled with its dates', () => {
+    // Weekends are working days: 23 days in a row, Mon 7 to Tue 29 Sep 2026
+    useAppStore.setState({ instanceSettings: { weekend_working_days: 'true' } });
+    try {
+      const { cells, blocks } = renderBookings([booking({ start_date: '2026-09-07', end_date: '2026-09-29' })]);
+      const first = cells.findIndex((c) => c.dateStr === '2026-09-07');
+      expect(cells[first + 22].dateStr).toBe('2026-09-29');
+      expect(blocks().map((b) => b.style.width)).toEqual([`${10 * 30 - 2}px`, `${10 * 30 - 2}px`, `${3 * 30 - 2}px`]);
+      expect(blocks().map((b) => b.style.left)).toEqual(
+        [0, 10, 20].map((offset) => `${(first + offset) * 30 + 1}px`)
+      );
+      expect(blocks().map((b) => b.textContent)).toEqual(['75%', '75%', '75%']);
+      expect(blocks()[2].title).toBe(
+        `75% allocated · ${formatMediumDate('2026-09-27')} – ${formatMediumDate('2026-09-29')}`
+      );
+    } finally {
+      useAppStore.setState({ instanceSettings: null });
+    }
   });
 
   it('draws no block at quarter zoom', () => {
@@ -260,14 +285,14 @@ describe('StaffTimelineBody workload blocks', () => {
 
     it('books nothing on Saturday and Sunday by default: two blocks around them', () => {
       const { blocks } = renderBookings([acrossWeekend]);
-      expect(blocks().map((b) => b.style.width)).toEqual(['60px', '60px']);
+      expect(blocks().map((b) => b.style.width)).toEqual(['58px', '58px']);
       expect(blocks().map((b) => b.textContent)).toEqual(['75%', '75%']);
     });
 
     it('draws one block over the weekend when weekends are working days', () => {
       useAppStore.setState({ instanceSettings: { show_weekends: 'true', weekend_working_days: 'true' } });
       const { blocks } = renderBookings([acrossWeekend]);
-      expect(blocks().map((b) => b.style.width)).toEqual(['180px']);
+      expect(blocks().map((b) => b.style.width)).toEqual(['178px']);
     });
   });
 });

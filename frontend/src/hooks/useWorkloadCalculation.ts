@@ -234,6 +234,11 @@ function absenceText(workload: WorkloadCell): string {
 }
 
 export function getWorkloadTooltip(workload: WorkloadCell): string {
+  return describeWorkload(workload, `${workload.total}%`);
+}
+
+/** `getWorkloadTooltip` with the conflict amount spelled `conflictTotal` (a run's "50–170%") */
+function describeWorkload(workload: WorkloadCell, conflictTotal: string): string {
   const hasAbsence = !!workload.absenceName || !!workload.vacationDescription;
 
   if (workload.isOnVacation) {
@@ -243,7 +248,7 @@ export function getWorkloadTooltip(workload: WorkloadCell): string {
       : absenceText(workload);
     if (workload.total > 0) {
       const during = workload.closureName ? 'site closure' : 'absence';
-      return `${label}\n⚠️ Conflict: ${workload.total}% assigned during ${during}`;
+      return `${label}\n⚠️ Conflict: ${conflictTotal} assigned during ${during}`;
     }
     return label;
   }
@@ -296,34 +301,48 @@ function drawsNothing(workload: WorkloadCell): boolean {
 }
 
 /**
+ * A cell as its run reads it: without its available absence (Home Office),
+ * which is drawn as an underline and named in the block's title instead --
+ * also on a closure day, where the tooltip would otherwise name it.
+ */
+function withoutAvailableAbsence(workload: WorkloadCell): WorkloadCell {
+  if (!workload.hasAvailableAbsence) return workload;
+  return workload.isOnVacation
+    ? { ...workload, hasAvailableAbsence: false, absenceName: undefined, vacationDescription: undefined, isRecurringVacation: false }
+    : { ...workload, hasAvailableAbsence: false };
+}
+
+/**
  * Merges the workload cells into runs (pure): cells that draw something and
- * are adjacent by index join one run while they read the same — the badge,
+ * are adjacent by index join one run while they read the same -- the badge,
  * the state, the colour of an absence or closure block and the tooltip (so
- * two different absences both reading "OFF" stay apart). An available absence
- * (Home Office) does not split a run: outside an absence or closure it is
- * left out of the key and of the run's tooltip, and listed in the run's
- * `availableAbsenceDays` instead (one underline per day). Adjacency is by
- * index, as in `eventLanes.ts`: with weekends hidden, Friday and the next
- * Monday are neighbours and join. `dates` are the cells' `dateStr`s.
+ * two different absences both reading "OFF" stay apart). Two things do not
+ * split a run: an available absence (Home Office), left out of the key and
+ * the tooltip and listed in the run's `availableAbsenceDays` instead (one
+ * underline per day), and the amount booked during a closure or absence --
+ * every such day reads "0%"; the run's tooltip gives the amount, or its
+ * range ("50–170%") when it varies. Adjacency is by index, as in
+ * `eventLanes.ts`: with weekends hidden, Friday and the next Monday are
+ * neighbours and join. `dates` are the cells' `dateStr`s.
  */
 export function workloadRuns(cells: WorkloadCell[], dates: string[]): WorkloadRun[] {
   const runs: WorkloadRun[] = [];
+  // The booked amounts of the current conflict run (its tooltip's range)
+  let conflictTotals: number[] = [];
   let key: string | null = null;
   cells.forEach((workload, index) => {
     if (drawsNothing(workload)) {
       key = null;
       return;
     }
+    const base = withoutAvailableAbsence(workload);
     const offBlock = workload.state === 'vacation' || workload.state === 'conflict';
-    // On an absence or closure block the tooltip already names the absence
-    const tooltip = getWorkloadTooltip(
-      workload.isOnVacation ? workload : { ...workload, hasAvailableAbsence: false }
-    );
     const cellKey = JSON.stringify([
       workloadLabel(workload),
       workload.state,
       offBlock ? (workload.closureColor ?? workload.absenceColor ?? null) : null,
-      tooltip,
+      // A conflict's amount does not split the run
+      describeWorkload(base, workload.state === 'conflict' ? '' : `${base.total}%`),
     ]);
     const day: AvailableAbsenceDay | null = workload.hasAvailableAbsence
       ? { index, date: dates[index], color: workload.absenceColor, label: absenceText(workload) }
@@ -333,14 +352,21 @@ export function workloadRuns(cells: WorkloadCell[], dates: string[]): WorkloadRu
       last.to = index;
       last.endDate = dates[index];
       if (day) last.availableAbsenceDays.push(day);
+      if (workload.state === 'conflict') {
+        conflictTotals.push(workload.total);
+        const low = Math.min(...conflictTotals);
+        const high = Math.max(...conflictTotals);
+        last.tooltip = describeWorkload(withoutAvailableAbsence(last.workload), low === high ? `${low}%` : `${low}–${high}%`);
+      }
       return;
     }
     key = cellKey;
+    conflictTotals = [workload.total];
     runs.push({
       from: index,
       to: index,
       workload,
-      tooltip,
+      tooltip: getWorkloadTooltip(base),
       startDate: dates[index],
       endDate: dates[index],
       availableAbsenceDays: day ? [day] : [],
@@ -350,50 +376,34 @@ export function workloadRuns(cells: WorkloadCell[], dates: string[]): WorkloadRu
 }
 
 /**
- * Get CSS background style for workload visualization
+ * The longest block the Staff overview draws, in cells: a longer run is cut
+ * into blocks of at most this many cells, so a label is always in view.
  */
-export function getWorkloadBackground(workload: WorkloadCell): React.CSSProperties {
-  // A site closure is painted in the event's colour; otherwise the absence
-  // type colour, with the historical purple for untyped absences.
-  const offColor = workload.closureColor ?? workload.absenceColor;
-  switch (workload.state) {
-    case 'vacation':
-      return {
-        background: offColor
-          ? `color-mix(in srgb, ${offColor} 25%, transparent)`
-          : 'rgba(139, 92, 246, 0.25)',
-      };
+export const MAX_RUN_CELLS = 10;
 
-    case 'conflict':
-      return {
-        background: offColor
-          ? `linear-gradient(135deg, color-mix(in srgb, ${offColor} 30%, transparent), rgba(239, 68, 68, 0.3))`
-          : 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(239, 68, 68, 0.3))',
-      };
-      
-    case 'overloaded': {
-      // Red gradient from bottom, intensity based on overload amount
-      const overloadIntensity = Math.min(100, workload.total - 100);
-      const redOpacity = 0.3 + overloadIntensity / 200;
-      return {
-        background: `linear-gradient(to top, rgba(239, 68, 68, ${redOpacity}) ${Math.min(100, workload.total)}%, transparent ${Math.min(100, workload.total)}%)`,
-      };
+/**
+ * Cuts each run into consecutive pieces of at most `maxCells` cells (pure):
+ * a 23-cell run gives 10, 10 and 3. Each piece keeps the run's `workload`
+ * and `tooltip`, takes its own `startDate` / `endDate` from `dates` and the
+ * run's `availableAbsenceDays` that fall inside it.
+ */
+export function chunkRuns(runs: WorkloadRun[], dates: string[], maxCells: number = MAX_RUN_CELLS): WorkloadRun[] {
+  const size = Math.max(1, Math.floor(maxCells));
+  return runs.flatMap((run) => {
+    const pieces: WorkloadRun[] = [];
+    for (let from = run.from; from <= run.to; from += size) {
+      const to = Math.min(run.to, from + size - 1);
+      pieces.push({
+        ...run,
+        from,
+        to,
+        startDate: dates[from],
+        endDate: dates[to],
+        availableAbsenceDays: run.availableAbsenceDays.filter((day) => day.index >= from && day.index <= to),
+      });
     }
-      
-    case 'full':
-      return {
-        background: 'rgba(59, 130, 246, 0.25)', // Blue
-      };
-      
-    case 'partial':
-      // Blue gradient from bottom proportional to allocation
-      return {
-        background: `linear-gradient(to top, rgba(59, 130, 246, 0.2) ${workload.total}%, transparent ${workload.total}%)`,
-      };
-      
-    default:
-      return {};
-  }
+    return pieces;
+  });
 }
 
 export default useWorkloadCalculation;

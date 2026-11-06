@@ -83,19 +83,9 @@
 }
 
 /* Week separators (when weekends are hidden): 3 px bands straddling the
-   boundary before each Monday (left = index × cell width − 1). They live in
-   an overlay that is the last child of .rows: in the grid layer the workload
-   heatmap would cover them. The overlay (z 1) paints over the heatmap's
-   translucent fill (.workloadCell has no z-index), under its badges
-   (.workloadIndicator, z 2) and under .bar (z 2). Its class must not contain
-   "row" (the drag hooks and DependencyLayer find rows by class). */
-.weekBands {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
+   boundary before each Monday (left = index × cell width − 1), in the grid
+   layer like every other timeline: under every block, bar and label, seen
+   only where nothing is drawn. */
 .weekSeparator {
   position: absolute;
   top: 0;
@@ -264,77 +254,49 @@
   opacity: 0.6;
 }
 
-/* Workload Heatmap Cells - positioned at bottom of row. No z-index: the
-   block must not be a stacking context, so that its badge can rise above the
-   week bands (.weekBands, z 1) while its translucent fill stays under them. */
+/* Workload blocks - one solid block per run of equal days (at most
+   MAX_RUN_CELLS days), in the indicator area at the bottom of the row */
 .workloadCell {
   position: absolute;
+  z-index: 1;
   pointer-events: auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The left border width, so a day's underline lines up with its column */
-  --run-border: 0px;
+  overflow: hidden;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-on-accent);
 }
 
-/* State-specific borders */
 .workloadCell.overloaded {
-  border-left: 2px solid var(--accent-red);
-  border-right: 2px solid var(--accent-red);
-  --run-border: 2px;
+  background: var(--accent-red);
 }
 
-.workloadCell.vacation,
+.workloadCell.full {
+  background: var(--accent-blue);
+}
+
+.workloadCell.partial {
+  background: color-mix(in srgb, var(--accent-blue) 80%, transparent);
+}
+
+.workloadCell.vacation {
+  background: var(--absence-color, var(--accent-purple));
+}
+
 .workloadCell.conflict {
-  border-left: 2px solid var(--absence-color, var(--accent-purple));
-  border-right: 2px solid var(--absence-color, var(--accent-purple));
-  --run-border: 2px;
+  background: var(--accent-red-hover);
 }
 
 /* Available absence (e.g. Home Office): a thin type-coloured underline under
-   its own day, inside the block (the day does not split the block) */
+   its own day, at the bottom edge inside the block (it does not split it) */
 .availableAbsenceDay {
   position: absolute;
   bottom: 0;
   height: 3px;
   background: var(--absence-color, var(--accent-purple));
   pointer-events: none;
-}
-
-/* Workload Indicator Badge - centered in the indicator area, above the week
-   bands (z 1) and under the bars (z 2, later in the row) */
-.workloadIndicator {
-  position: relative;
-  font-size: 9px;
-  font-weight: 600;
-  padding: 1px 4px;
-  border-radius: 2px;
-  white-space: nowrap;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.workloadIndicator.overloaded {
-  background: var(--accent-red);
-  color: white;
-}
-
-.workloadIndicator.full {
-  background: var(--accent-blue);
-  color: white;
-}
-
-.workloadIndicator.partial {
-  background: color-mix(in srgb, var(--accent-blue) 80%, transparent);
-  color: white;
-}
-
-.workloadIndicator.vacation {
-  background: var(--absence-color, var(--accent-purple));
-  color: white;
-}
-
-.workloadIndicator.conflict {
-  background: var(--accent-red-hover);
-  color: white;
 }

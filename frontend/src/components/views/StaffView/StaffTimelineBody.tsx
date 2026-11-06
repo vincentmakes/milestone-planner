@@ -19,7 +19,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
-import { useWorkloadCalculation, getWorkloadBackground, workloadLabel, workloadRuns } from '@/hooks';
+import { useWorkloadCalculation, workloadLabel, workloadRuns, chunkRuns, MAX_RUN_CELLS } from '@/hooks';
 import type { AvailableAbsenceDay } from '@/hooks';
 import { formatMediumDate } from '@/utils/date';
 import {
@@ -143,6 +143,17 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                 />
               ) : null
             )}
+            {/* Week separators (weekends hidden): in the grid layer, under
+                every block, bar and label, like every other timeline */}
+            {renderWeekSeparators && cells.map((cell, index) =>
+              cell.isFirstOfWeek && index > 0 ? (
+                <div
+                  key={`week-sep-${index}`}
+                  className={styles.weekSeparator}
+                  style={{ left: index * cellWidth - 1 }}
+                />
+              ) : null
+            )}
           </div>
           
           {/* Today line */}
@@ -235,23 +246,6 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
               cellWidth={cellWidth}
               viewMode={viewMode}
             />
-
-            {/* Week separators (weekends hidden): an overlay above the
-                workload heatmap's fill but under its badges, under the bars
-                (last child of .rows; its class contains no "row") */}
-            {renderWeekSeparators && (
-              <div className={styles.weekBands} aria-hidden="true">
-                {cells.map((cell, index) =>
-                  cell.isFirstOfWeek && index > 0 ? (
-                    <div
-                      key={`week-sep-${index}`}
-                      className={styles.weekSeparator}
-                      style={{ left: index * cellWidth - 1 }}
-                    />
-                  ) : null
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -284,6 +278,11 @@ interface StaffRowProps {
    */
   canManage: boolean;
 }
+
+/** A workload block's gap to its cell edges: 2 px between blocks side by side */
+const BLOCK_INSET_X = 1;
+/** ... and to the indicator area's top and bottom (an 18 px area → 14 px blocks) */
+const BLOCK_INSET_Y = 2;
 
 /**
  * The title lines of a block's available absences (Home Office): one line per
@@ -326,11 +325,13 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
   
   // Only show workload heatmap in week/month view (not quarter/year - cells too small)
   const showWorkloadHeatmap = viewMode === 'week' || viewMode === 'month';
-  // Adjacent days that read the same make one block
-  const runs = useMemo(
-    () => (showWorkloadHeatmap ? workloadRuns(workloadCells, cells.map((c) => c.dateStr)) : []),
-    [showWorkloadHeatmap, workloadCells, cells]
-  );
+  // Adjacent days that read the same make one run, drawn as solid blocks of
+  // at most MAX_RUN_CELLS days (a label always in view)
+  const blocks = useMemo(() => {
+    if (!showWorkloadHeatmap) return [];
+    const dates = cells.map((c) => c.dateStr);
+    return chunkRuns(workloadRuns(workloadCells, dates), dates, MAX_RUN_CELLS);
+  }, [showWorkloadHeatmap, workloadCells, cells]);
   
   // Calculate bar positions and stack them
   const stackedBars = useMemo(() => {
@@ -472,36 +473,36 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
   
   return (
     <div className={styles.row} style={{ height: rowHeight }}>
-      {/* Workload heatmap blocks (one per run of equal days) - only in the indicator area at bottom */}
-      {runs.map(({ from, to, workload, tooltip, startDate, endDate, availableAbsenceDays }) => {
+      {/* Workload blocks: one solid block per run of equal days (cut every
+          MAX_RUN_CELLS days), in the indicator area at the bottom of the row */}
+      {blocks.map(({ from, to, workload, tooltip, startDate, endDate, availableAbsenceDays }) => {
         const label = workloadLabel(workload);
         const dates =
           startDate === endDate
             ? formatMediumDate(startDate)
             : `${formatMediumDate(startDate)} – ${formatMediumDate(endDate)}`;
-        // Available absences (Home Office) inside the run: one line per absence,
-        // with its days (an absence or closure block names it in `tooltip`)
-        const availableNote = workload.isOnVacation ? '' : availableAbsenceNote(availableAbsenceDays);
+        // Available absences (Home Office) inside the block: one line per absence, with its days
+        const availableNote = availableAbsenceNote(availableAbsenceDays);
+        const offColor =
+          workload.state === 'vacation' || workload.state === 'conflict'
+            ? (workload.closureColor ?? workload.absenceColor)
+            : undefined;
         return (
           <div
             key={`workload-${from}`}
             className={`${styles.workloadCell} ${styles[workload.state]}`}
             style={{
-              left: from * cellWidth,
-              width: (to - from + 1) * cellWidth,
-              top: indicatorTop,
-              height: INDICATOR_AREA_HEIGHT,
-              ...((workload.closureColor ?? workload.absenceColor)
-                ? ({ ['--absence-color' as string]: workload.closureColor ?? workload.absenceColor } as React.CSSProperties)
-                : {}),
-              ...getWorkloadBackground(workload),
+              // Inset in its cells: consecutive blocks (a long run's pieces too) read apart
+              left: from * cellWidth + BLOCK_INSET_X,
+              width: (to - from + 1) * cellWidth - 2 * BLOCK_INSET_X,
+              top: indicatorTop + BLOCK_INSET_Y,
+              height: INDICATOR_AREA_HEIGHT - 2 * BLOCK_INSET_Y,
+              ...(offColor ? ({ ['--absence-color' as string]: offColor } as React.CSSProperties) : {}),
             }}
             title={`${tooltip} · ${dates}${availableNote}`}
           >
-            {/* Workload indicator badge ("OFF" when an absence or a site closure makes them unavailable) */}
-            {label !== null && (
-              <div className={`${styles.workloadIndicator} ${styles[workload.state]}`}>{label}</div>
-            )}
+            {/* The label ("OFF" when an absence or a site closure makes them unavailable) */}
+            {label}
             {/* An available absence (Home Office) underlines its own day only */}
             {availableAbsenceDays.map((day) => (
               <div
@@ -509,7 +510,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
                 className={styles.availableAbsenceDay}
                 data-testid="available-absence-day"
                 style={{
-                  left: `calc(${(day.index - from) * cellWidth}px - var(--run-border))`,
+                  left: (day.index - from) * cellWidth - BLOCK_INSET_X,
                   width: cellWidth,
                   ...(day.color ? ({ ['--absence-color' as string]: day.color } as React.CSSProperties) : {}),
                 }}

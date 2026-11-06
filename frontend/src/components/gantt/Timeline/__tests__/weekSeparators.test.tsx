@@ -1,10 +1,9 @@
 /**
  * With weekends hidden, every timeline marks the start of each week with a
  * 3 px band in `--border-color-hover` before its Monday (never before the
- * first cell): the header, the Gantt, Equipment, Cross-site and Archived
- * bodies in their grid layer (under the bars), the Staff body in an overlay
- * that is the last child of its rows (the workload heatmap would cover a grid
- * band; the overlay stays under the bars and the workload badges). Week / month zoom only, and none
+ * first cell): the header and every body (Gantt, Equipment, Cross-site,
+ * Archived, Staff) draw it in their grid layer, under every bar, block and
+ * label — one rule everywhere. Week / month zoom only, and none
  * while weekends are shown. Separators carry no `row` / `bar` class and no
  * `data-date` (the drag hooks and `DependencyLayer` query those).
  */
@@ -54,7 +53,7 @@ const BODIES: Array<[string, (cells: TimelineCell[], mode: ViewMode) => ReactEle
         cells={cells}
         cellWidth={WIDTH}
         totalWidth={cells.length * WIDTH}
-        viewMode={mode as 'month'}
+        viewMode={mode}
       />
     ),
   ],
@@ -125,6 +124,16 @@ function setShowWeekends(showWeekends: boolean) {
   } as never);
 }
 
+/** The class of the element each timeline paints its grid layer in */
+const GRID_LAYER: Record<string, RegExp> = {
+  header: /bgLayer/,
+  'Gantt body': /grid/,
+  'Equipment body': /grid/,
+  'Cross-site body': /grid/,
+  'Archived row': /^_?row/,
+  'Staff body': /grid/,
+};
+
 const separators = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[class*="weekSeparator"]')];
 
 beforeEach(() => {
@@ -152,6 +161,18 @@ describe.each(BODIES)('week separators — %s', (_name, renderFor) => {
     }
   });
 
+  it('draws them in the grid layer, under the content (never among the rows)', () => {
+    setShowWeekends(false);
+    const { container } = render(renderFor(cellsFor(false), 'month'));
+    expect(separators(container).length).toBeGreaterThan(0);
+    for (const el of separators(container)) {
+      // The header's background layer, a body's grid; an Archived row is its
+      // own grid (lines in ::before), its band drawn before the project bar
+      expect(el.parentElement!.className).toMatch(GRID_LAYER[_name]);
+      expect(el.closest('[class*="rows"]')).toBeNull();
+    }
+  });
+
   it('draws none while weekends are shown', () => {
     setShowWeekends(true);
     const { container } = render(renderFor(cellsFor(true), 'month'));
@@ -162,52 +183,6 @@ describe.each(BODIES)('week separators — %s', (_name, renderFor) => {
     setShowWeekends(false);
     const { container } = render(renderFor(cellsFor(false, 'quarter'), 'quarter'));
     expect(separators(container)).toHaveLength(0);
-  });
-});
-
-describe('week separators — Staff overlay', () => {
-  it('sits in an overlay that is the last child of the rows, above the heatmap and below the bars', () => {
-    setShowWeekends(false);
-    const { container } = render(BODIES[5][1](cellsFor(false), 'month'));
-    const [first] = separators(container);
-    const overlay = first.parentElement!;
-    expect(overlay.className).toMatch(/weekBands/);
-    expect(overlay.className).not.toMatch(/row/i);
-    const rows = overlay.parentElement!;
-    expect(rows.className).toMatch(/rows/);
-    expect(rows.lastElementChild).toBe(overlay);
-    // None left in the grid layer behind the heatmap
-    expect(container.querySelector('[class*="grid"] [class*="weekSeparator"]')).toBeNull();
-
-    const css = readFileSync(
-      join(__dirname, '..', '..', '..', 'views', 'StaffView', 'StaffTimelineBody.module.css'),
-      'utf8'
-    );
-    const rule = css.match(/\.weekBands\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(rule).toMatch(/position: absolute;/);
-    expect(rule).toMatch(/inset: 0;/);
-    expect(rule).toMatch(/z-index: 1;/);
-    expect(rule).toMatch(/pointer-events: none;/);
-  });
-
-  it('paints over the heatmap fill but never over a workload badge', () => {
-    const css = readFileSync(
-      join(__dirname, '..', '..', '..', 'views', 'StaffView', 'StaffTimelineBody.module.css'),
-      'utf8'
-    );
-    const zOf = (rule: string) => Number(rule.match(/z-index:\s*(\d+);/)?.[1]);
-    const bands = css.match(/\.weekBands\s*\{([^}]*)\}/)?.[1] ?? '';
-    const block = css.match(/\.workloadCell\s*\{([^}]*)\}/)?.[1] ?? '';
-    const badge = css.match(/\.workloadIndicator\s*\{([^}]*)\}/)?.[1] ?? '';
-    // The block is no stacking context (no z-index), so its badge competes
-    // with the bands in the rows' stacking context and its fill stays under them
-    expect(block).toMatch(/position: absolute;/);
-    expect(block).not.toMatch(/z-index/);
-    expect(badge).toMatch(/position: relative;/);
-    expect(zOf(badge)).toBeGreaterThan(zOf(bands));
-    // ...and under the bars
-    const bar = css.match(/\.bar\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(zOf(badge)).toBeLessThanOrEqual(zOf(bar));
   });
 });
 
