@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } fr
 import { useAppStore } from '@/stores/appStore';
 import type { Phase, Subphase, Project } from '@/types';
 import styles from './ShiftTooltip.module.css';
-import { tooltipRowGate, type TooltipRow } from '@/utils/instanceSettings';
+import { selectWeekendsWorking, tooltipRowGate, type TooltipRow } from '@/utils/instanceSettings';
 import { DetailsRows } from './DetailsRows';
 import { phaseTooltipData, projectTooltipData, subphaseTooltipData, type TooltipData } from './tooltipData';
 
@@ -90,6 +90,7 @@ export function ShiftTooltip() {
   const storeTags = useAppStore((s) => s.tags);
   const instanceSettings = useAppStore((s) => s.instanceSettings);
   const projectFields = useAppStore((s) => s.projectFields);
+  const weekendsWorking = useAppStore(selectWeekendsWorking);
   const currentBarRef = useRef<HTMLElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   // A project shows the rows project_tooltip_rows lists, parsed once per settings change
@@ -128,26 +129,35 @@ export function ShiftTooltip() {
     const phase = findPhaseById(projects, phaseId);
     const project = findProjectByPhaseId(projects, phaseId);
     if (phase && project) {
-      setTooltipData({ ...phaseTooltipData(phase, project, bankHolidayDates), x, y });
+      setTooltipData({ ...phaseTooltipData(phase, project, bankHolidayDates, weekendsWorking), x, y });
     }
-  }, [projects, bankHolidayDates]);
+  }, [projects, bankHolidayDates, weekendsWorking]);
 
   // Show tooltip for a subphase bar
   const showSubphaseTooltip = useCallback((subphaseId: number, x: number, y: number) => {
     const context = findSubphaseContext(projects, subphaseId);
     if (context) {
       const { subphase, project, parentPhase } = context;
-      setTooltipData({ ...subphaseTooltipData(subphase, project, parentPhase, bankHolidayDates), x, y });
+      setTooltipData({
+        ...subphaseTooltipData(subphase, project, parentPhase, bankHolidayDates, weekendsWorking),
+        x,
+        y,
+      });
     }
-  }, [projects, bankHolidayDates]);
+  }, [projects, bankHolidayDates, weekendsWorking]);
 
   // Show tooltip for a project bar
   const showProjectTooltip = useCallback((projectId: number, x: number, y: number) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
-    const data = projectTooltipData(project, { tags: storeTags, fields: projectFields, bankHolidayDates });
+    const data = projectTooltipData(project, {
+      tags: storeTags,
+      fields: projectFields,
+      bankHolidayDates,
+      weekendsWorking,
+    });
     if (data) setTooltipData({ ...data, x, y });
-  }, [projects, bankHolidayDates, storeTags, projectFields]);
+  }, [projects, bankHolidayDates, storeTags, projectFields, weekendsWorking]);
 
   // Handle mouse move to track hover and update position
   useEffect(() => {

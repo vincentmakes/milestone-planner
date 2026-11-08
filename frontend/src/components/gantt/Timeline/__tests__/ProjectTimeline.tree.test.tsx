@@ -167,6 +167,22 @@ describe('ProjectTimeline rows', () => {
     expect(screen.getAllByTitle('Site closed: Shutdown').length).toBeGreaterThan(0);
   });
 
+  it('marks no weekend day of an absence unless weekends are working days', () => {
+    // Fri 11 .. Mon 14 September 2026, weekends shown (month zoom, day cells)
+    useAppStore.setState({
+      vacations: [makeVacation({ staff_id: 4, start_date: '2026-09-11', end_date: '2026-09-14', description: 'Long weekend' })],
+    });
+    const { unmount } = renderTimeline(buildProject());
+    const widths = () => [...new Set(screen.getAllByTitle('Long weekend').map((m) => m.style.width))];
+    // Friday and Monday apart, nothing on Saturday and Sunday
+    expect(widths()).toEqual(['30px']);
+    unmount();
+
+    useAppStore.setState({ instanceSettings: { weekend_working_days: 'true' } });
+    renderTimeline(buildProject());
+    expect(widths()).toEqual(['120px']);
+  });
+
   it('marks a team-restricted closure on team members\' bookings only', () => {
     useAppStore.setState({
       teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],

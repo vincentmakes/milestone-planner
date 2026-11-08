@@ -184,6 +184,15 @@ describe('ShiftTooltip', () => {
     expect(screen.queryByText('Parent:')).not.toBeInTheDocument();
   });
 
+  it('counts the weekend in the work days when weekends are working days', () => {
+    setup();
+    useAppStore.setState({ instanceSettings: { weekend_working_days: 'true' } });
+    holdShift();
+    hover('phase-bar');
+    // 12 days, one of them a bank holiday
+    expect(screen.getByText('Work days:').nextSibling).toHaveTextContent('11 days (excl. 1 hol.)');
+  });
+
   it('follows the cursor while it stays on the same bar', () => {
     setup();
     holdShift();

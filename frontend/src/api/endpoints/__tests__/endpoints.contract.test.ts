@@ -261,6 +261,7 @@ describe('settings endpoints', () => {
       volume_decimals: 'any',
       project_tooltip_rows: settings.INSTANCE_SETTING_DEFAULTS.project_tooltip_rows,
       audit_log_retention_days: '365',
+      weekend_working_days: 'false',
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
   });
@@ -283,8 +284,10 @@ describe('settings endpoints', () => {
       project_tooltip_rows:
         '["customer","pm","confirmed","tags","period","completion","work_days","total_days","staff"]',
       audit_log_retention_days: '365',
+      show_weekends: 'true',
+      weekend_working_days: 'false',
     });
-    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(15);
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(16);
   });
 });
 

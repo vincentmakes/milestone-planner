@@ -21,6 +21,7 @@ import {
   parseNameList,
   parseTooltipRows,
   selectShowWeekends,
+  selectWeekendsWorking,
   tooltipRowGate,
   tooltipRowLabel,
   tooltipRowsValue,
@@ -290,5 +291,23 @@ describe('selectShowWeekends', () => {
     expect(selectShowWeekends({ instanceSettings: {} as never })).toBe(true);
     expect(selectShowWeekends({ instanceSettings: { show_weekends: 'true' } as never })).toBe(true);
     expect(selectShowWeekends({ instanceSettings: { show_weekends: 'false' } as never })).toBe(false);
+  });
+});
+
+describe('selectWeekendsWorking', () => {
+  it("is on only for 'true' -- not a switch (unloaded, missing or stray values read as off)", () => {
+    expect(selectWeekendsWorking({ instanceSettings: { weekend_working_days: 'true' } })).toBe(true);
+    // Case-insensitive and trimmed, like the backend's weekends_working_from
+    for (const value of [' TRUE ', 'True', 'tRuE\n']) {
+      expect(selectWeekendsWorking({ instanceSettings: { weekend_working_days: value } })).toBe(true);
+    }
+    for (const value of [undefined, '', 'false', '1', 'yes', 'maybe']) {
+      expect(selectWeekendsWorking({ instanceSettings: { weekend_working_days: value } })).toBe(false);
+    }
+    expect(selectWeekendsWorking({ instanceSettings: null })).toBe(false);
+    expect(selectWeekendsWorking({ instanceSettings: {} })).toBe(false);
+    // Where a switch would read on, this reads off.
+    expect(isSettingOn({}, 'show_weekends')).toBe(true);
+    expect(INSTANCE_SETTING_DEFAULTS.weekend_working_days).toBe('false');
   });
 });

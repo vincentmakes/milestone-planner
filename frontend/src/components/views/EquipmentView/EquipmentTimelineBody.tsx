@@ -105,7 +105,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                 <div
                   key={`week-sep-${index}`}
                   className={styles.weekSeparator}
-                  style={{ left: index * cellWidth }}
+                  style={{ left: index * cellWidth - 1 }}
                 />
               ) : null
             )}

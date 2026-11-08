@@ -61,6 +61,19 @@
   z-index: 2;
 }
 
+/* Week separator (when weekends are hidden): a 3 px band straddling the
+   boundary before each Monday (left = index × cell width − 1), with the tints,
+   under the bar */
+.weekSeparator {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 3px;
+  background: var(--border-color-hover);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* Project bar - matches main Gantt style */
 .bar {
   position: absolute;

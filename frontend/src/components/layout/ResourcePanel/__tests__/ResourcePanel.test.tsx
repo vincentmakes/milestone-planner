@@ -3,7 +3,7 @@
  * per card (assignments, absences, equipment bookings/blocks) and who may drag
  * a card onto the Gantt (managers anything, everyone else only themselves).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { ResourcePanel } from '../ResourcePanel';
 import { useAppStore } from '@/stores/appStore';
@@ -25,6 +25,14 @@ import {
 import type { StaffAssignment } from '@/types';
 import { tagFilterKey } from '@/utils/tags';
 import { USER_DEFAULTS } from '@/test/permissionFixtures';
+
+// "Today" is a Wednesday (only Date is faked): on a weekend a staff card
+// reads "Weekend" instead of its percentage while weekends are not working
+// days, which would fail every percentage below on a Saturday run.
+vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 2, 4, 10) });
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 const today = formatDateISO(new Date());
 const assignment = (staffId: number, allocation: number): StaffAssignment => ({
@@ -91,6 +99,41 @@ describe('ResourcePanel', () => {
     expect(useViewStore.getState().resourcePanelCollapsed).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Expand panel' }));
     expect(useViewStore.getState().resourcePanelCollapsed).toBe(false);
+  });
+
+  describe('on a day that is no working day', () => {
+    afterEach(() => {
+      vi.setSystemTime(new Date(2026, 2, 4, 10));
+    });
+
+    function seedSaturday() {
+      vi.setSystemTime(new Date(2026, 2, 7, 10)); // Saturday
+      const saturday = formatDateISO(new Date());
+      useAppStore.setState({
+        staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+        equipment: [makeEquipment({ id: 1, name: 'Bioreactor 50L' })],
+        projects: [makeProject({ staffAssignments: [{ ...assignment(4, 30), start_date: saturday, end_date: saturday }] })],
+      });
+    }
+
+    it('reads "Weekend" on a staff card, never on an equipment card', () => {
+      seedSaturday();
+      render(<ResourcePanel />);
+      expect(card('Bob Brown')).toHaveTextContent('Weekend');
+      expect(card('Bob Brown')).not.toHaveTextContent('%');
+      expect(within(card('Bob Brown')).getByText('Weekend')).toHaveStyle({ color: 'var(--text-muted)' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Equipment' }));
+      expect(card('Bioreactor 50L')).toHaveTextContent('100%');
+    });
+
+    it('keeps the percentage when weekends are working days', () => {
+      seedSaturday();
+      useAppStore.setState({ instanceSettings: { weekend_working_days: 'true' } });
+      render(<ResourcePanel />);
+      expect(card('Bob Brown')).toHaveTextContent('70%');
+      expect(card('Bob Brown')).not.toHaveTextContent('Weekend');
+    });
   });
 
   it("sums today's allocations at every level into the remaining availability", () => {

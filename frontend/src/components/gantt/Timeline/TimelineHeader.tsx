@@ -6,12 +6,20 @@
  * `--timeline-header-total` high (23 + 28 + 15 px: the events row draws the
  * header's bottom border); the left panes' headers read the same token, so
  * their rows stay aligned.
+ *
+ * Hovering a day label with something in the strip (`cellHasHit`) opens the
+ * strip's panel for that cell, through the `TimelineMarkers` handle (hover
+ * only; focus and click stay on the strip's button). Those labels carry no
+ * native `title` (two tooltips otherwise); the others keep it — a quarter
+ * week whose only mark is a holiday names it there.
  */
 
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { cellHasHit } from '../utils';
 import type { TimelineCell, TimelineHeader as TimelineHeaderType } from '../utils';
 import { TimelineMarkers } from './TimelineMarkers';
+import type { TimelineMarkersHandle } from './TimelineMarkers';
 import styles from './TimelineHeader.module.css';
 
 /** `--event-color` for a cell whose first event has a colour */
@@ -22,15 +30,14 @@ function eventColorStyle(cell: TimelineCell): React.CSSProperties | undefined {
 }
 
 /**
- * The label cell's title: the holiday name first, then every event of the
- * cell joined by " · ", with " (n events)" when there are several;
- * `undefined` when the cell has neither.
+ * The label cell's native title. A cell with something in the strip has none
+ * (hovering the label opens the strip's panel); any other cell has no event,
+ * so its title is the holiday name a span cell cannot show in the strip
+ * (a quarter week), `undefined` otherwise.
  */
-function headerCellTitle(cell: TimelineCell): string | undefined {
-  const names = cell.companyEvents.map((event) => event.name);
-  const parts = cell.isBankHoliday && cell.bankHolidayName ? [cell.bankHolidayName, ...names] : names;
-  if (parts.length === 0) return undefined;
-  return names.length > 1 ? `${parts.join(' · ')} (${names.length} events)` : parts.join(' · ');
+function headerCellTitle(cell: TimelineCell, viewMode: TimelineHeaderProps['viewMode']): string | undefined {
+  if (cellHasHit(cell, viewMode)) return undefined;
+  return (cell.isBankHoliday && cell.bankHolidayName) || undefined;
 }
 
 interface TimelineHeaderProps {
@@ -60,6 +67,8 @@ export const TimelineHeader = memo(function TimelineHeader({
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   // The events row names the teams of the current site (events are loaded for it)
   const siteId = useAppStore((s) => s.currentSite?.id);
+  // The strip's handle: a day label's hover opens the strip's panel
+  const markers = useRef<TimelineMarkersHandle>(null);
 
   return (
     <div className={styles.header}>
@@ -115,7 +124,7 @@ export const TimelineHeader = memo(function TimelineHeader({
                   <div
                     key={`week-sep-${index}`}
                     className={styles.weekSeparator}
-                    style={{ left: index * cellWidth }}
+                    style={{ left: index * cellWidth - 1 }}
                   />
                 ) : null
               )}
@@ -139,9 +148,11 @@ export const TimelineHeader = memo(function TimelineHeader({
                 key={index}
                 className={`${styles.secondaryCell} ${textClass}`}
                 style={{ width: cellWidth, ...eventColorStyle(cell) }}
-                title={headerCellTitle(cell)}
+                title={headerCellTitle(cell, viewMode)}
                 data-date={cell.dateStr}
                 data-date-end={cell.dateEnd || undefined}
+                onMouseEnter={(e) => markers.current?.enter(index, e)}
+                onMouseLeave={() => markers.current?.leave()}
               >
                 <span className={styles.dayLabel}>{cell.label}</span>
                 {/* Week number on first day of week - position varies by view */}
@@ -164,7 +175,7 @@ export const TimelineHeader = memo(function TimelineHeader({
           className={styles.eventsRow}
           style={{ '--cell-width': `${cellWidth}px` } as React.CSSProperties}
         >
-          <TimelineMarkers cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
+          <TimelineMarkers ref={markers} cells={cells} cellWidth={cellWidth} viewMode={viewMode} siteId={siteId} />
         </div>
 
         {/* Spacer row to align with custom column headers in ProjectPanel */}

@@ -17,9 +17,10 @@
  * holiday line there (a quarter week's holiday flag covers only its Monday,
  * a year month has none), so a span cell's panel lists events only.
  *
- * Every cell with something to show gets a transparent 12 px hit button,
- * the height of the events row (it never reaches the bars below the header).
- * Hover (after 150 ms), keyboard focus or a click opens the panel — an
+ * Every cell with something to show (`cellHasHit`) gets a transparent 12 px
+ * hit button, the height of the events row (it never reaches the bars below
+ * the header). Hover (after 150 ms), keyboard focus or a click opens the
+ * panel — an
  * `AnchoredPanel` (`role="dialog"`, no focus trap: it is a popover, not a
  * modal) listing the cell's events with their dates, their teams at this site
  * and whether they close it; a manager's click on a name opens the event in
@@ -37,6 +38,13 @@
  * panel opens while a bar is dragged or resized, and one opening in any
  * strip closes the panel of every other strip (`panelBus`).
  *
+ * The header's day labels above the strip open the same hover panel through
+ * the component's handle (`TimelineMarkersHandle.enter(index, e)` / `leave()`,
+ * hover only: focus and click stay on the hit button, the keyboard path).
+ * The panel still anchors to the strip's hit button of that index, so it
+ * opens at the same place, and moving from a label to the strip below it
+ * keeps the open panel.
+ *
  * Class names and data attributes avoid "row", "rows", "bar" and
  * `data-date`: the drag/resize hooks read every `[data-date]` in the document
  * and find rows by `[class*="row"]`, `DependencyLayer` takes the first
@@ -45,7 +53,7 @@
  * touch-target rule (`global.css`).
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 import { Button } from '@/components/common/Button';
@@ -57,7 +65,7 @@ import { formatLocalDate, formatMediumDate } from '@/utils/date';
 import { can } from '@/utils/permissions';
 import { teamIdsOnSite, teamsForSite } from '@/utils/teams';
 import type { Team, ViewMode } from '@/types';
-import { assignEventLanes } from '../utils';
+import { assignEventLanes, cellHasHit } from '../utils';
 import type { CellEvent, TimelineCell } from '../utils';
 import styles from './TimelineMarkers.module.css';
 
@@ -69,6 +77,16 @@ export interface TimelineMarkersProps {
   siteId: number | undefined;
   /** Draw and list bank holidays on day cells (default true) */
   showHolidayLine?: boolean;
+}
+
+/**
+ * Opens the hover panel from outside the strip (the header's day labels):
+ * `enter` is the hit button's mouse enter for that index — a no-op for a cell
+ * with nothing to show (`cellHasHit`) — and `leave` its mouse leave.
+ */
+export interface TimelineMarkersHandle {
+  enter: (index: number, e: ReactMouseEvent) => void;
+  leave: () => void;
 }
 
 type OpenMode = 'hover' | 'focus' | 'pin';
@@ -125,13 +143,10 @@ function eventTag(event: CellEvent, siteTeams: Team[]): string | null {
   return names.length > 0 ? `Teams: ${names.join(', ')}` : null;
 }
 
-export function TimelineMarkers({
-  cells,
-  cellWidth,
-  viewMode,
-  siteId,
-  showHolidayLine = true,
-}: TimelineMarkersProps) {
+export const TimelineMarkers = forwardRef<TimelineMarkersHandle, TimelineMarkersProps>(function TimelineMarkers(
+  { cells, cellWidth, viewMode, siteId, showHolidayLine = true },
+  ref
+) {
   const spanCells = viewMode === 'quarter' || viewMode === 'year';
   const holidays = !spanCells && showHolidayLine;
 
@@ -152,8 +167,8 @@ export function TimelineMarkers({
   }, [cells, spanCells, showHolidayLine]);
 
   const hasHit = useCallback(
-    (cell: TimelineCell | undefined) => !!cell && (cell.companyEvents.length > 0 || (holidays && cell.isBankHoliday)),
-    [holidays]
+    (cell: TimelineCell | undefined) => cellHasHit(cell, viewMode, showHolidayLine),
+    [viewMode, showHolidayLine]
   );
 
   // --- open state -----------------------------------------------------------
@@ -338,6 +353,14 @@ export function TimelineMarkers({
     if (current?.index === index && current.mode === 'pin') close();
     else show(index, 'pin');
   };
+
+  // The header's day labels: the same hover path, for cells with a hit button
+  useImperativeHandle(ref, () => ({
+    enter: (index, e) => {
+      if (hasHit(cells[index])) onCellEnter(index, e);
+    },
+    leave: onCellLeave,
+  }));
 
   const onPanelLeave = () => {
     if (openRef.current?.mode === 'hover') scheduleClose();
@@ -546,4 +569,4 @@ export function TimelineMarkers({
       )}
     </div>
   );
-}
+});

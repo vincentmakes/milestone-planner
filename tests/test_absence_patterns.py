@@ -104,3 +104,18 @@ def test_a_weekend_pattern_takes_no_weekday():
 
 def test_an_inverted_range_is_empty():
     assert _days("2026-03-09", "2026-03-02", None) == []
+
+
+def test_with_weekends_working_a_weekend_day_is_taken():
+    def on(start: str, end: str, days: frozenset[int] | None) -> list[str]:
+        return [
+            day.isoformat()
+            for day in absence_weekdays(
+                date.fromisoformat(start), date.fromisoformat(end), days, weekends_working=True
+            )
+        ]
+
+    # Saturday 7 .. Monday 9 March 2026: every day.
+    assert on("2026-03-07", "2026-03-09", None) == ["2026-03-07", "2026-03-08", "2026-03-09"]
+    # A Saturday-and-Sunday pattern over March: 4 Saturdays + 5 Sundays.
+    assert len(on("2026-03-01", "2026-03-31", frozenset({0, 6}))) == 9

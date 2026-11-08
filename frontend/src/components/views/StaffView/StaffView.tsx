@@ -45,7 +45,8 @@ import { canBookSelf, canManageAbsencesOf, canManageAnyProject } from '@/utils/p
 import { isPendingAssignment } from '@/utils/kanbanCards';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
-import { parseIdList, selectShowWeekends } from '@/utils/instanceSettings';
+import { parseIdList, selectShowWeekends, selectWeekendsWorking } from '@/utils/instanceSettings';
+import { isWorkingDay } from '@/utils/workingDays';
 import styles from './StaffView.module.css';
 import { bookingSpan } from '@/utils/bookingSegments';
 import { Icon, PlusIcon, CloseIcon, RepeatIcon, ChevronRightIcon, DragDotsIcon, CheckIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
@@ -101,6 +102,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const skills = useAppStore((s) => s.skills);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
+  const weekendsWorking = useAppStore(selectWeekendsWorking);
   // Company events narrowed by the header team filter
   const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const closureIndex = useAppStore((s) => s.closureIndex);
@@ -461,22 +463,30 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   
   // Calculate availability for TODAY (matches ResourceCard logic)
   // Takes into account max_capacity for part-time workers
-  const calcAvailability = (staffId: number): { available: number; maxCapacity: number } => {
+  const calcAvailability = (
+    staffId: number
+  ): { available: number; maxCapacity: number; nonWorking: boolean } => {
     const staffMember = siteStaff.find(s => s.id === staffId) || allSiteStaff.find(s => s.id === staffId);
     const maxCapacity = staffMember?.max_capacity ?? 100;
-    
+    const todayStr = formatDateISO(new Date());
+
+    // Today is no working day (a weekend while weekends are not working
+    // days): nobody is available or booked, the badge reads "Weekend".
+    if (!isWorkingDay(todayStr, weekendsWorking)) {
+      return { available: 0, maxCapacity, nonWorking: true };
+    }
+
     // Check if unavailable today (recurring patterns honoured; available
     // absence types such as Home Office leave capacity untouched), or whether
     // a company event closes one of their sites today
-    const todayStr = formatDateISO(new Date());
     const staffVacations = staffVacationsMap.get(staffId) || [];
     if (isUnavailableOn(staffId, todayStr, staffVacations, absenceTypesById)) {
-      return { available: 0, maxCapacity }; // No availability during the absence
+      return { available: 0, maxCapacity, nonWorking: false }; // No availability during the absence
     }
     const sites = staffSiteIds.get(staffId) ?? new Set(currentSite ? [currentSite.id] : []);
     const teams = staffTeamIds.get(staffId) ?? EMPTY_TEAM_SET;
     if (getClosureOn(sites, todayStr, closureIndex, teams, teamSiteById)) {
-      return { available: 0, maxCapacity }; // Site closed today
+      return { available: 0, maxCapacity, nonWorking: false }; // Site closed today
     }
     
     const assignments = staffAssignmentsMap.get(staffId) || [];
@@ -485,7 +495,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     const totalAllocation = assignments
       .filter(a => !isPendingAssignment(a) && a.start_date && a.end_date && isActiveToday(a.start_date, a.end_date))
       .reduce((sum, a) => sum + (a.allocation || 0), 0);
-    return { available: maxCapacity - totalAllocation, maxCapacity };
+    return { available: maxCapacity - totalAllocation, maxCapacity, nonWorking: false };
   };
   
   // Toggle staff expansion
@@ -707,7 +717,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
             </div>
           ) : (
             siteStaff.map((staffMember) => {
-              const { available, maxCapacity } = calcAvailability(staffMember.id);
+              const { available, maxCapacity, nonWorking } = calcAvailability(staffMember.id);
               const isPartTime = maxCapacity < 100;
               const rowHeight = rowHeights.get(staffMember.id) || BASE_ROW_HEIGHT;
               const isExpanded = expandedStaff.has(staffMember.id);
@@ -740,7 +750,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                       <Icon icon={ChevronRightIcon} size={12} />
                     </div>
                     <div 
-                      className={`${styles.status} ${available > 0 ? styles.available : styles.overloaded} ${isPartTime ? styles.partTime : ''}`}
+                      className={`${styles.status} ${nonWorking ? styles.nonWorking : available > 0 ? styles.available : styles.overloaded} ${isPartTime ? styles.partTime : ''}`}
                       title={isPartTime ? `Part-time: Max ${maxCapacity}% capacity` : 'Full-time: 100% capacity'}
                     />
                     <div className={styles.staffInfo}>
@@ -751,12 +761,16 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                       <div className={styles.staffMeta}>
                         <span>{staffMember.role || 'No title'}</span>
                         <span> · </span>
-                        <span 
-                          className={available <= 0 ? styles.overloadedText : ''}
-                          title={isPartTime ? `${available}% of ${maxCapacity}% max capacity` : undefined}
-                        >
-                          {available}% available
-                        </span>
+                        {nonWorking ? (
+                          <span>Weekend</span>
+                        ) : (
+                          <span
+                            className={available <= 0 ? styles.overloadedText : ''}
+                            title={isPartTime ? `${available}% of ${maxCapacity}% max capacity` : undefined}
+                          >
+                            {available}% available
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

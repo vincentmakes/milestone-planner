@@ -142,11 +142,12 @@ describe('CrossSiteView', () => {
     });
     useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
     render(<CrossSiteView />);
-    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
-    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+    // The header's event strip names each event in its button's label
+    expect(screen.getAllByRole('button', { name: /Site audit/ }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('button', { name: /Team B review/ })).toHaveLength(0);
 
     act(() => useViewStore.setState({ teamFilters: {} }));
-    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Team B review/ }).length).toBeGreaterThan(0);
   });
 });
 

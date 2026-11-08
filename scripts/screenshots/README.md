@@ -170,6 +170,8 @@ the default General section.
 | `settings-audit-log` | `settings-audit-log.png` | Settings → General → Data management → *Open audit log*: the log, newest entries first. When the newest 12 rows cover fewer than three categories (a fresh seed holds only sign-ins), it serves a canned page of varied rows through `page.route` — nothing is written |
 | `settings-audit-log-entry` | `settings-audit-log-entry.png` | The same audit log sub-view, the *Entry detail* dialog of the newest *User updated* row with its Changes table (the same canned fallback, also used when the first page holds no `admin.user.updated` row) |
 | `settings-general-retention` | `settings-general-retention.png` | Settings → General scrolled to *Data management*: the *Audit log* row (retention hint, *Open audit log*), the retention field and its switch |
+| `staff-heatmap-month` | `staff-heatmap-month.png` | The Gantt chart with the Staff & Calendar panel at **month** zoom and weekends hidden (`show_weekends` set to `false` through the API for the shot, then written back with the value `GET /settings` reported — an instance without a row ends with an explicit `true`, which reads the same): solid allocation blocks of at most 10 days, Home Office underlines, the band before each Monday and the seeded *Year-end shutdown* closure (the view starts ten days before it). Fresh context: it collapses the sidebar, narrows the project panel and raises the Staff panel |
+| `settings-general-gantt` | `settings-general-gantt.png` | Settings → General scrolled to *Display*: Default View, Week Starts On, then the *Gantt Chart* block with *Show Weekends* and *Weekends are working days* and their hints |
 
 Project bar colours are a per-user browser preference (*Colour by*), not
 seeded data. The `main` shot sets *Colour by* = *Project type*, and since all
@@ -191,7 +193,7 @@ rejecting that request during a capture run would remove it — re-seed first
 - **Viewport** 1440×900, light theme, `en-US` locale (pinned on the browser
   context so date formatting is host-independent) — matches existing
   screenshots.
-- **Gantt zoom** Q (Quarter) so phase bars + the today indicator fit.
+- **Gantt zoom** Q (Quarter) so phase bars + the today indicator fit — except `staff-heatmap-month`, which needs month zoom (the workload blocks are drawn at week and month zoom only).
 - **Demo data** is the canonical "Demo Company / Winterthur" tenant. Don't
   capture against another tenant — the project names and dates are referenced
   in alt text and inline copy.
