@@ -372,6 +372,29 @@
         "person_ids": "absences.view_others"
       }
     },
+    "capacity_weeks": {
+      "unit": "weeks",
+      "dimensions": [
+        "period",
+        "person",
+        "site",
+        "team"
+      ],
+      "needs": "views.staff",
+      "filters": [
+        "archived",
+        "period",
+        "person_ids",
+        "site_ids",
+        "team_ids"
+      ],
+      "dimension_needs": {
+        "person": "absences.view_others"
+      },
+      "filter_needs": {
+        "person_ids": "absences.view_others"
+      }
+    },
     "available_days": {
       "unit": "days",
       "dimensions": [
@@ -581,11 +604,12 @@
     "people_over_capacity",
     "utilisation"
   ],
-  "divisible": [
+  "term_measures": [
     "booked_days",
     "booked_weeks",
     "booking_count",
     "capacity_days",
+    "capacity_weeks",
     "equipment_booked",
     "equipment_booked_days",
     "equipment_booking_count",
@@ -598,6 +622,14 @@
     "project_volume",
     "project_weeks"
   ],
+  "formula": {
+    "max_terms": 6,
+    "max_length": 200,
+    "results": [
+      "percent",
+      "number"
+    ]
+  },
   "relative_periods": [
     "this_year",
     "last_year",
@@ -631,6 +663,7 @@
     "phases_due": "Phases due",
     "phases_overdue": "Phases overdue",
     "capacity_days": "Capacity (days)",
+    "capacity_weeks": "Capacity (weeks)",
     "available_days": "Available days",
     "utilisation": "Utilisation",
     "people_over_capacity": "People over capacity",

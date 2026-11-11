@@ -3077,22 +3077,40 @@ def test_utilisation_project_filters_need_no_permission_beyond_the_staff_view():
     assert metrics.filter_needs("utilisation") == {"person_ids": "absences.view_others"}
 
 
-# --- 2.6.0: calculated widgets (divide_by) -------------------------------------
+# --- 2.6.0: calculated widgets (formula) --------------------------------------
 
 
-def divided(
-    measure: str,
-    divisor: str,
+def term(name: str, measure: str, total: bool = False, **filters: Any) -> dict[str, Any]:
+    spec: dict[str, Any] = {"name": name, "measure": measure, "filters": filters}
+    if total:
+        spec["total"] = True
+    return spec
+
+
+def calc(
+    expression: str,
+    terms: list[dict[str, Any]],
     dimensions: list[dict[str, Any]] | None = None,
-    *,
-    filters: dict[str, Any] | None = None,
-    divisor_filters: dict[str, Any] | None = None,
+    period: dict[str, str] | None = None,
     result: str | None = None,
+    **extra: Any,
 ) -> MetricQuery:
-    divide_by: dict[str, Any] = {"measure": divisor, "filters": divisor_filters or {}}
+    formula: dict[str, Any] = {"expression": expression, "terms": terms}
     if result:
-        divide_by["result"] = result
-    return q(measure, dimensions, filters=filters or {}, divide_by=divide_by)
+        formula["result"] = result
+    return MetricQuery.model_validate(
+        {
+            "measure": terms[0]["measure"],
+            "dimensions": dimensions or [],
+            "filters": {"period": period or MARCH},
+            "formula": formula,
+            **extra,
+        }
+    )
+
+
+def rows_of(result: dict[str, Any]) -> list[tuple[tuple[str, ...], Any]]:
+    return [(tuple(k["label"] for k in row["keys"]), row["value"]) for row in result["rows"]]
 
 
 # Week 1 (2 March): 5 days on the customer project; week 2: 5 internal days.
@@ -3106,28 +3124,61 @@ def split_weeks() -> Facts:
     return facts(projects=CUSTOMER_MIX, bookings=SPLIT_WEEKS, capacity=[person_capacity()])
 
 
-def test_a_ratio_divides_the_totals():
-    query = divided("booked_days", "booked_days", divisor_filters={"has_customer": True})
+def test_a_formula_over_totals():
+    query = calc("a / b", [term("a", "booked_days"), term("b", "booked_days", has_customer=True)])
     result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
     assert result["rows"] == [{"keys": [], "value": 200.0}]
     assert result["total"] == 200.0 and result["unit"] == "percent"
-    assert result["dimensions"] == []
+    number = calc(
+        "a / b",
+        [term("a", "booked_days"), term("b", "booked_days", has_customer=True)],
+        result="number",
+    )
+    result = aggregate(split_weeks(), number, viewer=FULL)
+    assert (result.total, result.unit) == (2.0, "number")
 
 
-def test_a_ratio_as_a_number_has_two_decimals_and_no_unit():
-    query = divided("booked_days", "capacity_days", result="number")
-    result = aggregate(split_weeks(), query, viewer=FULL)
-    assert result.total == 0.45  # 10 / 22
-    assert result.unit == "number"
+def test_capacity_weeks_are_capacity_days_over_the_working_days_per_week():
+    assert aggregate(split_weeks(), q("capacity_weeks"), viewer=FULL).total == 4.4  # 22 / 5
+    weekly = aggregate(split_weeks(), q("capacity_weeks", MONTHS), viewer=FULL)
+    assert weekly.unit == "weeks" and weekly.rows == [
+        {"keys": [{"key": "2026-03", "label": "Mar 2026"}], "value": 4.4}
+    ]
 
 
-def test_a_ratio_per_period_bucket_with_zero_denominators():
-    query = divided("booked_days", "booked_days", WEEKS, divisor_filters={"has_customer": True})
+def test_the_absorption_formula():
+    # 1 customer week over 4.4 capacity weeks at a 70 % goal: 32.47 %.
+    query = calc(
+        "customer_weeks / (capacity_weeks * 70%)",
+        [
+            term("customer_weeks", "booked_weeks", has_customer=True),
+            term("capacity_weeks", "capacity_weeks"),
+        ],
+    )
+    assert aggregate(split_weeks(), query, viewer=FULL).total == 32.47
+
+
+def test_arithmetic_constants_and_negative_values():
+    query = calc(
+        "1 - a / b",
+        [term("a", "booked_days", has_customer=True), term("b", "capacity_days")],
+        result="number",
+    )
+    assert aggregate(split_weeks(), query, viewer=FULL).total == round(1 - 5 / 22, 2)
+    query = calc("-(a + 2) * 3", [term("a", "booked_days")], result="number")
+    assert aggregate(split_weeks(), query, viewer=FULL).total == -36.0
+
+
+def test_a_formula_per_period_bucket_with_zero_denominators():
+    query = calc(
+        "a / b",
+        [term("a", "booked_days"), term("b", "booked_days", has_customer=True)],
+        WEEKS,
+    )
     result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
-    rows = [(row["keys"][0]["key"], row["value"]) for row in result["rows"]]
     weeks = metrics.buckets("week", d("2026-03-01"), d("2026-03-31"))
-    assert [key for key, _ in rows] == [bucket.key for bucket in weeks]
-    values = dict(rows)
+    values = {row["keys"][0]["key"]: row["value"] for row in result["rows"]}
+    assert list(values) == [bucket.key for bucket in weeks]
     # The week of 2 March: 5 / 5; of 9 March: 5 / 0 (no ratio); the others 0 / 0.
     assert values[weeks[1].key] == 100.0
     assert values[weeks[2].key] is None
@@ -3136,33 +3187,191 @@ def test_a_ratio_per_period_bucket_with_zero_denominators():
     assert result["dimensions"] == [{"kind": "period", "label": "Week"}]
 
 
-def test_a_ratio_of_nothing_over_something_is_zero_and_the_reverse_is_none():
-    data = split_weeks()
-    # No project carries the Blue tag: nothing booked over Ann's 22 days.
-    nothing = divided("booked_days", "capacity_days", filters={"tag_ids": [21]})
-    assert aggregate(data, nothing, viewer=FULL).total == 0.0
-    over_nothing = divided("booked_days", "booked_days", divisor_filters={"person_ids": [3]})
-    assert aggregate(data, over_nothing, viewer=FULL).total is None
+def test_a_formula_groups_each_bucket_on_its_own():
+    # Monthly over Feb-May: Feb both terms, Mar the numerator only, Apr the
+    # denominator only, May neither.
+    data = facts(
+        projects=[project(1, customer="Acme"), project(2)],
+        bookings=[
+            booking(1, "2026-02-02", "2026-02-06", project_id=1),
+            booking(2, "2026-02-09", "2026-02-13", project_id=2),
+            booking(3, "2026-03-02", "2026-03-06", project_id=2),
+            booking(4, "2026-04-06", "2026-04-08", project_id=1),
+        ],
+    )
+    query = calc(
+        "internal / customer",
+        [
+            term("internal", "booked_days", has_customer=False),
+            term("customer", "booked_days", has_customer=True),
+        ],
+        MONTHS,
+        {"from": "2026-02-01", "to": "2026-05-31"},
+    )
+    result = aggregate(data, query, viewer=FULL).to_dict()
+    assert rows_of(result) == [
+        (("Feb 2026",), 100.0),  # 5 internal days / 5 customer days
+        (("Mar 2026",), None),  # 5 / 0
+        (("Apr 2026",), 0.0),  # 0 / 3
+        (("May 2026",), 0.0),  # 0 / 0
+    ]
+    assert result["total"] == 125.0  # 10 / 8
 
 
-def test_a_ratio_of_counts_over_a_sum():
-    data = split_weeks()
-    query = divided("booking_count", "booked_weeks", result="number")
-    assert aggregate(data, query, viewer=FULL).total == 1.0  # 2 bookings / 2 weeks
+def test_a_formula_by_project_with_a_total_term():
+    # Each project's share of all booked days: the total term is not split.
+    query = calc(
+        "a / everything",
+        [term("a", "booked_days"), term("everything", "booked_days", total=True)],
+        [{"kind": "project"}],
+    )
+    result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
+    assert rows_of(result) == [(("Project 1",), 50.0), (("Project 2",), 50.0)]
+    assert result["total"] == 100.0
 
 
-def test_a_ratio_merges_the_warnings_of_both_sides():
-    query = divided(
-        "booked_days",
-        "booked_days",
-        filters={"tag_ids": [99]},
-        divisor_filters={"project_ids": [98], "tag_ids": [99]},
+def test_a_total_term_follows_the_period_buckets():
+    query = calc(
+        "a / everything",
+        [term("a", "booked_days"), term("everything", "booked_days", total=True)],
+        [{"kind": "project"}, {"kind": "period", "grain": "week"}],
+    )
+    result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
+    weeks = metrics.buckets("week", d("2026-03-01"), d("2026-03-31"))
+    # Each project fills its own week: 100 % of that week's booked days.
+    assert rows_of(result) == [
+        (("Project 1", weeks[1].label), 100.0),
+        (("Project 2", weeks[2].label), 100.0),
+    ]
+
+
+def test_every_term_total_with_a_period_lists_every_bucket():
+    query = calc(
+        "a / b",
+        [
+            term("a", "booked_days", total=True, has_customer=True),
+            term("b", "booked_days", total=True),
+        ],
+        WEEKS,
+        result="number",
+    )
+    result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
+    values = [row["value"] for row in result["rows"]]
+    assert values == [0.0, 1.0, 0.0, 0.0, 0.0, 0.0][: len(values)]
+    assert result["total"] == 0.5
+
+
+def test_two_dimensions_take_the_union_of_the_terms_keys():
+    data = facts(
+        projects=[project(1, customer="Acme"), project(2)],
+        bookings=[
+            booking(1, "2026-03-02", "2026-03-06", project_id=1, team_ids=(10,)),
+            booking(2, "2026-03-02", "2026-03-06", project_id=2, person=2, team_ids=(11,)),
+        ],
+        phases=[PhaseFact(1, 2, "Design", d("2026-03-02"), d("2026-03-06"))],
+    )
+    query = calc(
+        "days + phases",
+        [term("days", "booked_days"), term("phases", "phase_count")],
+        [{"kind": "project"}, {"kind": "site"}],
+        result="number",
+    )
+    result = aggregate(data, query, viewer=FULL).to_dict()
+    assert rows_of(result) == [(("Project 1", "Site 1"), 5.0), (("Project 2", "Site 1"), 6.0)]
+    assert result["total"] == 11.0
+
+
+def test_top_n_ranks_by_the_formula_and_recomputes_other_per_term():
+    data = facts(
+        projects=[project(1), project(2), project(3)],
+        bookings=[
+            booking(1, "2026-03-02", "2026-03-06", project_id=1),
+            booking(2, "2026-03-02", "2026-03-06", project_id=1, person=2),
+            booking(3, "2026-03-02", "2026-03-03", project_id=2),
+            booking(4, "2026-03-02", "2026-03-02", project_id=3),
+            booking(5, "2026-03-03", "2026-03-03", project_id=3, person=2),
+        ],
+    )
+    query = calc(
+        "days / bookings",
+        [term("days", "booked_days"), term("bookings", "booking_count")],
+        [{"kind": "project"}],
+        result="number",
+        top_n=1,
+    )
+    result = aggregate(data, query, viewer=FULL).to_dict()
+    # Project 1: 10 / 2; Other = (2 + 2 days) / (1 + 2 bookings), not the mean of 2 and 1.
+    assert rows_of(result) == [(("Project 1",), 5.0), (("Other",), 1.33)]
+    assert result["total"] == 2.8  # 14 / 5
+
+
+PARITY_FACTS_BOOKINGS = [
+    booking(1, "2026-03-02", "2026-03-13", project_id=1),
+    booking(2, "2026-03-16", "2026-03-20", project_id=2, person=2, allocation=50),
+    booking(3, "2026-03-02", "2026-03-06", project_id=3, person=2),
+    # Cid has no capacity: left out on both sides.
+    booking(4, "2026-03-02", "2026-03-06", project_id=1, person=3),
+]
+
+
+def parity_facts() -> Facts:
+    return facts(
+        projects=[project(1), project(2, site_id=2), project(3)],
+        bookings=PARITY_FACTS_BOOKINGS,
+        capacity=[
+            person_capacity(1, teams=(10,)),
+            person_capacity(2, sites=(1, 2), teams=(11,), max_capacity=50),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "dimensions",
+    [
+        [],
+        [{"kind": "team"}],
+        [{"kind": "site"}],
+        [{"kind": "person"}],
+        [{"kind": "period", "grain": "month"}],
+        [{"kind": "period", "grain": "week"}],
+        [{"kind": "team"}, {"kind": "period", "grain": "week"}],
+    ],
+)
+def test_booked_over_capacity_days_is_utilisation(dimensions):
+    data = parity_facts()
+    plain = aggregate(data, q("utilisation", dimensions), viewer=FULL).to_dict()
+    formula = aggregate(
+        data,
+        calc(
+            "booked / capacity",
+            [term("booked", "booked_days"), term("capacity", "capacity_days")],
+            dimensions,
+        ),
+        viewer=FULL,
+    ).to_dict()
+    assert formula["rows"] == plain["rows"]
+    assert formula["total"] == plain["total"]
+
+
+def test_without_a_capacity_term_bookings_are_read_on_the_project_side():
+    data = parity_facts()
+    query = calc("a", [term("a", "booked_days")], [{"kind": "person"}], result="number")
+    result = aggregate(data, query, viewer=FULL).to_dict()
+    # Cid's booking counts: no capacity term asks for the people with a capacity.
+    assert ("Cid",) in [labels for labels, _ in rows_of(result)]
+    assert result["total"] == aggregate(data, q("booked_days"), viewer=FULL).total
+
+
+def test_a_formula_merges_the_warnings_of_its_terms():
+    query = calc(
+        "a / b",
+        [term("a", "booked_days", tag_ids=[99]), term("b", "booked_days", project_ids=[98])],
     )
     result = aggregate(split_weeks(), query, viewer=FULL)
     assert result.warnings == ["Tag 99 no longer exists", "Project 98 no longer exists"]
 
 
-def test_a_ratio_keeps_each_sides_archived_mode():
+def test_each_term_keeps_its_archived_mode_and_all_uses_the_widest():
     data = facts(
         projects=[project(1), project(2, archived=True)],
         bookings=[
@@ -3170,44 +3379,82 @@ def test_a_ratio_keeps_each_sides_archived_mode():
             booking(2, "2026-03-02", "2026-03-06", project_id=2),
         ],
     )
-    query = divided("booked_days", "booked_days", divisor_filters={"archived": "include"})
+    query = calc("a / b", [term("a", "booked_days"), term("b", "booked_days", archived="include")])
     assert aggregate(data, query, viewer=FULL).total == 50.0
     assert metrics.query_archived_modes(query) == ("exclude", "include")
-    assert metrics.query_archived_modes(q("booked_days")) == ("exclude",)
+    assert metrics.query_archived(query) == "include"
+    assert metrics.query_archived(q("booked_days")) == "exclude"
+    # "All time" spans the extent of the widest mode of the terms.
+    data.extents = {
+        "exclude": (d("2026-03-01"), d("2026-03-31")),
+        "include": (d("2026-01-01"), d("2026-06-30")),
+    }
+    query = calc(
+        "a / b",
+        [term("a", "booked_days"), term("b", "booked_days", archived="include")],
+        period={"relative": "all"},
+    )
+    assert aggregate(data, query, viewer=FULL).period == (d("2026-01-01"), d("2026-06-30"))
+
+
+def test_widest_archived():
+    assert metrics.widest_archived(["exclude"]) == "exclude"
+    assert metrics.widest_archived(["only"]) == "only"
+    assert metrics.widest_archived(["exclude", "only"]) == "include"
+    assert metrics.widest_archived(["include", "exclude"]) == "include"
 
 
 @pytest.mark.parametrize(
     ("query", "viewer_keys", "needed"),
     [
-        # The divisor's family.
-        (lambda: divided("booked_days", "capacity_days"), {"views.equipment"}, "views.staff"),
         (
-            lambda: divided("booked_days", "equipment_booked_days"),
+            lambda: calc("a / b", [term("a", "booked_days"), term("b", "capacity_days")]),
+            {"views.equipment"},
+            "views.staff",
+        ),
+        (
+            lambda: calc("a / b", [term("a", "booked_days"), term("b", "equipment_booked_days")]),
             {"views.staff"},
             "views.equipment",
         ),
-        # The numerator's family first.
-        (lambda: divided("capacity_days", "equipment_booked_days"), set(), "views.staff"),
-        # The divisor's filters and archived mode.
         (
-            lambda: divided("booked_days", "booked_days", divisor_filters={"person_ids": [1]}),
+            lambda: calc(
+                "a / b", [term("a", "booked_days"), term("b", "booked_days", person_ids=[1])]
+            ),
             {"views.archived"},
             "views.staff",
         ),
         (
-            lambda: divided("booked_days", "capacity_days", divisor_filters={"person_ids": [1]}),
+            lambda: calc(
+                "a / b", [term("a", "booked_days"), term("b", "capacity_days", person_ids=[1])]
+            ),
             {"views.staff"},
             "absences.view_others",
         ),
         (
-            lambda: divided("booked_days", "booked_days", divisor_filters={"archived": "only"}),
+            lambda: calc(
+                "a / b", [term("a", "booked_days"), term("b", "booked_days", archived="only")]
+            ),
             {"views.staff"},
             "views.archived",
         ),
-        (lambda: divided("booked_days", "booked_days"), set(), None),
+        # A capacity term split by person shows absences; its total does not.
+        (
+            lambda: calc("a / b", [term("a", "booked_days"), term("b", "capacity_days")], PERSON),
+            {"views.staff"},
+            "absences.view_others",
+        ),
+        (
+            lambda: calc(
+                "a / b", [term("a", "booked_days"), term("b", "capacity_days", total=True)], PERSON
+            ),
+            {"views.staff"},
+            None,
+        ),
+        (lambda: calc("a / b", [term("a", "booked_days"), term("b", "booked_days")]), set(), None),
     ],
 )
-def test_a_ratio_checks_the_permissions_of_both_sides(query, viewer_keys, needed):
+def test_a_formula_checks_the_permissions_of_each_term(query, viewer_keys, needed):
     built = query()
     viewer = Viewer(frozenset(viewer_keys))
     assert metrics.missing_permission(built, viewer) == needed
@@ -3217,127 +3464,174 @@ def test_a_ratio_checks_the_permissions_of_both_sides(query, viewer_keys, needed
         assert caught.value.message == metrics.permission_message(needed)
 
 
-def test_a_ratio_reads_the_families_of_both_sides():
-    assert metrics.query_families(divided("booked_days", "capacity_days")) == (
-        "booking",
-        "capacity",
-    )
-    assert metrics.query_families(divided("capacity_days", "booked_days")) == (
-        "capacity",
-        "booking",
-    )
+def test_a_formula_reads_the_families_of_its_terms():
+    query = calc("a / b", [term("a", "booked_days"), term("b", "capacity_days")])
+    assert metrics.query_families(query) == ("booking", "capacity")
     assert metrics.query_families(q("utilisation")) == ("capacity", "booking")
-    assert metrics.divisor_query(q("booked_days")) is None
+    parts = metrics.query_parts(
+        calc("a / b", [term("a", "booked_days"), term("b", "capacity_days", total=True)])
+    )
+    assert [(p.measure, p.broken_down) for p in parts] == [
+        ("booked_days", True),
+        ("capacity_days", False),
+    ]
 
 
-def test_the_divisor_shares_the_numerators_period_and_dimensions():
-    query = divided("booked_days", "capacity_days", WEEKS, divisor_filters={"team_ids": [10]})
-    divisor = metrics.divisor_query(query)
-    assert divisor is not None
-    assert divisor.measure == "capacity_days"
-    assert divisor.dimensions == query.dimensions
-    assert divisor.filters.period == query.filters.period
-    assert divisor.filters.team_ids == [10]
-    assert divisor.percent_of is None and divisor.top_n is None and divisor.divide_by is None
-
-
-def test_ratio_value_rule():
-    assert metrics.ratio_value(1, 4, "percent") == 25.0
-    assert metrics.ratio_value(1, 4, "number") == 0.25
-    assert metrics.ratio_value(0, 0, "number") == 0.0
-    assert metrics.ratio_value(2, 0, "number") is None
-    assert metrics.ratio_value(2, 0, "percent") is None
-
-
-RATIO_REFUSALS = [
+FORMULA_REFUSALS = [
     (
-        {"dimensions": [{"kind": "site"}]},
-        "A calculated widget can only be broken down by period",
+        {"formula": {"expression": "a / ", "terms": [term("a", "booked_days")]}},
+        "The formula ends too early",
     ),
     (
-        {"dimensions": [{"kind": "period", "grain": "month"}, {"kind": "site"}]},
-        "A calculated widget can only be broken down by period",
+        {"formula": {"expression": "a / b", "terms": [term("a", "booked_days")]}},
+        'The formula uses "b", which is not a term',
     ),
     (
-        {"dimensions": [{"kind": "period", "grain": "month"}], "percent_of": "total"},
-        "A calculated widget cannot show a percentage of a dimension",
+        {
+            "formula": {
+                "expression": "a",
+                "terms": [term("a", "booked_days"), term("b", "booked_days")],
+            }
+        },
+        'The term "b" is not used in the formula',
     ),
     (
-        {"dimensions": [{"kind": "period", "grain": "month"}], "top_n": 3},
-        "A calculated widget has no top N",
+        {
+            "formula": {
+                "expression": "a + a",
+                "terms": [term("a", "booked_days"), term("a", "booked_days")],
+            }
+        },
+        'Two terms are named "a"',
     ),
     (
-        {"measure": "utilisation"},
-        "Utilisation cannot be divided nor divide another measure: "
-        "choose a summed or counted measure",
+        {"formula": {"expression": "a", "terms": [term("A", "booked_days")]}},
+        "A term name is a lowercase word of letters, digits and _, starting with a letter (customer_weeks)",
     ),
     (
-        {"divide_by": {"measure": "available_days"}},
-        "Available days cannot be divided nor divide another measure: "
-        "choose a summed or counted measure",
+        {
+            "measure": "capacity_days",
+            "formula": {"expression": "a", "terms": [term("a", "booked_days")]},
+        },
+        "A calculation's measure is the measure of its first term",
     ),
     (
-        {"divide_by": {"measure": "booked_days", "filters": {"milestones": "only"}}},
+        {
+            "filters": {"tag_ids": [20]},
+            "formula": {"expression": "a", "terms": [term("a", "booked_days")]},
+        },
+        "The filters of a calculation belong to its terms",
+    ),
+    (
+        {
+            "measure": "utilisation",
+            "formula": {"expression": "a", "terms": [term("a", "utilisation")]},
+        },
+        "Utilisation cannot be a term of a calculation: choose a summed or counted measure",
+    ),
+    (
+        {"formula": {"expression": "a", "terms": [term("a", "booked_days", milestones="only")]}},
         "The Milestones filter does not apply to booked days",
     ),
     (
         {
-            "divide_by": {"measure": "capacity_days", "filters": {"has_customer": True}},
+            "dimensions": [{"kind": "project"}],
+            "percent_of": "total",
+            "formula": {"expression": "a", "terms": [term("a", "booked_days")]},
         },
-        "The Has a customer filter does not apply to capacity (days)",
+        "A calculation cannot show a percentage of a dimension",
+    ),
+    (
+        {
+            "dimensions": [{"kind": "project"}],
+            "formula": {
+                "expression": "a / b",
+                "terms": [term("a", "booked_days"), term("b", "capacity_days")],
+            },
+        },
+        "Capacity (days) cannot be broken down by project",
     ),
     (
         {
             "dimensions": [{"kind": "period", "grain": "month"}],
-            "divide_by": {"measure": "project_volume"},
+            "formula": {
+                "expression": "a / b",
+                "terms": [term("a", "booked_days"), term("b", "project_volume", total=True)],
+            },
         },
         "Project volume cannot be broken down by period",
     ),
     (
-        {"divide_by": {"measure": "booked_days", "result": "fraction"}},
+        {
+            "dimensions": [{"kind": "project"}],
+            "formula": {"expression": "a", "terms": [term("a", "booked_days", total=True)]},
+        },
+        "With a dimension other than the period, at least one term must be split by it (not use its total)",
+    ),
+    (
+        {"formula": {"expression": "a", "terms": [term("a", "booked_days")], "result": "fraction"}},
         "Input should be 'percent' or 'number'",
+    ),
+    (
+        {"formula": {"expression": "a", "terms": []}},
+        "List should have at least 1 item after validation, not 0",
+    ),
+    (
+        {
+            "formula": {
+                "expression": "a+b+c+d+e+f+g",
+                "terms": [term(n, "booked_days") for n in "abcdefg"],
+            }
+        },
+        "List should have at most 6 items after validation, not 7",
+    ),
+    (
+        {"formula": {"expression": "a", "terms": [term("a", "booked_days")]}, "top_n": 3},
+        "Top N needs a dimension",
     ),
 ]
 
 
-@pytest.mark.parametrize(("extra", "message"), RATIO_REFUSALS)
-def test_ratio_spec_refusals(extra, message):
+@pytest.mark.parametrize(("extra", "message"), FORMULA_REFUSALS)
+def test_formula_spec_refusals(extra, message):
     from pydantic import ValidationError
 
-    body = {"measure": "booked_days", "divide_by": {"measure": "capacity_days"}, **extra}
+    body = {"measure": "booked_days", **extra}
     with pytest.raises(ValidationError) as caught:
         MetricQuery.model_validate(body)
     assert caught.value.errors()[0]["msg"] == message
 
 
-def test_the_divisor_has_no_period_of_its_own():
+def test_a_term_has_no_period_of_its_own():
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as caught:
-        MetricQuery.model_validate(
-            {
-                "measure": "booked_days",
-                "divide_by": {
-                    "measure": "capacity_days",
+        calc(
+            "a",
+            [
+                {
+                    "name": "a",
+                    "measure": "booked_days",
                     "filters": {"period": {"relative": "this_year"}},
-                },
-            }
+                }
+            ],
         )
     assert caught.value.errors()[0]["type"] == "extra_forbidden"
 
 
-def test_a_ratio_spec_round_trips_with_its_defaults():
-    query = MetricQuery.model_validate(
-        {
-            "measure": "phases_due",
-            "dimensions": [{"kind": "period", "grain": "quarter"}],
-            "divide_by": {"measure": "phase_count", "filters": {"milestones": "exclude"}},
-        }
+def test_a_formula_spec_round_trips_with_its_defaults():
+    query = calc(
+        "due / phases",
+        [term("due", "phases_due"), term("phases", "phase_count", milestones="exclude")],
+        [{"kind": "period", "grain": "quarter"}],
     )
-    assert query.divide_by is not None
-    assert query.divide_by.result == "percent"
+    assert query.formula is not None and query.formula.result == "percent"
     dumped = query.model_dump(mode="json", by_alias=True, exclude_unset=True)
-    assert dumped["divide_by"] == {"measure": "phase_count", "filters": {"milestones": "exclude"}}
+    assert dumped["formula"]["terms"][1] == {
+        "name": "phases",
+        "measure": "phase_count",
+        "filters": {"milestones": "exclude"},
+    }
 
 
 def test_widget_options_take_percent_of_target():
@@ -3356,32 +3650,3 @@ def test_widget_options_take_percent_of_target():
     )
     assert widget.options.percent_of_target is True and widget.options.target == 70
     assert widget.options.target_is_goal is True
-
-
-def test_a_ratio_groups_each_bucket_on_its_own():
-    # Monthly over Feb-May: Feb both sides, Mar numerator only, Apr denominator
-    # only, May neither.
-    data = facts(
-        projects=[project(1, customer="Acme"), project(2)],
-        bookings=[
-            booking(1, "2026-02-02", "2026-02-06", project_id=1),
-            booking(2, "2026-02-09", "2026-02-13", project_id=2),
-            booking(3, "2026-03-02", "2026-03-06", project_id=2),
-            booking(4, "2026-04-06", "2026-04-08", project_id=1),
-        ],
-    )
-    query = q(
-        "booked_days",
-        MONTHS,
-        {"from": "2026-02-01", "to": "2026-05-31"},
-        filters={"has_customer": False},
-        divide_by={"measure": "booked_days", "filters": {"has_customer": True}},
-    )
-    result = aggregate(data, query, viewer=FULL).to_dict()
-    assert [(row["keys"][0]["label"], row["value"]) for row in result["rows"]] == [
-        ("Feb 2026", 100.0),  # 5 internal days / 5 customer days
-        ("Mar 2026", None),  # 5 / 0
-        ("Apr 2026", 0.0),  # 0 / 3
-        ("May 2026", 0.0),  # 0 / 0
-    ]
-    assert result["total"] == 125.0  # 10 / 8

@@ -50,7 +50,13 @@ MATRIX_FILE = ROOT / "shared" / "metric-matrix.json"
 BOOKING = ("booked_days", "booked_weeks", "booking_count", "people_booked")
 PROJECT = ("project_count", "project_weeks", "project_volume")
 PHASE = ("phase_count", "phase_weeks", "phases_due", "phases_overdue")
-CAPACITY = ("capacity_days", "available_days", "utilisation", "people_over_capacity")
+CAPACITY = (
+    "capacity_days",
+    "capacity_weeks",
+    "available_days",
+    "utilisation",
+    "people_over_capacity",
+)
 EQUIPMENT = (
     "equipment_booked_days",
     "equipment_booking_count",
@@ -97,8 +103,8 @@ def test_every_measure_has_a_family_in_family_order():
     assert {FAMILY[m] for m in PHASE} == {"phase"}
     assert {FAMILY[m] for m in CAPACITY} == {"capacity"}
     assert {FAMILY[m] for m in EQUIPMENT} == {"equipment"}
-    assert MEASURES[11:15] == CAPACITY  # after the phase measures
-    assert MEASURES[15:] == EQUIPMENT  # last
+    assert MEASURES[11:16] == CAPACITY  # after the phase measures
+    assert MEASURES[16:] == EQUIPMENT  # last
     assert INTERNAL_MEASURES == {"equipment_available_days"}
     assert FAMILY["equipment_available_days"] == "equipment"
     for measure, bases in COMPOSITES.items():
@@ -362,17 +368,31 @@ def test_matrix_message_in_plain_words():
     assert matrix_error("project_count", "person") == "Projects cannot be broken down by person"
 
 
-def test_divisible_measures_are_the_summed_and_counted_ones():
-    from app.services.metrics import DIVISIBLE_MEASURES, divide_error
+def test_term_measures_are_the_summed_and_counted_ones():
+    from app.services.metrics import MAX_FORMULA_TERMS, TERM_MEASURES, term_error
 
-    assert DIVISIBLE_MEASURES == set(MEASURES) - set(COMPOSITES)
-    assert not DIVISIBLE_MEASURES & INTERNAL_MEASURES
-    assert divide_error("booked_days") is None
-    assert divide_error("utilisation") == (
-        "Utilisation cannot be divided nor divide another measure: "
-        "choose a summed or counted measure"
+    assert TERM_MEASURES == set(MEASURES) - set(COMPOSITES)
+    assert "capacity_weeks" in TERM_MEASURES
+    assert not TERM_MEASURES & INTERNAL_MEASURES
+    assert term_error("booked_days") is None
+    assert term_error("utilisation") == (
+        "Utilisation cannot be a term of a calculation: choose a summed or counted measure"
     )
-    assert json.loads(metric_matrix_json())["divisible"] == sorted(DIVISIBLE_MEASURES)
+    data = json.loads(metric_matrix_json())
+    assert data["term_measures"] == sorted(TERM_MEASURES)
+    assert data["formula"] == {
+        "max_terms": MAX_FORMULA_TERMS,
+        "max_length": 200,
+        "results": ["percent", "number"],
+    }
+
+
+def test_capacity_weeks_is_a_capacity_measure_in_weeks():
+    assert FAMILY["capacity_weeks"] == "capacity"
+    assert UNITS["capacity_weeks"] == "weeks"
+    assert MEASURE_LABELS["capacity_weeks"] == "Capacity (weeks)"
+    assert MATRIX["capacity_weeks"] == MATRIX["capacity_days"]
+    assert MEASURE_FILTERS["capacity_weeks"] == MEASURE_FILTERS["capacity_days"]
 
 
 def test_has_customer_filter_is_labelled_and_needs_nothing():

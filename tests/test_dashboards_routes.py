@@ -1822,12 +1822,28 @@ async def test_data_loads_equipment_facts_only_for_an_equipment_widget(
 
 # --- 2.6.0: calculated widgets, Has a customer, Utilisation's project filters --
 
-# Booked days of every visible project over those of Winterthur.
-OVER_WINTERTHUR = {
-    "measure": "booked_days",
-    "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}},
-    "divide_by": {"measure": "booked_days", "filters": {"site_ids": [WINTERTHUR]}},
-}
+WINTERTHUR_TERM = {"name": "winterthur", "measure": "booked_days", "filters": {"site_ids": [1]}}
+
+
+def calc_body(second=None, result=None, **extra) -> dict:
+    """Booked days of every visible project over ``second`` (Winterthur's by default)."""
+    second = second or WINTERTHUR_TERM
+    formula = {
+        "expression": f"everything / {second['name']}",
+        "terms": [{"name": "everything", "measure": "booked_days"}, second],
+    }
+    if result:
+        formula["result"] = result
+    return {
+        "measure": "booked_days",
+        "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}},
+        "formula": formula,
+        **extra,
+    }
+
+
+OVER_WINTERTHUR = calc_body()
+OVER_CAPACITY = calc_body({"name": "capacity", "measure": "capacity_days"})
 
 
 async def test_a_calculated_query_divides_two_measures(authed_client):
@@ -1840,8 +1856,7 @@ async def test_a_calculated_query_divides_two_measures(authed_client):
     assert body["rows"] == [{"keys": [], "value": 150}]
     assert body["total"] == 150 and body["unit"] == "percent"
 
-    number = {**OVER_WINTERTHUR, "divide_by": {**OVER_WINTERTHUR["divide_by"], "result": "number"}}
-    body = (await client.post("/api/dashboards/query", json=number)).json()
+    body = (await client.post("/api/dashboards/query", json=calc_body(result="number"))).json()
     assert body["total"] == 1.5 and body["unit"] == "number"
 
 
@@ -1860,10 +1875,25 @@ async def test_a_calculated_query_by_month_lists_every_bucket(authed_client):
     ]
 
 
+async def test_a_calculated_query_by_site_and_project(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    query = calc_body(
+        {"name": "everything_else", "measure": "booked_days", "total": True},
+        dimensions=[{"kind": "site"}],
+    )
+    body = (await client.post("/api/dashboards/query", json=query)).json()
+    # Each site's share of all booked days: 2.5 / 7.5 and 5 / 7.5.
+    assert [(r["keys"][0]["label"], r["value"]) for r in body["rows"]] == [
+        ("Frankfurt", 33.33),
+        ("Winterthur", 66.67),
+    ]
+
+
 async def test_a_calculated_query_loads_both_families(authed_client):
     client, set_user = authed_client
     set_user(admin())
-    query = {**OVER_WINTERTHUR, "divide_by": {"measure": "capacity_days"}}
+    query = OVER_CAPACITY
     with patch.object(
         dashboards_router, "load_facts", wraps=dashboards_router.load_facts
     ) as loader:
@@ -1874,17 +1904,15 @@ async def test_a_calculated_query_loads_both_families(authed_client):
     assert resp.json()["unit"] == "percent"
 
 
-async def test_a_calculated_query_needs_the_permission_of_its_divisor(authed_client):
+async def test_a_calculated_query_needs_the_permission_of_each_term(authed_client):
     client, set_user = authed_client
     set_user(uma(permissions={"views.dashboards"}))
-    query = {**OVER_WINTERTHUR, "divide_by": {"measure": "capacity_days"}}
-    resp = await client.post("/api/dashboards/query", json=query)
+    resp = await client.post("/api/dashboards/query", json=OVER_CAPACITY)
     assert resp.status_code == 422
     assert resp.json()["detail"] == "This widget needs the Staff & Calendar view permission"
-    archived = {
-        **OVER_WINTERTHUR,
-        "divide_by": {"measure": "booked_days", "filters": {"archived": "include"}},
-    }
+    archived = calc_body(
+        {"name": "archived", "measure": "booked_days", "filters": {"archived": "include"}}
+    )
     resp = await client.post("/api/dashboards/query", json=archived)
     assert resp.status_code == 422
     assert resp.json()["detail"] == "This widget needs the Archived view permission"
@@ -1893,10 +1921,9 @@ async def test_a_calculated_query_needs_the_permission_of_its_divisor(authed_cli
 async def test_a_calculated_query_loads_the_widest_archived_mode(authed_client):
     client, set_user = authed_client
     set_user(admin())
-    archived = {
-        **OVER_WINTERTHUR,
-        "divide_by": {"measure": "booked_days", "filters": {"archived": "only"}},
-    }
+    archived = calc_body(
+        {"name": "archived", "measure": "booked_days", "filters": {"archived": "only"}}
+    )
     with patch.object(
         dashboards_router, "load_facts", wraps=dashboards_router.load_facts
     ) as loader:
@@ -1911,19 +1938,20 @@ async def test_a_calculated_query_loads_the_widest_archived_mode(authed_client):
     ("body", "message"),
     [
         (
-            {**OVER_WINTERTHUR, "dimensions": [{"kind": "site"}]},
-            "A calculated widget can only be broken down by period",
+            {**OVER_CAPACITY, "dimensions": [{"kind": "project"}]},
+            "Capacity (days) cannot be broken down by project",
         ),
         (
-            {**OVER_WINTERTHUR, "divide_by": {"measure": "utilisation"}},
-            "Utilisation cannot be divided nor divide another measure",
+            calc_body({"name": "util", "measure": "utilisation"}),
+            "Utilisation cannot be a term of a calculation",
         ),
         (
-            {
-                **OVER_WINTERTHUR,
-                "divide_by": {"measure": "booked_days", "filters": {"equipment_ids": [1]}},
-            },
+            calc_body({"name": "kit", "measure": "booked_days", "filters": {"equipment_ids": [1]}}),
             "The Equipment filter does not apply to booked days",
+        ),
+        (
+            {**OVER_WINTERTHUR, "formula": {**OVER_WINTERTHUR["formula"], "expression": "a / "}},
+            "The formula ends too early",
         ),
     ],
 )
@@ -1973,11 +2001,7 @@ async def test_data_answers_a_calculated_widget(authed_client, sqlite):
             owner_id=SUE,
             widgets=[
                 widget_row("Share", OVER_WINTERTHUR, 0),
-                widget_row(
-                    "Over capacity",
-                    {**OVER_WINTERTHUR, "divide_by": {"measure": "capacity_days"}},
-                    1,
-                ),
+                widget_row("Over capacity", OVER_CAPACITY, 1),
             ],
         )
     )
@@ -2015,7 +2039,7 @@ async def test_a_widget_stores_percent_of_target(authed_client, sqlite):
     assert resp.status_code == 201
     widget = resp.json()["widgets"][0]
     assert widget["options"] == {"target": 70, "percent_of_target": True, "target_is_goal": True}
-    assert widget["query"]["divide_by"] == OVER_WINTERTHUR["divide_by"]
+    assert widget["query"]["formula"] == OVER_WINTERTHUR["formula"]
     bad = {**body, "widgets": [{**body["widgets"][0], "options": {"percent_of_target": "maybe"}}]}
     assert (await client.post("/api/dashboards", json=bad)).status_code == 422
 
@@ -2029,3 +2053,26 @@ def test_target_is_goal_is_a_boolean_option_on_any_kind():
     assert WidgetOptions.model_validate({}).target_is_goal is None
     with pytest.raises(ValidationError):
         WidgetOptions.model_validate({"target_is_goal": "maybe"})
+
+
+async def test_a_widget_with_a_bad_formula_is_refused(authed_client, sqlite):
+    client, set_user = authed_client
+    set_user(sue())
+    created = await client.post("/api/dashboards", json={"name": "Calc"})
+    assert created.status_code == 201
+    dashboard_id = created.json()["id"]
+    bad_query = {
+        **OVER_WINTERTHUR,
+        "formula": {**OVER_WINTERTHUR["formula"], "expression": "everything / nobody"},
+    }
+    body = {"name": "Calc", "widgets": [widget_body("Ratio", bad_query)]}
+    resp = await client.put(f"/api/dashboards/{dashboard_id}", json=body)
+    assert resp.status_code == 422
+    assert _detail(resp) == '"Ratio": The formula uses "nobody", which is not a term'
+    good = {"name": "Calc", "widgets": [widget_body("Ratio", OVER_WINTERTHUR)]}
+    resp = await client.put(f"/api/dashboards/{dashboard_id}", json=good)
+    assert resp.status_code == 200
+    # Another owner's dashboard: 403 for a viewer.
+    set_user(uma())
+    resp = await client.put(f"/api/dashboards/{dashboard_id}", json=good)
+    assert resp.status_code in (403, 404)

@@ -4,7 +4,8 @@ Dashboards (2.6.0): the metric-query spec, widget and dashboard bodies, response
 ``MetricQuery`` is what a widget asks the metric engine
 (``app/services/metrics.py``): a measure, up to two dimensions, filters with a
 period, an optional percentage and top N -- or, for a calculated widget,
-``divide_by``: a second measure with its own filters it is divided by. Every refusal is a 422 in plain
+``formula``: named terms (each a measure with its own filters) combined by an
+arithmetic expression (``app/services/formula.py``). Every refusal is a 422 in plain
 words (``PydanticCustomError``, no "Value error," prefix), including the
 validity matrix (``metrics.MATRIX``): "<measure> cannot be broken down by
 <dimension>". The engine's constants are the one source; this module imports
@@ -16,6 +17,7 @@ them as compact JSON text. A widget that fails validation is named by its
 title in the 422.
 """
 
+import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal, get_args
 
@@ -34,16 +36,18 @@ from pydantic_core import PydanticCustomError
 
 from app.models.dashboard import DASHBOARD_VISIBILITIES, DASHBOARD_WIDGET_KINDS
 from app.services.dashboard_seed import GRID_COLUMNS
+from app.services.formula import MAX_FORMULA_LENGTH, FormulaError, parse
 from app.services.metrics import (
     DIMENSION_LABELS,
     FILTER_KEYS,
+    MAX_FORMULA_TERMS,
     MAX_PERIOD_DAYS,
     PERIOD_TOO_LONG_DETAIL,
-    divide_error,
     filter_error,
     filter_given,
     matrix_error,
     percent_error,
+    term_error,
 )
 
 # The Literals spell out the engine's tuples (``metrics.MEASURES``,
@@ -62,6 +66,7 @@ Measure = Literal[
     "phases_due",
     "phases_overdue",
     "capacity_days",
+    "capacity_weeks",
     "available_days",
     "utilisation",
     "people_over_capacity",
@@ -177,10 +182,10 @@ Period = Annotated[
 IdList = Annotated[list[int], Field(max_length=MAX_FILTER_IDS)]
 
 
-class DivisorFilters(_Strict):
+class TermFilters(_Strict):
     """
     The filters of a query, the period aside: those of a calculated widget's
-    divisor (``DivideBy``), which shares the numerator's period.
+    terms (``FormulaTerm``), which share the widget's period.
     """
 
     site_ids: IdList | None = None
@@ -206,23 +211,49 @@ class DivisorFilters(_Strict):
     has_customer: bool | None = None
 
 
-class MetricFilters(DivisorFilters):
+class MetricFilters(TermFilters):
     period: Period = Field(default_factory=lambda: RelativePeriod(relative="this_year"))
 
 
-class DivideBy(_Strict):
+TERM_NAME_PATTERN = r"[a-z][a-z0-9_]{0,39}"
+TERM_NAME_DETAIL = (
+    "A term name is a lowercase word of letters, digits and _, starting with a letter "
+    "(customer_weeks)"
+)
+
+
+class FormulaTerm(_Strict):
     """
-    The divisor of a calculated widget (2.6.0): a measure and its own filters
-    over the numerator's period and buckets; the result is a percentage
-    (x 100) or a plain number.
+    One named term of a calculated widget: a summed or counted measure with
+    its own filters over the widget's period. ``total``: not split by the
+    dimensions other than the period (its whole-scope value in every row).
     """
 
+    name: str
     measure: Measure
-    filters: DivisorFilters = Field(default_factory=DivisorFilters)
+    filters: TermFilters = Field(default_factory=TermFilters)
+    total: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, value: str) -> str:
+        if not re.fullmatch(TERM_NAME_PATTERN, value):
+            raise _error(TERM_NAME_DETAIL)
+        return value
+
+
+class MetricFormula(_Strict):
+    """
+    A calculated widget (2.6.0): ``terms`` combined by ``expression``; the
+    result is a percentage (x 100) or a plain number.
+    """
+
+    expression: str = Field(max_length=MAX_FORMULA_LENGTH)
+    terms: list[FormulaTerm] = Field(min_length=1, max_length=MAX_FORMULA_TERMS)
     result: Literal["percent", "number"] = "percent"
 
 
-def _check_filters(measure: str, filters: DivisorFilters) -> None:
+def _check_filters(measure: str, filters: TermFilters) -> None:
     """A filter the measure's facts do not carry would be silently ignored: a 422."""
     for key in FILTER_KEYS:
         message = filter_error(measure, key)
@@ -236,8 +267,8 @@ class MetricQuery(_Strict):
     filters: MetricFilters = Field(default_factory=MetricFilters)
     percent_of: Literal["total", "first_dimension"] | None = None
     top_n: int | None = Field(default=None, ge=1, le=50)
-    # A calculated widget: this query's measure divided by another one.
-    divide_by: DivideBy | None = None
+    # A calculated widget: named terms combined by a formula.
+    formula: MetricFormula | None = None
 
     @model_validator(mode="after")
     def _check_query(self) -> "MetricQuery":
@@ -248,14 +279,15 @@ class MetricQuery(_Strict):
         identities = [(d.kind, getattr(d, "field_id", None)) for d in self.dimensions]
         if len(set(identities)) != len(identities):
             raise _error("The two dimensions must be different")
-        for kind in kinds:
-            message = matrix_error(self.measure, kind)
-            if message:
-                raise _error(message)
-        # The measure's filters (``metrics.MEASURE_FILTERS``).
-        _check_filters(self.measure, self.filters)
-        if self.divide_by is not None:
-            self._check_divisor(self.divide_by, kinds)
+        if self.formula is not None:
+            self._check_formula(self.formula, kinds)
+        else:
+            for kind in kinds:
+                message = matrix_error(self.measure, kind)
+                if message:
+                    raise _error(message)
+            # The measure's filters (``metrics.MEASURE_FILTERS``).
+            _check_filters(self.measure, self.filters)
         if self.percent_of is not None:
             message = percent_error(self.measure)
             if message:
@@ -272,27 +304,53 @@ class MetricQuery(_Strict):
                 raise _error(f"Top N cannot be used when the first dimension is the {label}")
         return self
 
-    def _check_divisor(self, divisor: DivideBy, kinds: list[str]) -> None:
+    def _check_formula(self, formula: MetricFormula, kinds: list[str]) -> None:
         """
-        A calculated widget: no dimension or one period, no percentage nor
-        top N, two summed or counted measures, each side's filters valid for
-        its own measure, the period dimension valid for both.
+        A calculated widget: a formula that parses and uses exactly its terms
+        (unique names); the query's measure is the first term's and its
+        filters carry the period only; each term a summed or counted measure
+        with filters it takes; each dimension accepted by every term it splits
+        (the period by every term); at least one split term when a dimension
+        other than the period is set; no percentage of a dimension.
         """
-        if kinds and kinds != ["period"]:
-            raise _error("A calculated widget can only be broken down by period")
+        try:
+            parsed = parse(formula.expression)
+        except FormulaError as exc:
+            raise _error(exc.message) from None
+        names = [term.name for term in formula.terms]
+        for name in names:
+            if names.count(name) > 1:
+                raise _error(f'Two terms are named "{name}"')
+        for name in parsed.names:
+            if name not in names:
+                raise _error(f'The formula uses "{name}", which is not a term')
+        for name in names:
+            if name not in parsed.names:
+                raise _error(f'The term "{name}" is not used in the formula')
+        if self.measure != formula.terms[0].measure:
+            raise _error("A calculation's measure is the measure of its first term")
+        for key in FILTER_KEYS:
+            if key != "period" and filter_given(self.filters, key):
+                raise _error("The filters of a calculation belong to its terms")
         if self.percent_of is not None:
-            raise _error("A calculated widget cannot show a percentage of a dimension")
-        if self.top_n is not None:
-            raise _error("A calculated widget has no top N")
-        for measure in (self.measure, divisor.measure):
-            message = divide_error(measure)
+            raise _error("A calculation cannot show a percentage of a dimension")
+        for term in formula.terms:
+            message = term_error(term.measure)
             if message:
                 raise _error(message)
+            _check_filters(term.measure, term.filters)
         for kind in kinds:
-            message = matrix_error(divisor.measure, kind)
-            if message:
-                raise _error(message)
-        _check_filters(divisor.measure, divisor.filters)
+            for term in formula.terms:
+                if kind != "period" and term.total:
+                    continue
+                message = matrix_error(term.measure, kind)
+                if message:
+                    raise _error(message)
+        if any(kind != "period" for kind in kinds) and all(term.total for term in formula.terms):
+            raise _error(
+                "With a dimension other than the period, at least one term must be split "
+                "by it (not use its total)"
+            )
 
 
 class WidgetOptions(_Strict):

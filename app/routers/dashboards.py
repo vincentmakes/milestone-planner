@@ -29,8 +29,8 @@ Dashboards API (2.6.0): KPI and chart dashboards over the planning data.
   admin (403). 204.
 - ``POST /dashboards/query`` (``views.dashboards``) -- answer one metric query
   (the builder's preview). ``person`` needs ``views.staff``, ``archived:
-  include | only`` needs ``views.archived`` (422 in plain words); a
-  calculated widget's divisor (``divide_by``) is checked the same way.
+  include | only`` needs ``views.archived`` (422 in plain words); each term
+  of a calculated widget (``formula``) is checked the same way.
 - ``POST /dashboards/{id}/data`` -- every widget's result. The facts are
   loaded **once**, for the union of the widgets' periods; each widget applies
   its own period and filters. A widget that cannot be answered (unreadable or
@@ -90,9 +90,11 @@ from app.services.metrics import (
     load_facts,
     missing_permission,
     permission_message,
+    query_archived,
     query_archived_modes,
     query_families,
     resolve_period,
+    widest_archived,
 )
 from app.services.people_lists import shareable_users_statement
 from app.services.site_access import visible_site_ids
@@ -594,14 +596,6 @@ async def delete_dashboard(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _widest_archived(queries: list[MetricQuery]) -> str:
-    """The archived mode whose facts cover every query's own mode (a divisor's too)."""
-    modes = {mode for query in queries for mode in query_archived_modes(query)}
-    if "include" in modes or modes == {"exclude", "only"}:
-        return "include"
-    return "only" if modes == {"only"} else "exclude"
-
-
 async def _load_for(
     db: AsyncSession,
     queries: list[MetricQuery],
@@ -609,20 +603,22 @@ async def _load_for(
     today: date,
 ) -> Facts:
     """The facts every query needs: one load over the union of their periods."""
-    archived = _widest_archived(queries)
-    # ``all`` spans the projects of the query's own archived mode: one extent
-    # per distinct mode among those queries (three at most).
+    # The facts cover every query's archived mode, a calculation's terms' too.
+    archived = widest_archived(mode for query in queries for mode in query_archived_modes(query))
+    # ``all`` spans the projects of the query's own archived mode (the widest
+    # of a calculation's terms, ``query_archived``): one extent per distinct
+    # mode among those queries (three at most).
     extents: dict[str, tuple[date, date] | None] = {}
     for mode in sorted(
         {
-            query.filters.archived
+            query_archived(query)
             for query in queries
             if getattr(query.filters.period, "relative", None) == "all"
         }
     ):
         extents[mode] = await load_extent(db, visible_site_ids=visible, archived=mode)
     periods = [
-        resolve_period(query.filters.period, today, extents.get(query.filters.archived))
+        resolve_period(query.filters.period, today, extents.get(query_archived(query)))
         for query in queries
     ]
     return await load_facts(
