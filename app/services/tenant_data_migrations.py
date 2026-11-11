@@ -23,7 +23,6 @@ from app.services.dashboard_seed import (
 )
 from app.services.tenant_provisioner import (
     ABSORPTION_EXAMPLE_MARKER_KEY,
-    ABSORPTION_EXAMPLE_MARKER_PROBE_SQL,
     ABSORPTION_EXAMPLE_MARKER_SQL,
     APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
     CAPACITY_DASHBOARD_FIND_SQL,
@@ -111,17 +110,24 @@ def _layout_of(text_value) -> dict:
 async def add_absorption_example(conn) -> bool:
     """
     The absorption gauge on the built-in "Capacity and flows", once per
-    instance (2.6.0): without the marker row, append it below the existing
-    widgets of a "Capacity and flows" with no owner that has no widget of
-    that title, bump the dashboard's ``updated_at``, then write the marker --
-    whether or not anything was added. One transaction. Returns whether the
-    gauge was added. Fresh installs got it from the seed; their first run
-    only writes the marker.
+    instance (2.6.0). The marker row is claimed first (``INSERT ... ON
+    CONFLICT DO NOTHING RETURNING``): only the process that wrote it goes on,
+    so two workers starting together cannot both add the gauge (the second
+    waits on the key and gets no row back). Then, in the same transaction:
+    append the gauge below the existing widgets of a "Capacity and flows"
+    with no owner that has no widget of that title, and bump the dashboard's
+    ``updated_at``. The marker stays whether or not anything was added, so a
+    later deletion is final; a failure rolls the claim back with the rest.
+    Returns whether the gauge was added. Fresh installs got it from the
+    seed; their first run only writes the marker.
     """
     marker = ABSORPTION_EXAMPLE_MARKER_KEY
-    if (
-        await conn.execute(text(ABSORPTION_EXAMPLE_MARKER_PROBE_SQL).bindparams(key=marker))
-    ).scalar():
+    claimed = (
+        await conn.execute(text(ABSORPTION_EXAMPLE_MARKER_SQL).bindparams(key=marker, value="1"))
+    ).scalar()
+    if not claimed:
+        # Done before, or by another process right now.
+        await conn.rollback()
         return False
     added = False
     dashboard_id = (
@@ -151,7 +157,6 @@ async def add_absorption_example(conn) -> bool:
             )
             await conn.execute(text(DASHBOARD_TOUCH_SQL).bindparams(dashboard_id=dashboard_id))
             added = True
-    await conn.execute(text(ABSORPTION_EXAMPLE_MARKER_SQL).bindparams(key=marker, value="1"))
     await conn.commit()
     return added
 

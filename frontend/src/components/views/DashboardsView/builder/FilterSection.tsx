@@ -154,7 +154,7 @@ export function FilterSection({
   const count = activeFilterCount(filters);
 
   return (
-    <section className={disclosure ? styles.section : styles.termFilters}>
+    <section className={disclosure ? styles.section : undefined}>
       {disclosure && (
       <Button
         type="button"
@@ -169,7 +169,7 @@ export function FilterSection({
       </Button>
       )}
       {open && (
-        <div id={panelId} className={styles.filters} role="group" aria-label={title}>
+        <div id={panelId} className={disclosure ? styles.filters : styles.termFilters} role="group" aria-label={title}>
           {measure === 'utilisation' && <p className={styles.hint}>{UTILISATION_FILTERS_HINT}</p>}
           {shows('site_ids') && listFilter('site_ids')}
           {shows('team_ids') && listFilter('team_ids', true)}

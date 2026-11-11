@@ -16,19 +16,18 @@ from app.services import tenant_data_migrations as tdm
 from app.services.dashboard_seed import ABSORPTION_WIDGET_TITLE, CAPACITY_DASHBOARD_NAME
 from app.services.tenant_provisioner import (
     ABSORPTION_EXAMPLE_MARKER_KEY,
-    ABSORPTION_EXAMPLE_MARKER_PROBE_SQL,
     ABSORPTION_EXAMPLE_MARKER_SQL,
     APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
-    CAPACITY_DASHBOARD_FIND_SQL,
-    DASHBOARD_TOUCH_SQL,
-    DASHBOARD_WIDGET_LAYOUTS_SQL,
-    DASHBOARD_WIDGET_SEED_SQL,
-    DASHBOARD_WIDGET_TITLE_PROBE_SQL,
     ASSIGNMENT_APPROVAL_TABLES,
+    CAPACITY_DASHBOARD_FIND_SQL,
     CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL,
     CARD_COMMENTS_AUTHOR_FK_SQL,
     CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
     CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
+    DASHBOARD_TOUCH_SQL,
+    DASHBOARD_WIDGET_LAYOUTS_SQL,
+    DASHBOARD_WIDGET_SEED_SQL,
+    DASHBOARD_WIDGET_TITLE_PROBE_SQL,
     PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL,
     PROJECTS_SITE_FK_NEEDS_FIX_SQL,
     PROJECTS_SITE_FK_SQL,
@@ -56,7 +55,9 @@ class FakeConn:
         if sql in self.fail:
             raise RuntimeError("boom")
         result = MagicMock()
-        result.scalar.return_value = self.needs_fix.get(sql, False)
+        # The absorption marker is claimed (a row back) unless a test says otherwise.
+        claim = ABSORPTION_EXAMPLE_MARKER_KEY if sql == ABSORPTION_EXAMPLE_MARKER_SQL else False
+        result.scalar.return_value = self.needs_fix.get(sql, claim)
         result.rowcount = self.rowcounts.get(sql, 0)
         return result
 
@@ -87,11 +88,10 @@ async def test_clean_database_only_checks_and_cleans():
         APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
         *PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL,
         *STALE_APPROVAL_POINTER_CLEANUP_SQL,
-        # The absorption example: no marker, no "Capacity and flows" found,
-        # the marker written.
-        ABSORPTION_EXAMPLE_MARKER_PROBE_SQL,
-        CAPACITY_DASHBOARD_FIND_SQL,
+        # The absorption example: the marker claimed, no "Capacity and
+        # flows" found.
         ABSORPTION_EXAMPLE_MARKER_SQL,
+        CAPACITY_DASHBOARD_FIND_SQL,
     ]
     conn.rollback.assert_not_awaited()
 
@@ -186,7 +186,8 @@ async def test_row_cleanups_run_after_the_request_expiry_and_log(caplog):
 
 class ExampleConn:
     """
-    Answers the absorption step by SQL text: the marker, the built-in
+    Answers the absorption step by SQL text: the marker claim (a row back
+    unless the marker is already there, `marker`), the built-in
     dashboard's id, whether its widgets hold the title, and their layouts.
     Records every statement with its bound values.
     """
@@ -211,7 +212,7 @@ class ExampleConn:
         result = MagicMock()
         result.rowcount = 0
         result.scalar.return_value = {
-            ABSORPTION_EXAMPLE_MARKER_PROBE_SQL: 1 if self.marker else None,
+            ABSORPTION_EXAMPLE_MARKER_SQL: None if self.marker else ABSORPTION_EXAMPLE_MARKER_KEY,
             CAPACITY_DASHBOARD_FIND_SQL: self.dashboard_id,
             DASHBOARD_WIDGET_TITLE_PROBE_SQL: 1 if self.has_title else None,
         }.get(sql, False)
@@ -248,14 +249,14 @@ async def test_the_example_is_added_below_the_existing_widgets_once():
 
     assert await tdm.add_absorption_example(conn) is True
 
+    # The marker is claimed first, in the same transaction as the widget.
     assert conn.sqls() == [
-        ABSORPTION_EXAMPLE_MARKER_PROBE_SQL,
+        ABSORPTION_EXAMPLE_MARKER_SQL,
         CAPACITY_DASHBOARD_FIND_SQL,
         DASHBOARD_WIDGET_TITLE_PROBE_SQL,
         DASHBOARD_WIDGET_LAYOUTS_SQL,
         DASHBOARD_WIDGET_SEED_SQL,
         DASHBOARD_TOUCH_SQL,
-        ABSORPTION_EXAMPLE_MARKER_SQL,
     ]
     assert conn.binds(CAPACITY_DASHBOARD_FIND_SQL) == [{"name": CAPACITY_DASHBOARD_NAME}]
     [widget] = conn.binds(DASHBOARD_WIDGET_SEED_SQL)
@@ -272,18 +273,22 @@ async def test_the_example_is_added_below_the_existing_widgets_once():
         {"key": ABSORPTION_EXAMPLE_MARKER_KEY, "value": "1"}
     ]
     conn.commit.assert_awaited_once()
+    conn.rollback.assert_not_awaited()
     # Every value bound: no JSON in the SQL text.
     assert all("{" not in sql for sql in conn.sqls())
 
 
 @pytest.mark.asyncio
-async def test_the_marker_makes_the_step_do_nothing():
+async def test_a_marker_already_claimed_adds_nothing():
+    # Done on an earlier start, or claimed by another worker starting at the
+    # same time: the claim returns no row and the step stops there.
     conn = ExampleConn(marker=True)
 
     assert await tdm.add_absorption_example(conn) is False
 
-    assert conn.sqls() == [ABSORPTION_EXAMPLE_MARKER_PROBE_SQL]
+    assert conn.sqls() == [ABSORPTION_EXAMPLE_MARKER_SQL]
     conn.commit.assert_not_awaited()
+    conn.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -294,7 +299,7 @@ async def test_a_dashboard_that_has_the_widget_only_gets_the_marker():
 
     assert DASHBOARD_WIDGET_SEED_SQL not in conn.sqls()
     assert DASHBOARD_TOUCH_SQL not in conn.sqls()
-    assert conn.sqls()[-1] == ABSORPTION_EXAMPLE_MARKER_SQL
+    assert conn.sqls()[0] == ABSORPTION_EXAMPLE_MARKER_SQL
     conn.commit.assert_awaited_once()
 
 
@@ -304,11 +309,8 @@ async def test_a_deleted_dashboard_is_not_recreated():
 
     assert await tdm.add_absorption_example(conn) is False
 
-    assert conn.sqls() == [
-        ABSORPTION_EXAMPLE_MARKER_PROBE_SQL,
-        CAPACITY_DASHBOARD_FIND_SQL,
-        ABSORPTION_EXAMPLE_MARKER_SQL,
-    ]
+    assert conn.sqls() == [ABSORPTION_EXAMPLE_MARKER_SQL, CAPACITY_DASHBOARD_FIND_SQL]
+    conn.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -330,8 +332,12 @@ async def test_a_failing_example_step_is_rolled_back_without_the_marker(caplog):
 
     await tdm.run_data_migrations(conn)  # never raises
 
+    # The claim is rolled back with the widget: the next start tries again.
     conn.rollback.assert_awaited()
-    assert ABSORPTION_EXAMPLE_MARKER_SQL not in conn.sqls()
+    assert conn.sqls().index(ABSORPTION_EXAMPLE_MARKER_SQL) < conn.sqls().index(
+        DASHBOARD_WIDGET_SEED_SQL
+    )
+    assert DASHBOARD_TOUCH_SQL not in conn.sqls()
     assert "Data migration (absorption example) warning for milestone_test" in caplog.text
 
 
@@ -341,5 +347,5 @@ def test_the_example_sql_binds_every_value():
     assert set(text(ABSORPTION_EXAMPLE_MARKER_SQL).compile().params) == {"key", "value"}
     assert set(text(CAPACITY_DASHBOARD_FIND_SQL).compile().params) == {"name"}
     assert "owner_id IS NULL" in CAPACITY_DASHBOARD_FIND_SQL
-    assert ABSORPTION_EXAMPLE_MARKER_SQL.endswith("ON CONFLICT (key) DO NOTHING")
+    assert ABSORPTION_EXAMPLE_MARKER_SQL.endswith("ON CONFLICT (key) DO NOTHING RETURNING key")
     assert ABSORPTION_EXAMPLE_MARKER_KEY.startswith("_internal.")

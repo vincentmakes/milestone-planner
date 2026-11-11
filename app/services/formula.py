@@ -10,7 +10,7 @@ language::
     product    := unary (("*" | "×" | "/" | "÷") unary)*
     unary      := "-" unary | primary
     primary    := number ["%"] | name | "(" sum ")"
-    number     := digits ["." digits] | "." digits
+    number     := digits ["." digits] | "." digits   (ASCII digits 0-9)
     name       := [A-Za-z][A-Za-z0-9_]*   (case-insensitive: read in lower case)
 
 ``70%`` is 0.7; ``×`` and ``÷`` are ``*`` and ``/``; a decimal comma is
@@ -93,6 +93,12 @@ def _is_letter(ch: str) -> bool:
     return "a" <= ch <= "z" or "A" <= ch <= "Z"
 
 
+def _is_digit(ch: str) -> bool:
+    # ASCII only: str.isdigit() also accepts "²", which float() cannot read
+    # (and the browser parser does not take).
+    return "0" <= ch <= "9"
+
+
 def _unexpected(text: str, pos: int) -> FormulaError:
     return FormulaError(f'Unexpected "{text}" at position {pos}')
 
@@ -106,23 +112,23 @@ def _tokens(source: str) -> list[_Token]:
         if ch in " \t":
             i += 1
             continue
-        if ch.isdigit() or (ch == "." and i + 1 < n and source[i + 1].isdigit()):
+        if _is_digit(ch) or (ch == "." and i + 1 < n and _is_digit(source[i + 1])):
             start = i
-            while i < n and source[i].isdigit():
+            while i < n and _is_digit(source[i]):
                 i += 1
             if i < n and source[i] == ".":
                 i += 1
-                if i >= n or not source[i].isdigit():
+                if i >= n or not _is_digit(source[i]):
                     raise _unexpected(".", i)
-                while i < n and source[i].isdigit():
+                while i < n and _is_digit(source[i]):
                     i += 1
-            if i < n and source[i] == "," and i + 1 < n and source[i + 1].isdigit():
+            if i < n and source[i] == "," and i + 1 < n and _is_digit(source[i + 1]):
                 raise FormulaError(DECIMAL_COMMA_DETAIL)
             out.append(_Token("num", source[start:i], start + 1))
             continue
         if _is_letter(ch):
             start = i
-            while i < n and (_is_letter(source[i]) or source[i].isdigit() or source[i] == "_"):
+            while i < n and (_is_letter(source[i]) or _is_digit(source[i]) or source[i] == "_"):
                 i += 1
             # Names are case-insensitive: read in lower case.
             out.append(_Token("name", source[start:i].lower(), start + 1))

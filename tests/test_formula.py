@@ -61,12 +61,14 @@ FORMULA_CASES: list[tuple[str, str | None, tuple[str, ...] | str]] = [
     ),
     ("(" * (MAX_DEPTH + 1) + "a" + ")" * (MAX_DEPTH + 1), None, "The formula is nested too deeply"),
     ("-" * (MAX_DEPTH + 1) + "a", None, "The formula is nested too deeply"),
+    # ASCII digits only: "²" is a digit to str.isdigit() but no number.
+    ("a * 2²", None, 'Unexpected "²" at position 6'),
 ]
 
 
 def test_the_mirror_table_has_its_pinned_length():
     # The frontend table pins the same number (formula.test.ts).
-    assert len(FORMULA_CASES) == 30
+    assert len(FORMULA_CASES) == 31
 
 
 @pytest.mark.parametrize(("source", "canonical", "expected"), FORMULA_CASES)

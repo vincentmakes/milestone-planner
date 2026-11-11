@@ -313,6 +313,7 @@ When two people edit the same dashboard at once, the last one to save wins.
 - *1 − a ÷ b* reads **100 %** on an empty bar, because 0 ÷ 0 is 0
 - With a breakdown by **Site**, a project measure takes the project's site and a capacity measure the person's site; the two meet on the site
 - A **Number** result has no unit of its own
+- On a bar or line chart with two dimensions, a category with no data for a series is drawn as **0** (a table leaves that cell empty)
 
 ## What-If Mode
 

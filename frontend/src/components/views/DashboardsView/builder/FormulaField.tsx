@@ -11,8 +11,10 @@
  * *Insert measure* (`ref.openSuggestions()`). The field grows with its text.
  * A measure's full name typed by hand becomes a pill once the user moves on.
  * Clicking a pill, or Enter with the caret on it, opens its panel under the
- * field (the caller's filters and switches), closed by *Done* or Escape with
- * the focus back in the field; a change of filters rewrites the pill's text
+ * field (the caller's filters and switches) with the focus on its first
+ * control; its header — the title, *Clear filters* and *Done* — stays in view
+ * while the dialog scrolls; *Done* or Escape closes it with the focus back in
+ * the field; a change of filters rewrites the pill's text
  * (`label`); a pill under the pointer shows a pointer cursor, a hover
  * shade and "<pill>: click to filter". Enter never adds a line.
  *
@@ -88,6 +90,15 @@ export const FormulaField = forwardRef<FormulaFieldHandle, FormulaFieldProps>(fu
   const open = word !== null && matches.length > 0 && !dismissed;
   const segments = useMemo(() => segmentField(state), [state]);
   const panelPill = panelKey === null ? null : state.pills.find((p) => p.key === panelKey) ?? null;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelOpen = panelPill !== null;
+  // Into the panel when it opens: its first control (the header's buttons otherwise).
+  useLayoutEffect(() => {
+    if (!panelOpen) return;
+    const panel = panelRef.current;
+    const body = panel?.querySelector<HTMLElement>('[data-panel-body] button, [data-panel-body] select, [data-panel-body] input');
+    (body ?? panel?.querySelector<HTMLElement>('button'))?.focus();
+  }, [panelOpen, panelKey]);
 
   // --- Mirror alignment and the caret after a programmatic change -------------------
   const syncScroll = useCallback(() => {
@@ -340,6 +351,7 @@ export const FormulaField = forwardRef<FormulaFieldHandle, FormulaFieldProps>(fu
       </div>
       {panelPill && (
         <div
+          ref={panelRef}
           id={panelId}
           className={styles.panel}
           role="group"
@@ -351,12 +363,23 @@ export const FormulaField = forwardRef<FormulaFieldHandle, FormulaFieldProps>(fu
             closePanel();
           }}
         >
-          <p className={styles.panelTitle}>Filters for {label(panelPill.measure, undefined)}</p>
-          {renderPanel(panelPill, updatePill)}
-          <div className={styles.panelFooter}>
+          <div className={styles.panelHeader}>
+            <p className={styles.panelTitle}>Filters for {label(panelPill.measure, undefined)}</p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!panelPill.filters || Object.keys(panelPill.filters).length === 0}
+              onClick={() => updatePill({ filters: {} })}
+            >
+              Clear filters
+            </Button>
             <Button type="button" variant="secondary" size="sm" onClick={closePanel}>
               Done
             </Button>
+          </div>
+          <div className={styles.panelBody} data-panel-body>
+            {renderPanel(panelPill, updatePill)}
           </div>
         </div>
       )}

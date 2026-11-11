@@ -90,12 +90,15 @@ export default defineConfig({
       // the 2.5.0 totals of the pilot adjustments (lines 94.43, statements
       // 93.5, functions 94.74, branches 86.86); set 0.1 under the 2.6.0
       // totals of calculated widgets and Help (lines 94.5, statements 93.56,
-      // functions 94.77, branches 87.01 — the lower of two runs).
+      // functions 94.77, branches 87.01 — the lower of two runs); set 0.1
+      // under the 2.6.0 totals with the formula engine and its one-field
+      // editor (lines 94.72, statements 93.76, functions 94.96, branches
+      // 87.32 — two runs, equal).
       thresholds: {
-        lines: 94.4,
-        statements: 93.46,
-        functions: 94.67,
-        branches: 86.91,
+        lines: 94.62,
+        statements: 93.66,
+        functions: 94.86,
+        branches: 87.22,
       },
     },
   },

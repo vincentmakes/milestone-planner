@@ -40,11 +40,13 @@ const FORMULA_CASES: Case[] = [
   ['Customer_Weeks ÷ (Capacity × 70%)', '(customer_weeks / (capacity * 70%))', ['customer_weeks', 'capacity']],
   ['('.repeat(MAX_DEPTH + 1) + 'a' + ')'.repeat(MAX_DEPTH + 1), null, 'The formula is nested too deeply'],
   ['-'.repeat(MAX_DEPTH + 1) + 'a', null, 'The formula is nested too deeply'],
+  // ASCII digits only: "²" is a digit to Python's str.isdigit() but no number.
+  ['a * 2²', null, 'Unexpected "²" at position 6'],
 ];
 
 describe('formula mirror table', () => {
   it('has the pinned length of tests/test_formula.py', () => {
-    expect(FORMULA_CASES).toHaveLength(30);
+    expect(FORMULA_CASES).toHaveLength(31);
   });
 
   it.each(FORMULA_CASES)('%s', (source, canonicalForm, expected) => {

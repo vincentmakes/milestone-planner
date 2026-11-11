@@ -6,7 +6,7 @@
  *     product  := unary (("*" | "×" | "/" | "÷") unary)*
  *     unary    := "-" unary | primary
  *     primary  := number ["%"] | name | "(" sum ")"
- *     number   := digits ["." digits] | "." digits
+ *     number   := digits ["." digits] | "." digits   (ASCII digits 0-9)
  *     name     := [A-Za-z][A-Za-z0-9_]*   (case-insensitive: read in lower case)
  *
  * **Mirror contract**: the same language, the same messages and the same

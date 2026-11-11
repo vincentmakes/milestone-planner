@@ -1463,7 +1463,6 @@ DASHBOARD_WIDGET_SEED_PG_SQL = _seed_insert_sql(
 # it ran, whatever it found, so a later deletion of the widget or of the
 # dashboard is final. Every value is bound.
 ABSORPTION_EXAMPLE_MARKER_KEY = "_internal.absorption_example_added"
-ABSORPTION_EXAMPLE_MARKER_PROBE_SQL = "SELECT 1 FROM settings WHERE key = :key"
 CAPACITY_DASHBOARD_FIND_SQL = (
     "SELECT id FROM dashboards WHERE name = :name AND owner_id IS NULL ORDER BY id LIMIT 1"
 )
@@ -1476,8 +1475,12 @@ DASHBOARD_WIDGET_LAYOUTS_SQL = (
 DASHBOARD_TOUCH_SQL = (
     "UPDATE dashboards SET updated_at = CURRENT_TIMESTAMP WHERE id = :dashboard_id"
 )
+# Claims the one-time step: a row comes back only for the process that wrote
+# the marker; a second process starting at the same time waits on the key and
+# gets nothing back once the first commits.
 ABSORPTION_EXAMPLE_MARKER_SQL = (
-    "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
+    "INSERT INTO settings (key, value) VALUES (:key, :value) "
+    "ON CONFLICT (key) DO NOTHING RETURNING key"
 )
 
 # The one-shot grant of the dashboard keys to the system roles of an existing

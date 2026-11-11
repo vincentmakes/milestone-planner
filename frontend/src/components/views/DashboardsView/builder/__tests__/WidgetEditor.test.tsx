@@ -1651,6 +1651,24 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     expect(lastQuery().formula?.terms[0]).toEqual({ name: 'a', measure: 'booked_weeks', filters: { has_customer: true } });
   });
 
+  it('moves the focus into a measure’s panel, and clears its filters from the header', async () => {
+    renderEditor();
+    fireEvent.click(calculation());
+    clickAt(3);
+    const panel = within(screen.getByRole('group', { name: 'Filters for Booked weeks' }));
+    // The focus lands on the panel's first filter, not on the header.
+    expect(screen.getByRole('group', { name: 'Filters for Booked weeks' })).toContainElement(document.activeElement as HTMLElement);
+    expect(panel.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
+    fireEvent.change(panel.getByLabelText('Has a customer'), { target: { value: 'true' } });
+    expect(field()).toHaveValue('Booked weeks · Has a customer / Capacity (weeks)');
+    expect(panel.getByRole('button', { name: 'Clear filters' })).toBeEnabled();
+    fireEvent.click(panel.getByRole('button', { name: 'Clear filters' }));
+    expect(field()).toHaveValue('Booked weeks / Capacity (weeks)');
+    expect(panel.getByLabelText('Has a customer')).toHaveValue('any');
+    await flushPreview();
+    expect(lastQuery().formula?.terms[0]).toEqual({ name: 'a', measure: 'booked_weeks' });
+  });
+
   it('keeps two pills of one measure with different filters as two terms', async () => {
     renderEditor();
     fireEvent.click(calculation());
