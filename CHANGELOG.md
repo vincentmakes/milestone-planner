@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Dashboards: a Has a customer filter keeps the projects with a customer, or those without one, on every measure that reads projects.
 - Dashboards: a KPI or a gauge can show its value as a percentage of its target ("91 % of target"); a KPI now takes a target like the gauge.
 - Dashboards: a gauge's target can be a goal to reach — red well below it, amber just below it, green from the target up.
-- Dashboards: calculated widgets divide one measure by another, each with its own filters, as a percentage or a number — on a KPI, a gauge, or a bar or line by period.
+- Dashboards: calculated widgets combine measures in a formula typed in one field — measures are suggested as you type and can each be filtered with a click, with numbers, + − × ÷, brackets and % — shown as a percentage or a number on a KPI, gauge, bar, line, table or heatmap, broken down by any dimension the measures allow; the line under the field shows the formula with its numbers and its result.
+- Dashboards: a Capacity (weeks) measure, so booked weeks can be compared with capacity in the same unit.
+- Dashboards: the built-in Capacity and flows dashboard shows the customer absorption — weeks booked on customer projects over 70 % of the capacity — as a goal gauge; existing instances get it once.
 
 ## [2.5.1] - 2026-11-11
 

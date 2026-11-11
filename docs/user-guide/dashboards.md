@@ -51,24 +51,27 @@ The **Overview** is the default dashboard (listed under **Default** in the picke
 
 ### Capacity and flows
 
-**Capacity and flows** (listed under **Everyone**) shows three of the larger chart kinds on the bookings:
+**Capacity and flows** (listed under **Everyone**) shows the customer absorption and three of the larger chart kinds on the bookings:
 
 | Widget | What it shows |
 |--------|---------------|
+| **Customer absorption this year** | A gauge of a [calculated widget](#calculated-widgets): the weeks booked on customer projects over 70 % of the people's capacity this year. 100 % means the 70 % absorption goal is met (green from 100 %, amber just below) |
 | **Booked weeks per team and month** | A heatmap: one row per team, one column per month of the last 12 months |
 | **Booked weeks by site and project** | A treemap: one box per site, split into its projects, this year |
 | **Project to team flows** | A sankey: the eight projects with the most booked weeks (the rest as *Other*) flowing to the teams that work on them |
 
-Neither dashboard needs a permission beyond **Dashboards**, so everyone who can open the view sees every tile.
+The **Overview** needs no permission beyond **Dashboards**. In **Capacity and flows**, the absorption gauge reads capacity and needs the **Staff & Calendar** permission (the User and Superuser roles hold it by default). A role without it sees the permission message on that tile and the other widgets as usual.
+
+An instance that already had dashboards before 2.6.0 gets the absorption gauge **once**, at the bottom of its built-in *Capacity and flows* (also when the dashboard was edited). Deleting the gauge, or the dashboard, is final: the upgrade does not add it again.
 
 ### With the Demo Data
 
 A tenant seeded with the **demo data** — the demo tenant of the Codespaces and screenshot setups, and any tenant an administrator provisions in the admin portal with the **Seed demo data** option — gets the same two dashboards with a few more widgets:
 
 - the **Overview** adds **Share of time by Project type per team** and **Booked weeks by Area**, over the demo's two project fields;
-- **Capacity and flows** starts with **Utilisation this quarter**, a gauge of the quarter's utilisation with a target of 85 %, beside the heatmap.
+- **Capacity and flows** starts with **Utilisation this quarter**, a gauge of the quarter's utilisation with a target of 85 %, above the absorption gauge and beside the heatmap.
 
-The gauge's utilisation needs the **Staff & Calendar** permission (the User and Superuser roles hold it by default); a role without it sees the permission message on that tile and the other widgets as usual. This is why the gauge is not part of what every instance gets.
+Like the absorption gauge, the utilisation gauge needs the **Staff & Calendar** permission. Two of the demo's internal projects have no customer, so the absorption differs from plain utilisation.
 
 ## Chart Kinds
 
@@ -125,6 +128,7 @@ Needs the **Staff & Calendar** permission. A breakdown by **Person** and the **P
 | Measure | What it counts |
 |---------|----------------|
 | **Capacity (days)** | The days the bookable people can work, at their **max capacity**: a person at 60 % has 3 days in a full week |
+| **Capacity (weeks)** | The same capacity in weeks: capacity days over the working days of a week (5, or 7 when *Weekends are working days* is on). Use it with **Booked weeks** in a [calculation](#calculated-widgets) |
 | **Available days** | Capacity minus booked days. Negative when someone is booked beyond their capacity |
 | **Utilisation** | Booked days over capacity, in %. Over 100 % means booked beyond capacity |
 | **People over capacity** | Different people whose booked days in the period (or in the bar, line point or cell) are more than their capacity |
@@ -188,20 +192,35 @@ Every measure that reads projects — bookings, projects, phases, equipment book
 
 ## Calculated Widgets
 
-A **KPI**, a **gauge**, a **bar** or a **line** can divide one measure by another: **Divide by** in the widget editor. Each side is a measure that adds up or counts — booked days or weeks, bookings, people booked, projects, project weeks, project volume, phases, phase weeks, phases due or overdue, capacity days, equipment booked days, equipment bookings, equipment booked — never Utilisation, Equipment utilisation, Available days or People over capacity, which are already a ratio, a difference or a count per bar.
+A **KPI**, a **gauge**, a **bar**, a **line**, a **table** or a **heatmap** can show a **calculation**: turn on **Calculation** in the widget editor and write a formula with measures, numbers and `+ − × ÷`, brackets and `%`. For example, *Booked weeks · Has a customer / (Capacity (weeks) × 70%)*.
 
-- Each side has **its own filters**; the **period** is the widget's, for both sides
-- The **result** is a **Percentage** (× 100) or a **Number** with two decimals
-- A KPI or a gauge shows the figure for the whole period; a bar or a line can break it down **by period only** (one bar or point per month, say), and every bar is computed on its own: its numerator over its denominator. **Percent of**, **Top N** and stacked bars are not offered
-- A bar or a point whose denominator is 0 shows **–** when its numerator is not 0, and **0** when both are
-- Both sides need their permissions: a calculated widget dividing by capacity needs the **Staff & Calendar** permission, like Capacity itself
+- **Measures** are the ones that add up or count: booked days or weeks, bookings, people booked, projects, project weeks, project volume, phases, phase weeks, phases due or overdue, capacity days or weeks, equipment booked days, equipment bookings, equipment booked. Utilisation, Equipment utilisation, Available days and People over capacity are already a ratio, a difference or a count per bar, so they cannot be used (Utilisation is *Booked days / Capacity (days)*)
+- **Each measure has its own filters**: click it in the formula to set them. The same measure can appear twice with different filters (*Booked weeks · Has a customer / Booked weeks*). The **period** is the widget's, for every measure
+- **Numbers** are written with a point (`0.7`); `70%` is 0.7
+- The result is a **Percentage** (× 100) or a **Number**: **Show result as**
+- **Breakdowns**: any dimension at least one measure accepts, and the period when every measure accepts it. Each bar, row or cell is computed on its own, and the total is the formula over each measure's total (never a sum of the bars). A measure that has no such dimension (capacity has no *Project*) uses **its total** in every bar. You can also choose that for any measure in its panel (**Use its total**), for instance *customer weeks per project over the whole capacity*. **Top N** ranks the bars by the formula's value. **Percent of** and stacked bars are not offered, and a table does not add rows up
+- **Capacity and booked time together**: when a formula contains a capacity measure, booked time is read the way Utilisation reads it, by the person's sites and teams and only for people with capacity. *Booked days / Capacity (days)* therefore equals Utilisation, overall and by site, team, person or period
+- **Dividing by 0**: a bar or point shows **–** when the value above the division is not 0, and **0** when both are 0. Any empty value makes the bar **–**
+- **Permissions**: each measure needs its own permission. A calculation with capacity needs the **Staff & Calendar** permission, like Capacity itself
+
+### Writing a Formula
+
+![The formula of the absorption example: two measures as pills, the numbers and the result under the field](../assets/screenshots/dashboard-formula.png){ loading=lazy }
+
+1. Turn on **Calculation**. The field starts with a working formula built from the widget's measure and filters: *Booked weeks / Capacity (weeks)* for booked time when you hold the Staff & Calendar permission, otherwise the measure alone
+2. Type. As soon as you type letters, the matching measures open under the field: pick one with the mouse, or with the arrow keys and Enter or Tab (Escape closes the list). **Insert measure** opens the same list. A measure's full name typed by hand is recognised once you move on. Operators, brackets, numbers and `%` are simply typed; `×` and `÷` work like `*` and `/`
+3. **Click a measure** (or press Enter on it) to set its filters. The panel under the field shows the filters the measure takes and, with a breakdown, **Use its total**. The measure's name in the formula then reads its filters (*Booked weeks · Has a customer*; *Booked weeks · 3 filters* with more than two)
+4. Under the field, one line shows the formula **with its numbers** and the result (*116.3 ÷ (323.7 × 70 %) = 51.3 %*). While the formula cannot be computed, the line says why in plain words, such as *"capcity" is not a measure. Did you mean Capacity (weeks)?* (click the suggestion to put it in), *Missing closing bracket*, *Use a point for decimals: 0.7* or *Something is missing after ÷*. The preview then keeps the last result, dimmed, and **Add widget** waits
+5. **Examples** replaces the formula with a ready-made one: *Ratio of two measures*, *Share of capacity*, *Against a goal* (the absorption below), *Difference* and *Sum*. It asks first when you have changed the formula
+6. Turning **Calculation** off goes back to a plain widget of the formula's first measure, with its filters (after a confirmation when you have changed the formula)
 
 ### Example: absorption
 
-*Absorption* is the time booked on customer projects over the people's capacity, measured against a goal such as 70 %. Two ways to show it:
+*Absorption* is the time booked on customer projects over the people's capacity, measured against a goal such as 70 %. The built-in **Customer absorption this year** gauge is this formula:
 
-1. A **gauge** of **Utilisation**, filtered with **Has a customer = With a customer**, **Target** `70`, **Target is a goal** and **Show as % of target** on: the dial reads booked customer time over capacity, divided by 70 % — *91 % of target* means the team reaches 91 % of its goal (63.7 % utilisation on customer projects), in amber; it turns green at 100 % of target
-2. A **line** by month of **Booked days** with **Has a customer = With a customer**, **Divide by** **Capacity (days)**, result **Percentage**: the customer utilisation month by month; set the filters of the divisor to a team to follow that team's absorption
+*Booked weeks · Has a customer / (Capacity (weeks) × 70%)*, shown as a **Percentage**, period **This year**, on a gauge with **Target** `100` and **Target is a goal**.
+
+On the demo data, as an administrator who sees both sites, 116.3 customer weeks over 323.7 capacity weeks gives 116.3 ÷ (323.7 × 0.7) = **51.3 %**: the team reaches half of its absorption goal, in red. The same formula as a **bar by Team** shows each team's absorption, and as a **line by month** it shows the year month by month. *Against a goal* in **Examples** builds it in one click, and on a gauge it also sets the target and the goal band.
 
 ## Building a Dashboard
 
@@ -242,7 +261,7 @@ On a phone (640 px wide or less) dashboards are view-only.
 4. **Dimension 1** and **Dimension 2** — how to break the measure down: Site, Team, Project team, Person, Project, Project manager, Customer, Confirmed, Tag, Phase, Status, Equipment, Equipment type, any dropdown or toggle **project field**, or Period (by year, quarter, month or week). Only the dimensions that make sense for the measure are offered; a pie takes one dimension, a KPI at most one, a heatmap and a sankey two, a treemap one or two (no Period for treemaps and sankeys), a gauge none
 5. **Filters** — only those of the measure's family: sites, teams, project teams, people, projects, tags, field items, confirmed or unconfirmed projects, [**Has a customer**](#has-a-customer), archived projects for bookings; the same without teams and people for projects, plus **Milestones** for phases; **Sites**, **Teams** and **People** (the person's) for capacity — and for **Utilisation** the project filters too, which narrow its booked time only; the project filters plus **Equipment** and **Equipment types** for the equipment measures (Sites, Equipment and Equipment types only for equipment utilisation). Changing the measure drops the filters the new one does not take
 6. **Period** — one of the [twelve periods](#periods) or a custom range
-7. **Divide by** (KPI, gauge, bar and line of a measure that adds up or counts) — a second measure to divide by, with its **Result** (*Percentage* or *Number*) and its own **Divisor filters**; see [Calculated Widgets](#calculated-widgets). Choose *Nothing* to go back to a plain widget. While dividing, the dimensions offer only **Period**, and the measure lists only the measures that can be divided
+7. **Calculation** (KPI, gauge, bar, line, table and heatmap) — a formula of measures instead of one measure; see [Writing a Formula](#writing-a-formula). While it is on, the formula field takes the place of **Measure** and **Filters**, and **How calculations work** opens this chapter
 8. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %). Not offered for **Utilisation**, **Equipment utilisation** (already percentages), **Available days** (which can be negative) and **People over capacity** (counted again in each bar, so the bars are not parts of the total); a KPI of these four shows its figure for the whole period, with no dimension. A treemap or a sankey offers only the share of the **total**: within each value of the first dimension, every box or left node would add up to 100 % and be drawn the same size. A gauge, which has no dimension, offers neither Percent of nor Top N
 9. **Top N** — keep the largest values and group the rest as *Other* (on a heatmap, treemap or sankey, *Other* is a row, a box or a node)
 10. **Options** — stacked or 100 % bars and their orientation (no stacked or 100 % bars of the four measures without a percentage: a stack of percentages or of negative days adds up to nothing), a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*). A gauge and a KPI take a **Target** in the measure's unit (the hint under the field says which: *In %*, *In weeks*, …); leave it empty for no target. Only a number from 0 to 1 000 000 000 is kept (`85`, `12,5`); any other text — a negative number, letters — saves the widget **without** a target, never with the one typed before. **Show as % of target** (a switch, available once the target is above 0) shows the figure as a percentage of the target. On a gauge, **Target is a goal** (also once the target is above 0) turns the bands round for a target to reach: green from the target up, amber within 15 % below it, red further below
@@ -290,6 +309,10 @@ When two people edit the same dashboard at once, the last one to save wins.
 - "Today" and "this year" follow the server's date (UTC)
 - The **People** filter lists the people of the site selected in the header, although a dashboard covers every site you can see
 - A gauge has no dimensions, a heatmap and a sankey exactly two, a treemap one or two; widgets built through the API outside these rules are still drawn (a one-dimension heatmap as a single column, for example)
+- A calculation has **one period**: it cannot compare this year with last year. It uses at most **six** different measures (a measure with other filters counts apart), and its formula is at most 200 characters once the measures are named. Each measure is one more pass over the data
+- *1 − a ÷ b* reads **100 %** on an empty bar, because 0 ÷ 0 is 0
+- With a breakdown by **Site**, a project measure takes the project's site and a capacity measure the person's site; the two meet on the site
+- A **Number** result has no unit of its own
 
 ## What-If Mode
 
