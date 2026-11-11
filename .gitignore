@@ -58,3 +58,6 @@ public/index.html
 !.claude/settings.json
 !.claude/hooks/
 !.claude/skills/
+
+# Server logs of scripts/loadtest/ci.sh
+loadtest-logs/
