@@ -13,6 +13,7 @@ import { UserMenu } from '../UserMenu';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useUndoStore } from '@/stores/undoStore';
+import { useViewStore } from '@/stores/viewStore';
 import { getAppVersion } from '@/api/endpoints/health';
 import { logout } from '@/api/endpoints/auth';
 
@@ -152,5 +153,31 @@ describe('UserMenu Log out', () => {
     } finally {
       Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
     }
+  });
+});
+
+describe('UserMenu Help', () => {
+  it('opens the manual at the chapter of the current view, in a new tab', () => {
+    useViewStore.setState({ currentView: 'kanban' });
+    render(<UserMenu />);
+    fireEvent.click(trigger());
+    const help = screen.getByRole('link', { name: 'Help' });
+    expect(help).toHaveAttribute('href', 'https://docs-milestone.verdet.me/user-guide/kanban-board/');
+    expect(help).toHaveAttribute('target', '_blank');
+    expect(help).toHaveAttribute('rel', 'noopener noreferrer');
+    fireEvent.click(help);
+    expect(screen.queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
+  });
+
+  it('opens the home page from a view without a chapter', () => {
+    useViewStore.setState({ currentView: 'archived' });
+    render(<UserMenu />);
+    fireEvent.click(trigger());
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('href', 'https://docs-milestone.verdet.me/');
+    act(() => useViewStore.setState({ currentView: 'dashboards' }));
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute(
+      'href',
+      'https://docs-milestone.verdet.me/user-guide/dashboards/'
+    );
   });
 });

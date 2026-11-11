@@ -100,6 +100,9 @@
   border: none;
   cursor: pointer;
   transition: all var(--transition-fast);
+  /* Help is a link to the manual: it reads like the buttons around it. */
+  box-sizing: border-box;
+  text-decoration: none;
 }
 
 .menuItem:hover {
