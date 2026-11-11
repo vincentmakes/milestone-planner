@@ -487,7 +487,7 @@ async def test_auto_migration_creates_the_schema_then_seeds(tables):
     # Schema (the one-default index before the seed), the Overview with its
     # eight widgets, "Capacity and flows" with its three, the three grants,
     # one commit.
-    assert (len(BASE_WIDGETS), len(CAPACITY_WIDGETS)) == (8, 3)
+    assert (len(BASE_WIDGETS), len(CAPACITY_WIDGETS)) == (8, 4)
     assert _step(log) == FULL_STEP
     # After the project-fields and RBAC steps (dashboard_roles references
     # roles), before the sharing step and the notification-types step.
@@ -592,7 +592,7 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
         (NAMED, [*DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[WIDGET] * 8, NAMED]),
         (
             GRANT,
-            [*DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[WIDGET] * 8, NAMED, *[WIDGET] * 3, GRANT],
+            [*DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[WIDGET] * 8, NAMED, *[WIDGET] * 4, GRANT],
         ),
     ],
     ids=["schema", "seed", "named", "grant"],
@@ -927,7 +927,7 @@ def test_the_seed_sql_runs_once_on_sqlite(sqlite_session):
     assert None not in (overview_id, capacity_id) and overview_id != capacity_id
     assert seed() == [None, None]
     assert sqlite_session.execute(text("SELECT count(*) FROM dashboards")).scalar() == 2
-    assert sqlite_session.execute(text("SELECT count(*) FROM dashboard_widgets")).scalar() == 11
+    assert sqlite_session.execute(text("SELECT count(*) FROM dashboard_widgets")).scalar() == 12
 
     (_, overview_widgets), (_, capacity_widgets) = dashboard_seed_params()
     loaded = sqlite_session.get(Dashboard, overview_id)
@@ -946,7 +946,7 @@ def test_the_seed_sql_runs_once_on_sqlite(sqlite_session):
         False,
         None,
     )
-    assert [w.kind for w in loaded.widgets] == ["heatmap", "treemap", "sankey"]
+    assert [w.kind for w in loaded.widgets] == ["gauge", "heatmap", "treemap", "sankey"]
     assert [w.title for w in loaded.widgets] == [w["title"] for w in capacity_widgets]
 
 

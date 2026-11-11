@@ -408,9 +408,9 @@ async def test_seed_data_seeds_both_base_dashboards_after_the_roles():
         *_widget_args(5, overview_widgets),
         *_widget_args(6, capacity_widgets),
     ]
-    assert len(widget_args) == 11
+    assert len(widget_args) == 12
     assert sql[dashboard_at + 1 : named_at] == [DASHBOARD_WIDGET_SEED_PG_SQL] * 8
-    assert sql[named_at + 1 : named_at + 4] == [DASHBOARD_WIDGET_SEED_PG_SQL] * 3
+    assert sql[named_at + 1 : named_at + 5] == [DASHBOARD_WIDGET_SEED_PG_SQL] * 4
     assert conn.args_of(DASHBOARD_PERMISSION_BACKFILL_PG_SQL) == [
         ("views.dashboards", "superuser", "views.dashboards"),
         ("views.dashboards", "user", "views.dashboards"),
@@ -434,7 +434,7 @@ async def test_seed_base_dashboard_returns_the_new_ids():
 
 @pytest.mark.parametrize(
     ("ids", "widgets_of"),
-    [((None, 6), {6: 3}), ((5, None), {5: 8}), ((None, None), {})],
+    [((None, 6), {6: 4}), ((5, None), {5: 8}), ((None, None), {})],
     ids=["overview-exists", "capacity-exists", "both-exist"],
 )
 async def test_seed_data_skips_the_widgets_of_an_existing_dashboard(ids, widgets_of):

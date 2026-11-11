@@ -291,6 +291,17 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "help_url": SettingSpec(_help_url, DEFAULT_HELP_URL),
 }
 
+# Rows of the ``settings`` table the application keeps for itself (one-time
+# markers of the data migrations, 2.6.0): never listed nor answered by
+# ``GET /settings``, never written through ``PUT /settings/{key}``.
+INTERNAL_SETTING_PREFIX = "_internal."
+
+
+def is_internal_setting(key: str) -> bool:
+    """Whether ``key`` is one of the application's own rows (``INTERNAL_SETTING_PREFIX``)."""
+    return key.startswith(INTERNAL_SETTING_PREFIX)
+
+
 # The settings Settings -> Project fields saves: writable with
 # project_fields.manage as well as settings.general (PUT /settings/{key}).
 PROJECT_FIELD_SETTING_KEYS: frozenset[str] = frozenset(

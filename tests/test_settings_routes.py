@@ -679,3 +679,59 @@ async def test_help_url_is_stored_canonically(authed_client, mock_db_session):
 
     assert response.status_code == 200
     assert response.json()["value"] == "https://intranet.example/milestone-docs/"
+
+
+# ---------------------------------------------------------------------------
+# Internal rows (2.6.0): the application's own markers
+# ---------------------------------------------------------------------------
+
+MARKER = "_internal.absorption_example_added"
+
+
+@pytest.mark.asyncio
+async def test_internal_rows_are_never_listed(app_client, mock_db_session):
+    mock_db_session.execute.return_value = scalars_result(
+        [Settings(key="instance_title", value="Lab"), Settings(key=MARKER, value="1")]
+    )
+
+    response = await app_client.get("/api/settings")
+
+    assert response.status_code == 200
+    assert MARKER not in response.json()
+    assert response.json()["instance_title"] == "Lab"
+
+
+@pytest.mark.asyncio
+async def test_an_internal_row_reads_as_missing(app_client, mock_db_session):
+    mock_db_session.execute.return_value = scalar_result(Settings(key=MARKER, value="1"))
+
+    response = await app_client.get(f"/api/settings/{MARKER}")
+
+    assert response.status_code == 200
+    assert response.json() == {"key": MARKER, "value": None}
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["0", None])
+async def test_an_internal_row_cannot_be_written_or_deleted(authed_client, mock_db_session, value):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+
+    response = await client.put(f"/api/settings/{MARKER}", json={"value": value})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "This setting is kept by the application and cannot be changed"
+    )
+    mock_db_session.execute.assert_not_awaited()
+    mock_db_session.commit.assert_not_awaited()
+
+
+def test_the_internal_prefix():
+    from app.services.instance_settings import KNOWN_SETTINGS, is_internal_setting
+    from app.services.tenant_provisioner import ABSORPTION_EXAMPLE_MARKER_KEY
+
+    assert is_internal_setting(ABSORPTION_EXAMPLE_MARKER_KEY)
+    assert not is_internal_setting("help_url")
+    assert not any(is_internal_setting(key) for key in KNOWN_SETTINGS)

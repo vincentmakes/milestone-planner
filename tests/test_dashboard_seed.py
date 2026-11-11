@@ -18,6 +18,7 @@ from app.models.dashboard import DASHBOARD_VISIBILITIES, DASHBOARD_WIDGET_KINDS
 from app.schemas.dashboard import MetricQuery, WidgetIn
 from app.services import dashboard_seed, metrics
 from app.services.dashboard_seed import (
+    ABSORPTION_WIDGET_TITLE,
     BASE_DASHBOARD,
     BASE_DASHBOARDS,
     CAPACITY_DASHBOARD,
@@ -26,6 +27,7 @@ from app.services.dashboard_seed import (
     DEMO_EXTRA_WIDGETS,
     GRID_COLUMNS,
     WIDGET_KEYS,
+    absorption_widget_row,
     base_dashboard_rows,
     capacity_dashboard_rows,
     overview_rows,
@@ -275,8 +277,10 @@ def test_base_dashboard_rows_holds_both_in_order(field_ids):
 
 
 def test_every_base_widget_validates_and_passes_the_matrix():
-    """What every tenant gets: no capacity measure (those need views.staff),
-    no person dimension."""
+    """What every tenant gets: no person dimension; one widget only, the
+    absorption gauge, needs Staff & Calendar (2.6.0, a capacity term) -- a
+    viewer without it sees the permission note on that tile alone."""
+    staff_only = []
     for _, widgets in base_dashboard_rows():
         for row in widgets:
             assert row["kind"] in DASHBOARD_WIDGET_KINDS
@@ -285,6 +289,9 @@ def test_every_base_widget_validates_and_passes_the_matrix():
                 assert metrics.matrix_error(query.measure, dimension.kind) is None, row["title"]
                 assert dimension.kind != "person", row["title"]
             assert query.measure != "utilisation", row["title"]
+            if metrics.missing_permission(query, metrics.Viewer(frozenset())):
+                staff_only.append(row["title"])
+    assert staff_only == [ABSORPTION_WIDGET_TITLE]
 
 
 # ---------------------------------------------------------------------------
@@ -301,8 +308,8 @@ def test_the_capacity_dashboard():
     assert dashboard == {
         "name": "Capacity and flows",
         "description": (
-            "Booked time per team and month, where each site's time goes and which teams "
-            "work on which projects."
+            "Customer absorption against its goal, booked time per team and month, where "
+            "each site's time goes and which teams work on which projects."
         ),
         "visibility": "everyone",
         "is_default": False,
@@ -315,27 +322,29 @@ def test_the_capacity_dashboard():
     assert capacity_dashboard_rows(with_gauge=True)[0] == dashboard
 
 
-def test_the_three_base_capacity_widgets_in_order():
+def test_the_four_base_capacity_widgets_in_order():
     rows = _capacity_rows()
     assert [(r["kind"], r["title"]) for r in rows] == [
+        ("gauge", "Customer absorption this year"),
         ("heatmap", "Booked weeks per team and month"),
         ("treemap", "Booked weeks by site and project"),
         ("sankey", "Project to team flows"),
     ]
-    assert [r["sort_order"] for r in rows] == [0, 1, 2]
+    assert [r["sort_order"] for r in rows] == [0, 1, 2, 3]
     assert [w["title"] for w in CAPACITY_DASHBOARD["widgets"]] == [r["title"] for r in rows]
 
 
-def test_the_four_demo_capacity_widgets_in_order():
+def test_the_five_demo_capacity_widgets_in_order():
     rows = _capacity_rows(with_gauge=True)
     assert [(r["kind"], r["title"]) for r in rows] == [
         ("gauge", "Utilisation this quarter"),
+        ("gauge", "Customer absorption this year"),
         ("heatmap", "Booked weeks per team and month"),
         ("treemap", "Booked weeks by site and project"),
         ("sankey", "Project to team flows"),
     ]
     assert all(r["kind"] in DASHBOARD_WIDGET_KINDS for r in rows)
-    assert [r["sort_order"] for r in rows] == [0, 1, 2, 3]
+    assert [r["sort_order"] for r in rows] == [0, 1, 2, 3, 4]
     # One definition per widget: only the layout and the sort order move.
     for base, demo in zip(_capacity_rows(), rows[1:], strict=True):
         assert {k: base[k] for k in ("kind", "title", "query", "options")} == {
@@ -351,7 +360,8 @@ def test_every_capacity_row_has_the_column_shape_and_validates(with_gauge):
             assert row[column] == json.dumps(
                 json.loads(row[column]), separators=(",", ":"), sort_keys=True
             )
-        assert set(json.loads(row["query"])) == QUERY_KEYS
+        keys = QUERY_KEYS | ({"formula"} if row["title"] == ABSORPTION_WIDGET_TITLE else set())
+        assert set(json.loads(row["query"])) == keys
         widget = WidgetIn.model_validate(
             {**row, **{c: json.loads(row[c]) for c in ("query", "options", "layout")}}
         )
@@ -377,6 +387,21 @@ def test_the_capacity_queries_and_options():
 
     assert queries == {
         "Utilisation this quarter": query("utilisation", [], "this_quarter"),
+        "Customer absorption this year": {
+            **query("booked_weeks", []),
+            "formula": {
+                "expression": "customer_weeks / (capacity_weeks * 70%)",
+                "terms": [
+                    {
+                        "name": "customer_weeks",
+                        "measure": "booked_weeks",
+                        "filters": {"has_customer": True},
+                    },
+                    {"name": "capacity_weeks", "measure": "capacity_weeks", "filters": {}},
+                ],
+                "result": "percent",
+            },
+        },
         "Booked weeks per team and month": query(
             "booked_weeks",
             [{"kind": "team"}, {"kind": "period", "grain": "month"}],
@@ -391,6 +416,7 @@ def test_the_capacity_queries_and_options():
     }
     assert options == {
         "Utilisation this quarter": {"target": 85},
+        "Customer absorption this year": {"target": 100, "target_is_goal": True},
         "Booked weeks per team and month": {},
         "Booked weeks by site and project": {},
         "Project to team flows": {},
@@ -409,28 +435,6 @@ def _check_grid(layouts):
 
 def test_the_base_capacity_layouts():
     layouts = [json.loads(r["layout"]) for r in _capacity_rows()]
-    assert layouts == [
-        {
-            "lg": {"x": 0, "y": 0, "w": 12, "h": 4},
-            "md": {"x": 0, "y": 0, "w": 8, "h": 4},
-            "sm": {"x": 0, "y": 0, "w": 4, "h": 5},
-        },
-        {
-            "lg": {"x": 0, "y": 4, "w": 6, "h": 5},
-            "md": {"x": 0, "y": 4, "w": 8, "h": 5},
-            "sm": {"x": 0, "y": 5, "w": 4, "h": 5},
-        },
-        {
-            "lg": {"x": 6, "y": 4, "w": 6, "h": 5},
-            "md": {"x": 0, "y": 9, "w": 8, "h": 5},
-            "sm": {"x": 0, "y": 10, "w": 4, "h": 5},
-        },
-    ]
-    _check_grid(layouts)
-
-
-def test_the_demo_capacity_layouts():
-    layouts = [json.loads(r["layout"]) for r in _capacity_rows(with_gauge=True)]
     assert layouts == [
         {
             "lg": {"x": 0, "y": 0, "w": 3, "h": 4},
@@ -456,12 +460,70 @@ def test_the_demo_capacity_layouts():
     _check_grid(layouts)
 
 
+def test_the_demo_capacity_layouts():
+    layouts = [json.loads(r["layout"]) for r in _capacity_rows(with_gauge=True)]
+    assert layouts == [
+        {
+            "lg": {"x": 0, "y": 0, "w": 3, "h": 4},
+            "md": {"x": 0, "y": 0, "w": 4, "h": 4},
+            "sm": {"x": 0, "y": 0, "w": 4, "h": 4},
+        },
+        {
+            "lg": {"x": 0, "y": 4, "w": 3, "h": 5},
+            "md": {"x": 4, "y": 0, "w": 4, "h": 4},
+            "sm": {"x": 0, "y": 4, "w": 4, "h": 4},
+        },
+        {
+            "lg": {"x": 3, "y": 0, "w": 9, "h": 4},
+            "md": {"x": 0, "y": 4, "w": 8, "h": 4},
+            "sm": {"x": 0, "y": 8, "w": 4, "h": 5},
+        },
+        {
+            "lg": {"x": 3, "y": 4, "w": 4, "h": 5},
+            "md": {"x": 0, "y": 8, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 13, "w": 4, "h": 5},
+        },
+        {
+            "lg": {"x": 7, "y": 4, "w": 5, "h": 5},
+            "md": {"x": 0, "y": 13, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 18, "w": 4, "h": 5},
+        },
+    ]
+    _check_grid(layouts)
+
+
+def test_the_absorption_gauge_appended_below_existing_widgets():
+    existing = [json.loads(r["layout"]) for r in _capacity_rows()[1:]]
+    row = absorption_widget_row(existing, 3)
+    assert row["title"] == ABSORPTION_WIDGET_TITLE and row["kind"] == "gauge"
+    assert row["sort_order"] == 3
+    assert json.loads(row["query"]) == json.loads(_capacity_rows()[0]["query"])
+    assert json.loads(row["options"]) == {"target": 100, "target_is_goal": True}
+    layout = json.loads(row["layout"])
+    assert layout == {
+        "lg": {"x": 0, "y": 9, "w": 3, "h": 4},
+        "md": {"x": 0, "y": 14, "w": 4, "h": 4},
+        "sm": {"x": 0, "y": 19, "w": 4, "h": 4},
+    }
+    _check_grid([*existing, layout])
+    # An empty dashboard, and stored layouts that are not what they should be.
+    assert json.loads(absorption_widget_row([], 0)["layout"])["lg"] == {
+        "x": 0,
+        "y": 0,
+        "w": 3,
+        "h": 4,
+    }
+    odd = [{"lg": {"y": "x", "h": 2}}, {"lg": "nothing"}, "junk", {"md": {"y": 3, "h": 1}}]
+    layout = json.loads(absorption_widget_row(odd, 1)["layout"])  # type: ignore[arg-type]
+    assert (layout["lg"]["y"], layout["md"]["y"], layout["sm"]["y"]) == (0, 4, 0)
+
+
 def test_the_capacity_rows_never_touch_the_definitions():
     before = json.dumps(BASE_DASHBOARDS, sort_keys=True)
     capacity_dashboard_rows(with_gauge=True)
     capacity_dashboard_rows()[1][0]["kind"] = "kpi"  # a caller's change stays its own
     base_dashboard_rows(FIELDS)[1][1][0]["title"] = "changed"
     assert json.dumps(BASE_DASHBOARDS, sort_keys=True) == before
-    assert capacity_dashboard_rows()[1][0]["kind"] == "heatmap"
+    assert capacity_dashboard_rows()[1][0]["kind"] == "gauge"
     assert capacity_dashboard_rows(with_gauge=True)[1][0]["kind"] == "gauge"
     assert all(r["kind"] in ("kpi", "bar", "line", "pie") for r in _rows({"Area": 1}))

@@ -11,12 +11,20 @@ seed (``demo_seed.insert_demo_dashboards``). A tenant whose dashboards tables
 already exist gets nothing; an admin may delete or edit either dashboard
 afterwards and nothing brings it back.
 
+"Capacity and flows" opens with the absorption gauge (2.6.0,
+``ABSORPTION_WIDGET``): a calculated widget, customer weeks over 70 % of the
+capacity weeks this year. Its capacity term needs the Staff & Calendar view
+key, so a viewer without it sees the permission note on that tile only; the
+heatmap, treemap and sankey need nothing beyond ``views.dashboards``.
+Instances whose dashboards predate it get it once, at the bottom of the
+built-in "Capacity and flows", from the data migration
+(``tenant_data_migrations``, ``absorption_widget_row``).
+
 The demo adds its extras to the same definitions: the two Overview widgets
 over its "Project type" and "Area" fields (``DEMO_EXTRA_WIDGETS``, through
 ``base_dashboard_rows(field_ids)``) and, first on "Capacity and flows", a
-utilisation gauge (``capacity_dashboard_rows(with_gauge=True)``). The gauge is
-demo-only because its ``utilisation`` measure needs the Staff & Calendar view
-key, which not every role every tenant ships holds.
+utilisation gauge beside the absorption gauge
+(``capacity_dashboard_rows(with_gauge=True)``).
 
 Each widget is ``{kind, title, query, options, layout, sort_order}``: the
 metric ``query`` follows the metric-query spec (measure, dimensions, filters,
@@ -189,11 +197,12 @@ DEMO_EXTRA_WIDGETS: tuple[tuple[str, dict[str, Any]], ...] = (
 )
 
 
-# The second base dashboard: a heatmap, a treemap and a sankey over the
-# booking data, so it needs no project field and no view key beyond
-# views.dashboards. Explicit layouts per breakpoint. The demo puts the
-# utilisation gauge first (_CAPACITY_GAUGE, demo-only) and shifts the
-# others (_DEMO_CAPACITY_LAYOUTS): one definition of each widget, two layouts.
+# The second base dashboard: the absorption gauge (Staff & Calendar), then a
+# heatmap, a treemap and a sankey over the booking data (no project field, no
+# view key beyond views.dashboards). Explicit layouts per breakpoint. The
+# demo puts the utilisation gauge first (_CAPACITY_GAUGE, demo-only) and
+# shifts the others (_DEMO_CAPACITY_LAYOUTS): one definition of each widget,
+# two layouts.
 CAPACITY_DASHBOARD_NAME = "Capacity and flows"
 
 # (kind, title, query, options)
@@ -206,7 +215,33 @@ _CAPACITY_GAUGE: _CapacityWidget = (
     {"target": 85},
 )
 
+# The absorption example (2.6.0): customer weeks over 70 % of the capacity
+# weeks this year; 100 % on the dial means the 70 % goal is met.
+ABSORPTION_WIDGET_TITLE = "Customer absorption this year"
+ABSORPTION_QUERY: dict[str, Any] = {
+    **_query("booked_weeks"),
+    "formula": {
+        "expression": "customer_weeks / (capacity_weeks * 70%)",
+        "terms": [
+            {
+                "name": "customer_weeks",
+                "measure": "booked_weeks",
+                "filters": {"has_customer": True},
+            },
+            {"name": "capacity_weeks", "measure": "capacity_weeks", "filters": {}},
+        ],
+        "result": "percent",
+    },
+}
+_ABSORPTION_GAUGE: _CapacityWidget = (
+    "gauge",
+    ABSORPTION_WIDGET_TITLE,
+    ABSORPTION_QUERY,
+    {"target": 100, "target_is_goal": True},
+)
+
 _CAPACITY_CHARTS: tuple[_CapacityWidget, ...] = (
+    _ABSORPTION_GAUGE,
     (
         "heatmap",
         "Booked weeks per team and month",
@@ -238,21 +273,28 @@ def _box(x: int, y: int, w: int, h: int) -> dict[str, int]:
     return {"x": x, "y": y, "w": w, "h": h}
 
 
-# Heatmap, treemap, sankey: the heatmap across the top, the two others side
-# by side below it on lg, stacked on md and sm.
+# Absorption gauge, heatmap, treemap, sankey: the gauge, the heatmap beside
+# it, the two others side by side below on lg, stacked on md and sm.
 _CAPACITY_LAYOUTS: tuple[dict[str, dict[str, int]], ...] = (
-    {"lg": _box(0, 0, 12, 4), "md": _box(0, 0, 8, 4), "sm": _box(0, 0, 4, 5)},
-    {"lg": _box(0, 4, 6, 5), "md": _box(0, 4, 8, 5), "sm": _box(0, 5, 4, 5)},
-    {"lg": _box(6, 4, 6, 5), "md": _box(0, 9, 8, 5), "sm": _box(0, 10, 4, 5)},
-)
-
-# The demo's: the gauge, then the heatmap beside it, then as above.
-_DEMO_CAPACITY_LAYOUTS: tuple[dict[str, dict[str, int]], ...] = (
     {"lg": _box(0, 0, 3, 4), "md": _box(0, 0, 4, 4), "sm": _box(0, 0, 4, 4)},
     {"lg": _box(3, 0, 9, 4), "md": _box(4, 0, 4, 4), "sm": _box(0, 4, 4, 5)},
     {"lg": _box(0, 4, 6, 5), "md": _box(0, 4, 8, 5), "sm": _box(0, 9, 4, 5)},
     {"lg": _box(6, 4, 6, 5), "md": _box(0, 9, 8, 5), "sm": _box(0, 14, 4, 5)},
 )
+
+# The demo's: the utilisation gauge above the absorption gauge on lg, the
+# heatmap beside them, the treemap and the sankey below.
+_DEMO_CAPACITY_LAYOUTS: tuple[dict[str, dict[str, int]], ...] = (
+    {"lg": _box(0, 0, 3, 4), "md": _box(0, 0, 4, 4), "sm": _box(0, 0, 4, 4)},
+    {"lg": _box(0, 4, 3, 5), "md": _box(4, 0, 4, 4), "sm": _box(0, 4, 4, 4)},
+    {"lg": _box(3, 0, 9, 4), "md": _box(0, 4, 8, 4), "sm": _box(0, 8, 4, 5)},
+    {"lg": _box(3, 4, 4, 5), "md": _box(0, 8, 8, 5), "sm": _box(0, 13, 4, 5)},
+    {"lg": _box(7, 4, 5, 5), "md": _box(0, 13, 8, 5), "sm": _box(0, 18, 4, 5)},
+)
+
+# The absorption gauge appended to an existing "Capacity and flows" (the
+# data migration): this size, at the left, under every other widget.
+ABSORPTION_APPEND_SIZE: dict[str, tuple[int, int]] = {"lg": (3, 4), "md": (4, 4), "sm": (4, 4)}
 
 
 def _capacity_widgets(with_gauge: bool) -> list[dict[str, Any]]:
@@ -267,8 +309,8 @@ def _capacity_widgets(with_gauge: bool) -> list[dict[str, Any]]:
 CAPACITY_DASHBOARD: dict[str, Any] = {
     "name": CAPACITY_DASHBOARD_NAME,
     "description": (
-        "Booked time per team and month, where each site's time goes and which teams "
-        "work on which projects."
+        "Customer absorption against its goal, booked time per team and month, where each "
+        "site's time goes and which teams work on which projects."
     ),
     "visibility": "everyone",
     "is_default": False,
@@ -365,3 +407,27 @@ def base_dashboard_rows(
     to the Overview; "Capacity and flows" is always the gauge-less base one.
     """
     return [overview_rows(field_ids), capacity_dashboard_rows()]
+
+
+def absorption_widget_row(layouts: list[dict[str, Any]], sort_order: int) -> dict[str, Any]:
+    """
+    The absorption gauge as a ``dashboard_widgets`` row appended to an
+    existing "Capacity and flows" whose widgets have ``layouts``: at the left,
+    below the lowest widget of each breakpoint (worked out here, never left
+    to the client's compaction), with ``sort_order``.
+    """
+    layout: dict[str, dict[str, int]] = {}
+    for breakpoint, (w, h) in ABSORPTION_APPEND_SIZE.items():
+        bottom = 0
+        for existing in layouts:
+            box = existing.get(breakpoint) if isinstance(existing, dict) else None
+            if isinstance(box, dict):
+                try:
+                    bottom = max(bottom, int(box.get("y", 0)) + int(box.get("h", 0)))
+                except (TypeError, ValueError):
+                    continue
+        layout[breakpoint] = _box(0, bottom, w, h)
+    kind, title, query, options = _ABSORPTION_GAUGE
+    return _widget_row(
+        _widget(kind, title, copy.deepcopy(query), layout, sort_order, copy.deepcopy(options))
+    )
