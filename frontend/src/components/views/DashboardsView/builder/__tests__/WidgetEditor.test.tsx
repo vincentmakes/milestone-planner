@@ -33,9 +33,13 @@ import {
 import { optionLabel, pickerOptions, pickerTrigger, pickOption } from '@/test/searchableSelect';
 import { dateValue, pickRange } from '@/test/datePicker';
 import type { MetricQuery, MetricResult } from '@/types';
+import { formatMetric } from '@/utils/metrics';
 import type { PermissionKey } from '@/types/permissions';
 import {
   CAPACITY_HINT,
+  FIX_FORMULA,
+  LEAVE_CALCULATION,
+  STALE_PREVIEW,
   EQUIPMENT_AVAILABILITY_HINT,
   KPI_BUCKET_REQUIRED,
   PREVIEW_DELAY_MS,
@@ -46,6 +50,8 @@ import {
 } from '../WidgetEditor';
 import { NEGATIVE_PIE_PROBLEM, RATIO_HIERARCHY_PROBLEM } from '../widgetDraft';
 import type { DraftWidget } from '../widgetDraft';
+import { CAPACITY_EXAMPLE_HINT, MAX_TERMS_HINT } from '../CalculationSection';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
   dashboardsApi: {
@@ -99,6 +105,9 @@ const dimension1 = () => pickerTrigger(/^Dimension 1/);
 const dimensionLabels = (n: 1 | 2) => pickerOptions(new RegExp(`^Dimension ${n}`)).map(optionLabel);
 const periodSelect = () => screen.getByRole('combobox', { name: 'Period' });
 const saveButton = (name = 'Add widget') => screen.getByRole('button', { name });
+/** The switches of the display options (the Calculation switch left out). */
+const displaySwitches = () =>
+  screen.queryAllByRole('switch').filter((el) => el !== screen.queryByRole('switch', { name: 'Calculation' }));
 const lastQuery = (): MetricQuery => api.query.mock.calls[api.query.mock.calls.length - 1][0];
 const measureSelect = () => screen.getByLabelText('Measure') as HTMLSelectElement;
 const setMeasure = (value: string) => fireEvent.change(measureSelect(), { target: { value } });
@@ -527,7 +536,7 @@ describe('WidgetEditor — measure families', () => {
       ['Bookings', ['Booked days', 'Booked weeks', 'Bookings', 'People booked']],
       ['Projects', ['Projects', 'Project weeks', 'Project volume']],
       ['Phases', ['Phases', 'Phase weeks', 'Phases due', 'Phases overdue']],
-      ['Capacity', ['Capacity (days)', 'Available days', 'Utilisation', 'People over capacity']],
+      ['Capacity', ['Capacity (days)', 'Capacity (weeks)', 'Available days', 'Utilisation', 'People over capacity']],
       [
         'Equipment',
         ['Equipment booked days', 'Equipment bookings', 'Equipment booked', 'Equipment utilisation'],
@@ -1148,7 +1157,7 @@ describe('WidgetEditor — gauge, heatmap, treemap and sankey', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(/needs (one or )?two dimensions/);
       c.dims.forEach((label, i) => pickOption(new RegExp(`^Dimension ${i + 1}`), label));
       expect(screen.queryByLabelText('Target')).not.toBeInTheDocument();
-      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+      expect(displaySwitches()).toEqual([]);
       fireEvent.change(screen.getByLabelText('Number format'), { target: { value: 'decimal' } });
       fireEvent.click(saveButton());
       expect(onSave.mock.calls[0][0]).toMatchObject({
@@ -1315,7 +1324,7 @@ describe('WidgetEditor — options and save', () => {
     expect(onSave.mock.calls[1][0].options).toEqual({ show_legend: true });
 
     fireEvent.click(screen.getByRole('radio', { name: 'Table' }));
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(displaySwitches()).toEqual([]);
     expect(screen.getByLabelText('Number format')).toBeInTheDocument();
   });
 
@@ -1406,86 +1415,388 @@ describe('WidgetEditor — options and save', () => {
 describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.0)', () => {
   const chooseKind = (name: string) => fireEvent.click(screen.getByRole('radio', { name }));
   const setTitle = (value: string) => fireEvent.change(screen.getByLabelText('Title *'), { target: { value } });
-  const divideBy = () => screen.getByLabelText('Divide by') as HTMLSelectElement;
-  const setDivideBy = (value: string) => fireEvent.change(divideBy(), { target: { value } });
   const target = () => screen.getByLabelText('Target') as HTMLInputElement;
   const percentSwitch = () => screen.getByRole('switch', { name: 'Show as % of target' });
-  const divisorSection = () => screen.getByRole('region', { name: 'Calculated widget' });
+  const calculation = () => screen.getByRole('switch', { name: 'Calculation' });
+  const section = () => within(screen.getByRole('region', { name: 'Calculation' }));
+  const formulaField = () => screen.getByLabelText('Formula') as HTMLInputElement;
+  const typeFormula = (value: string) => fireEvent.change(formulaField(), { target: { value } });
+  const termMeasure = (name: string) => screen.getByRole('combobox', { name: `Measure of term ${name}` });
+  const termName = (name: string) => screen.getByRole('textbox', { name: `Name of term ${name}` });
+  const calcResult = (extra: Partial<MetricResult> = {}): MetricResult =>
+    result([{ keys: [], value: 50 }], {
+      unit: 'percent',
+      total: 50,
+      terms: [
+        { name: 'a', value: 412, unit: 'weeks' },
+        { name: 'b', value: 824, unit: 'weeks' },
+      ],
+      ...extra,
+    });
 
-  it('offers Divide by on a KPI, a gauge, a bar and a line of a summed or counted measure only', () => {
+  it('offers Calculation on a KPI, a gauge, a bar, a line, a table and a heatmap only', () => {
     renderEditor();
-    expect(divideBy()).toHaveValue('');
-    for (const kind of ['KPI', 'Gauge', 'Line']) {
+    for (const kind of ['KPI', 'Gauge', 'Line', 'Table', 'Heatmap', 'Bar']) {
       chooseKind(kind);
-      expect(divideBy()).toBeInTheDocument();
+      expect(calculation()).not.toBeChecked();
     }
-    for (const kind of ['Pie', 'Heatmap', 'Treemap', 'Sankey', 'Table']) {
+    for (const kind of ['Pie', 'Treemap', 'Sankey']) {
       chooseKind(kind);
-      expect(screen.queryByLabelText('Divide by')).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Calculation' })).not.toBeInTheDocument();
     }
-    chooseKind('Bar');
-    setMeasure('utilisation');
-    expect(screen.queryByLabelText('Divide by')).not.toBeInTheDocument();
   });
 
-  it('divides by another measure with its own filters, by period only, and saves the divisor', async () => {
-    const { onSave } = renderEditor();
-    setTitle('Customer share');
-    pickOption(/^Dimension 1/, 'Site');
-    setDivideBy('capacity_days');
-    // A calculated widget is broken down by period only: the site goes, no Percent of / Top N.
-    expect(dimension1()).toHaveTextContent('None');
-    expect(dimensionLabels(1)).toEqual(['None', 'Period']);
-    expect(screen.queryByLabelText('Top N')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
-    expect(divideBy()).toHaveAccessibleDescription(
-      'The measure above divided by this one, over the same period and buckets'
-    );
-    // The divisor lists only divisible measures.
-    const divisorOptions = Array.from(divideBy().querySelectorAll('option')).map((o) => o.value);
-    expect(divisorOptions).toContain('capacity_days');
-    expect(divisorOptions).not.toContain('utilisation');
-    // The measure list keeps only divisible measures while dividing.
-    expect(measureGroups().flatMap(([, labels]) => labels)).not.toContain('Utilisation');
-
-    pickOption(/^Dimension 1/, 'Period');
-    fireEvent.change(screen.getByLabelText('Result'), { target: { value: 'number' } });
-    const section = within(divisorSection());
-    fireEvent.click(section.getByRole('button', { name: 'Divisor filters' }));
+  it('starts with nothing to type: term a is the widget, b its capacity, a / b as a percentage', async () => {
+    api.query.mockResolvedValue(calcResult());
+    renderEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     pickOption(/^Teams/, 'Analytics');
-    expect(section.getByRole('button', { name: 'Divisor filters (1)' })).toBeInTheDocument();
+    fireEvent.click(calculation());
+    // The top measure and filters give way to the terms.
+    expect(screen.queryByRole('combobox', { name: 'Measure' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Filters( \(|$)/ })).not.toBeInTheDocument();
+    expect(termMeasure('a')).toHaveValue('booked_weeks');
+    expect(termMeasure('b')).toHaveValue('capacity_weeks');
+    expect(formulaField()).toHaveValue('a / b');
+    expect(screen.getByLabelText('Result')).toHaveValue('percent');
+    expect(section().getByRole('button', { name: /^Filters of term a: 1 filter: Team Analytics$/ })).toBeInTheDocument();
+    expect(section().getByText('Booked weeks (team Analytics) ÷ Capacity (weeks)')).toBeInTheDocument();
     await flushPreview();
     expect(lastQuery()).toEqual({
       measure: 'booked_weeks',
-      dimensions: [{ kind: 'period', grain: 'month' }],
       filters: { period: { relative: 'this_year' } },
-      divide_by: { measure: 'capacity_days', filters: { team_ids: [5] }, result: 'number' },
+      formula: {
+        expression: 'a / b',
+        terms: [
+          { name: 'a', measure: 'booked_weeks', filters: { team_ids: [5] } },
+          { name: 'b', measure: 'capacity_weeks' },
+        ],
+      },
     });
-    fireEvent.click(saveButton());
-    expect(onSave.mock.calls[0][0].query.divide_by).toEqual({
-      measure: 'capacity_days',
-      filters: { team_ids: [5] },
-      result: 'number',
-    });
-
-    // Back to a percentage, then nothing: the plain widget again.
-    fireEvent.change(screen.getByLabelText('Result'), { target: { value: 'percent' } });
-    await flushPreview();
-    expect(lastQuery().divide_by).toEqual({ measure: 'capacity_days', filters: { team_ids: [5] } });
-    setDivideBy('');
-    await flushPreview();
-    expect(lastQuery().divide_by).toBeUndefined();
-    expect(screen.queryByLabelText('Result')).not.toBeInTheDocument();
+    // The live values of each term and of the result, and the result's examples.
+    expect(section().getByText('a = 412.0 weeks')).toBeInTheDocument();
+    expect(section().getByText('b = 824.0 weeks')).toBeInTheDocument();
+    const fifty = formatMetric(50, 'percent');
+    expect(section().getByRole('status').textContent).toBe(`= ${fifty}`);
+    const resultOptions = Array.from((screen.getByLabelText('Result') as HTMLSelectElement).options).map((o) => o.text);
+    expect(resultOptions).toEqual([`Percentage (${fifty})`, 'Number (0.50)']);
   });
 
-  it('drops a divisor on a kind that does not divide, and gives a calculated KPI no dimension', async () => {
+  it('pairs booked weeks with themselves without Staff & Calendar, and lists only term measures', () => {
+    signIn([...BASE]);
     renderEditor();
-    setDivideBy('booked_days');
+    fireEvent.click(calculation());
+    expect(termMeasure('b')).toHaveValue('booked_weeks');
+    const values = Array.from(termMeasure('a').querySelectorAll('option')).map((o) => o.getAttribute('value'));
+    expect(values).toContain('project_count');
+    expect(values).not.toContain('utilisation');
+    expect(values).not.toContain('capacity_weeks');
+  });
+
+  it('renames a term and its references, refusing a bad or a repeated name', async () => {
+    renderEditor();
+    fireEvent.click(calculation());
+    typeFormula('a / (b + A)');
+    fireEvent.change(termName('a'), { target: { value: 'Customer_Weeks' } });
+    expect(formulaField()).toHaveValue('customer_weeks / (b + customer_weeks)');
+    expect(termName('customer_weeks')).toHaveValue('Customer_Weeks');
+    fireEvent.change(termName('customer_weeks'), { target: { value: '1x' } });
+    expect(screen.getByText(/A term name is a lowercase word/)).toBeInTheDocument();
+    expect(formulaField()).toHaveValue('customer_weeks / (b + customer_weeks)');
+    fireEvent.change(termName('customer_weeks'), { target: { value: 'b' } });
+    expect(screen.getByText('Two terms are named "b"')).toBeInTheDocument();
+    // Leaving the field shows the name in use again.
+    fireEvent.blur(termName('customer_weeks'));
+    expect(termName('customer_weeks')).toHaveValue('customer_weeks');
+    await flushPreview();
+    expect(lastQuery().formula?.terms.map((t) => t.name)).toEqual(['customer_weeks', 'b']);
+  });
+
+  it('inserts a term or an operator at the cursor and keeps the focus in the field', () => {
+    renderEditor();
+    fireEvent.click(calculation());
+    const field = formulaField();
+    field.focus();
+    field.setSelectionRange(1, 1);
+    fireEvent.select(field);
+    const bar = within(screen.getByRole('toolbar', { name: 'Insert into the formula' }));
+    fireEvent.mouseDown(bar.getByRole('button', { name: 'Insert times' }));
+    fireEvent.click(bar.getByRole('button', { name: 'Insert times' }));
+    // No doubled space beside the one already there.
+    expect(field).toHaveValue('a × / b');
+    expect(document.activeElement).toBe(field);
+    expect(field.selectionStart).toBe(3);
+    fireEvent.click(bar.getByRole('button', { name: 'Insert term b (Capacity (weeks))' }));
+    expect(field).toHaveValue('a × b / b');
+    for (const name of ['plus', 'minus', 'divided by', 'opening bracket', 'closing bracket', 'percent']) {
+      fireEvent.click(bar.getByRole('button', { name: `Insert ${name}` }));
+    }
+    expect(field).toHaveValue('a × b + - ÷()% / b');
+    // At the end of a name, a name is glued with a space.
+    typeFormula('a');
+    field.setSelectionRange(1, 1);
+    fireEvent.keyUp(field);
+    fireEvent.click(bar.getByRole('button', { name: 'Insert term b (Capacity (weeks))' }));
+    expect(field).toHaveValue('a b');
+  });
+
+  it('opens a term’s filters in place and sums them up on its row', async () => {
+    renderEditor();
+    fireEvent.click(calculation());
+    const opener = section().getByRole('button', { name: 'Filters of term b: No filters' });
+    expect(opener).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(opener);
+    expect(opener).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('group', { name: 'Filters of term b' })).toBeInTheDocument();
+    pickOption(/^Teams/, 'Process');
+    expect(section().getByRole('button', { name: 'Filters of term b: 1 filter: Team Process' })).toBeInTheDocument();
+    fireEvent.click(section().getByRole('button', { name: /^Filters of term b/ }));
+    expect(screen.queryByRole('group', { name: 'Filters of term b' })).not.toBeInTheDocument();
+    await flushPreview();
+    expect(lastQuery().formula?.terms[1]).toEqual({ name: 'b', measure: 'capacity_weeks', filters: { team_ids: [6] } });
+  });
+
+  it('names the problem under the formula, keeps the last result dimmed and blocks Save', async () => {
+    api.query.mockResolvedValue(calcResult());
+    renderEditor();
+    setTitle('Absorption');
+    fireEvent.click(calculation());
+    await flushPreview();
+    const calls = api.query.mock.calls.length;
+    typeFormula('a / capcity');
+    expect(formulaField()).toHaveAccessibleDescription('"capcity" is not one of your terms: a, b');
+    expect(formulaField()).toHaveValue('a / capcity');
+    expect(screen.getByText(STALE_PREVIEW)).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
+    expect(saveButton()).toHaveAttribute('title', '"capcity" is not one of your terms: a, b');
+    await flushPreview();
+    expect(api.query.mock.calls.length).toBe(calls);
+    typeFormula('(a');
+    expect(formulaField()).toHaveAccessibleDescription('Missing closing bracket )');
+    typeFormula('a * 0,7');
+    expect(formulaField()).toHaveAccessibleDescription('Use a point for decimals: 0.7');
+    typeFormula('a');
+    expect(formulaField()).toHaveAccessibleDescription('Term b is not used in the formula: use it or remove it');
+    typeFormula('a ÷ b');
+    expect(formulaField()).toHaveAccessibleDescription(/Term names, numbers/);
+    expect(screen.queryByText(STALE_PREVIEW)).not.toBeInTheDocument();
+    expect(saveButton()).toBeEnabled();
+  });
+
+  it('asks to fix the formula when no result came yet', () => {
+    renderEditor();
+    fireEvent.click(calculation());
+    typeFormula('a /');
+    expect(screen.getByText(FIX_FORMULA)).toBeInTheDocument();
+  });
+
+  it('shows "–" with the reason when the result has no value', async () => {
+    api.query.mockResolvedValue(
+      calcResult({
+        total: null,
+        terms: [
+          { name: 'a', value: 5, unit: 'weeks' },
+          { name: 'b', value: 0, unit: 'weeks' },
+        ],
+      })
+    );
+    renderEditor();
+    fireEvent.click(calculation());
+    await flushPreview();
+    expect(section().getByRole('status')).toHaveTextContent('= – (Capacity (weeks) is 0 in this period)');
+    expect(section().getByText('b = 0.0 weeks')).toBeInTheDocument();
+  });
+
+  it('adds terms up to six, removes them, and offers Use its total with a breakdown', async () => {
+    const { onSave } = renderEditor();
+    setTitle('Mix');
+    fireEvent.click(calculation());
+    const add = section().getByRole('button', { name: 'Add term' });
+    for (let i = 0; i < 4; i += 1) fireEvent.click(add);
+    expect(termMeasure('f')).toHaveValue('booked_weeks');
+    expect(add).toBeDisabled();
+    expect(section().getByText(MAX_TERMS_HINT)).toBeInTheDocument();
+    expect(formulaField()).toHaveAccessibleDescription('Term c is not used in the formula: use it or remove it');
+    for (const name of ['f', 'e', 'd', 'c']) fireEvent.click(section().getByRole('button', { name: `Remove term ${name}` }));
+    expect(add).toBeEnabled();
+    // No total switch without a breakdown beyond the period.
+    expect(screen.queryByRole('switch', { name: /Use the total/ })).not.toBeInTheDocument();
+    pickOption(/^Dimension 1/, 'Project');
+    // Capacity has no project: term b uses its total, and must.
+    const totalB = () => screen.getByRole('switch', { name: 'Use the total of term b' });
+    expect(totalB()).toBeChecked();
+    expect(totalB()).toBeDisabled();
+    expect(screen.getByText('Capacity (weeks) has no Project: it uses its total')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Use the total of term a' })).not.toBeChecked();
+    pickOption(/^Dimension 1/, 'Team');
+    // Capacity has a team: the switch is free again, starting from its total.
+    expect(totalB()).toBeEnabled();
+    fireEvent.click(totalB());
+    expect(totalB()).not.toBeChecked();
+    fireEvent.click(totalB());
+    expect(totalB()).toBeChecked();
+    // The bar is never stacked; Top N ranks the formula's values, no Percent of.
+    expect(screen.queryByRole('switch', { name: 'Stacked' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Top N'), { target: { value: '3' } });
+    fireEvent.change(termMeasure('a'), { target: { value: 'booked_days' } });
+    fireEvent.change(screen.getByLabelText('Result'), { target: { value: 'number' } });
+    await flushPreview();
+    fireEvent.click(saveButton());
+    expect(onSave.mock.calls[0][0].query).toEqual({
+      measure: 'booked_days',
+      dimensions: [{ kind: 'team' }],
+      filters: { period: { relative: 'this_year' } },
+      top_n: 3,
+      formula: {
+        expression: 'a / b',
+        result: 'number',
+        terms: [
+          { name: 'a', measure: 'booked_days' },
+          { name: 'b', measure: 'capacity_weeks', total: true },
+        ],
+      },
+    });
+    // A single term cannot be removed.
+    fireEvent.click(section().getByRole('button', { name: 'Remove term b' }));
+    expect(section().getByRole('button', { name: 'Remove term a' })).toBeDisabled();
+  });
+
+  it('offers a dimension one term accepts, and the period only when every term does', () => {
+    renderEditor();
+    fireEvent.click(calculation());
+    expect(dimensionLabels(1)).toContain('Project');
+    expect(dimensionLabels(1)).toContain('Period');
+    expect(dimensionLabels(1)).not.toContain('Equipment');
+    fireEvent.change(termMeasure('b'), { target: { value: 'project_volume' } });
+    expect(dimensionLabels(1)).not.toContain('Period');
+  });
+
+  it('replaces the calculation by an example, asking first only when it was customised', async () => {
+    const confirm = stubConfirm(false);
+    renderEditor();
+    fireEvent.click(calculation());
+    const trigger = section().getByRole('button', { name: 'Examples' });
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = within(screen.getByRole('menu', { name: 'Formula examples' }));
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
+      'Ratio of two measuresa / b',
+      'Share of capacitya / b',
+      'Against a goala / (b * 70%)',
+      'Differencea - b',
+      'Suma + b',
+    ]);
+    await act(async () => {
+      fireEvent.click(menu.getByRole('menuitem', { name: /Against a goal/ }));
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(formulaField()).toHaveValue('a / (b * 70%)');
+    expect(section().getByText('Booked weeks (has a customer) ÷ (Capacity (weeks) × 70 %)')).toBeInTheDocument();
+    // Now customised: a cancelled confirmation keeps it.
+    fireEvent.click(trigger);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /^Sum/ }));
+    });
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('“Sum”') }));
+    expect(formulaField()).toHaveValue('a / (b * 70%)');
+    stubConfirm(true);
+    fireEvent.click(trigger);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /^Difference/ }));
+    });
+    expect(formulaField()).toHaveValue('a - b');
+    expect(screen.getByLabelText('Result')).toHaveValue('number');
+    // Escape closes the menu.
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('greys out the capacity examples without Staff & Calendar', () => {
+    signIn([...BASE]);
+    renderEditor();
+    fireEvent.click(calculation());
+    fireEvent.click(section().getByRole('button', { name: 'Examples' }));
+    expect(screen.getByRole('menuitem', { name: /Share of capacity/ })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /Against a goal/ })).toHaveAttribute('title', CAPACITY_EXAMPLE_HINT);
+    expect(screen.getByRole('menuitem', { name: /^Sum/ })).toBeEnabled();
+  });
+
+  it('turns off back to term a, asking first only when the calculation was customised', async () => {
+    const confirm = stubConfirm(false);
+    renderEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    pickOption(/^Teams/, 'Analytics');
+    fireEvent.click(calculation());
+    await act(async () => {
+      fireEvent.click(calculation());
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Measure')).toHaveValue('booked_weeks');
+    expect(screen.getByRole('button', { name: 'Filters (1)' })).toBeInTheDocument();
+    fireEvent.click(calculation());
+    typeFormula('a / b * 2');
+    await act(async () => {
+      fireEvent.click(calculation());
+    });
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: LEAVE_CALCULATION }));
+    expect(calculation()).toBeChecked();
+    stubConfirm(true);
+    await act(async () => {
+      fireEvent.click(calculation());
+    });
+    expect(calculation()).not.toBeChecked();
+    await flushPreview();
+    expect(lastQuery()).toEqual({
+      measure: 'booked_weeks',
+      filters: { team_ids: [5], period: { relative: 'this_year' } },
+    });
+  });
+
+  it('drops the calculation on a pie, keeping term a, and gives a calculated KPI no dimension', async () => {
+    renderEditor();
+    fireEvent.click(calculation());
     chooseKind('KPI');
     expect(screen.queryByRole('button', { name: /^Dimension 1/ })).not.toBeInTheDocument();
-    chooseKind('Table');
+    chooseKind('Pie');
+    expect(screen.queryByRole('switch', { name: 'Calculation' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Measure')).toHaveValue('booked_weeks');
+    chooseKind('Bar');
+    expect(calculation()).not.toBeChecked();
     await flushPreview();
-    expect(lastQuery().divide_by).toBeUndefined();
+    expect(lastQuery().formula).toBeUndefined();
+  });
+
+  it('opens a stored calculated widget with its terms', async () => {
+    const stored: DraftWidget = {
+      id: 9,
+      clientId: 'w9',
+      kind: 'gauge',
+      title: 'Customer absorption this year',
+      query: {
+        measure: 'booked_weeks',
+        filters: { period: { relative: 'this_year' } },
+        formula: {
+          expression: 'customer_weeks / (capacity_weeks * 70%)',
+          terms: [
+            { name: 'customer_weeks', measure: 'booked_weeks', filters: { has_customer: true } },
+            { name: 'capacity_weeks', measure: 'capacity_weeks' },
+          ],
+        },
+      },
+      options: { target: 100, target_is_goal: true },
+      layout: { lg: { x: 0, y: 0, w: 3, h: 4 }, md: { x: 0, y: 0, w: 4, h: 4 }, sm: { x: 0, y: 0, w: 4, h: 4 } },
+    };
+    renderEditor({ widget: stored });
+    expect(calculation()).toBeChecked();
+    expect(termMeasure('customer_weeks')).toHaveValue('booked_weeks');
+    expect(
+      section().getByText('Booked weeks (has a customer) ÷ (Capacity (weeks) × 70 %)')
+    ).toBeInTheDocument();
+    await flushPreview();
+    expect(lastQuery().formula?.expression).toBe('customer_weeks / (capacity_weeks * 70%)');
   });
 
   it('keeps a target on a KPI and shows it as a percentage of the target only with one above 0', async () => {

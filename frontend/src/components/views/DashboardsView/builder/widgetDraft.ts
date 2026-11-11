@@ -21,11 +21,16 @@
  * added up into boxes or flows — `RATIO_HIERARCHY_PROBLEM`). The server
  * enforces none of the dimension counts; the builder refuses them.
  *
- * A calculated widget (2.6.0, `query.divide_by`) divides a summed or counted
- * measure by another (`isDivisible`), each with its own filters, over the
- * numerator's period: only a KPI, a gauge (no dimension), a bar or a line
- * (no dimension, or one period dimension both measures accept) offer it
- * (`RATIO_KINDS`), never with *Percent of*, *Top N* or a stack. A KPI and a
+ * A calculated widget (2.6.0, `query.formula`) combines named terms — each a
+ * summed or counted measure (`isTermMeasure`) with its own filters — with a
+ * formula (`utils/formula.ts`), over the widget's period: a KPI and a gauge
+ * (no dimension), a bar, a line, a table and a heatmap offer it
+ * (`FORMULA_KINDS`; a pie, a treemap and a sankey add their values up, which
+ * a formula's do not). A dimension stays while at least one term accepts it
+ * (the period only while every term does); a term that refuses it uses its
+ * total (`total`). Never with *Percent of* or a stack; *Top N* ranks the
+ * formula's values. The top-level measure is the first term's and the
+ * top-level filters carry only the period (`normaliseFormula`). A KPI and a
  * gauge keep a target, and may show their value as a percentage of it
  * (`percent_of_target`, only with a target above 0).
  */
@@ -36,9 +41,10 @@ import type {
   DimensionKind,
   Measure,
   MetricDimension,
-  MetricDivisor,
   MetricFilters,
+  MetricFormula,
   MetricQuery,
+  MetricTerm,
   WidgetKind,
   WidgetLayout,
   WidgetOptions,
@@ -46,8 +52,9 @@ import type {
 import {
   dimensionNeeds,
   filterNeeds,
-  isDivisible,
+  isTermMeasure,
   isValidDimension,
+  measureNeeds,
   NO_PERCENT_MEASURES,
   queryUnit,
   takesFilter,
@@ -142,15 +149,22 @@ export const MIN_DIMENSIONS: Readonly<Record<WidgetKind, number>> = {
  */
 export const SUMMED_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(['treemap', 'sankey']);
 
-/** The kinds that may show a calculated widget (`divide_by`): one number, or one per period. */
-export const RATIO_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(['kpi', 'gauge', 'bar', 'line']);
+/** The kinds that may show a calculated widget (`formula`): not those whose values must add up. */
+export const FORMULA_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>([
+  'kpi',
+  'gauge',
+  'bar',
+  'line',
+  'table',
+  'heatmap',
+]);
 
 /** The kinds that show one number against an optional target (and may show it as % of the target). */
 export const TARGET_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(['gauge', 'kpi']);
 
-/** Whether a widget of `kind` may divide `measure` by another one. */
-export function offersDivide(kind: WidgetKind, measure: Measure): boolean {
-  return RATIO_KINDS.has(kind) && isDivisible(measure);
+/** Whether a widget of `kind` may be a calculation. */
+export function offersFormula(kind: WidgetKind): boolean {
+  return FORMULA_KINDS.has(kind);
 }
 
 let lastClientId = 0;
@@ -202,36 +216,56 @@ export function noDimensionKind(kind: WidgetKind, measure: Measure, divided = fa
   return MAX_DIMENSIONS[kind] === 0 || (kind === 'kpi' && (divided || NO_PERCENT_MEASURES.has(measure)));
 }
 
-/** The divisor's own filters made valid for its measure (it never has a period: the numerator's applies). */
-function divisorFilters(divisor: MetricDivisor): MetricDivisor['filters'] {
-  const filters = filtersFor(divisor.measure, { ...(divisor.filters ?? {}) } as MetricFilters);
-  if (!filters) return {};
+/** A term's own filters made valid for its measure (never a period: the widget's applies). */
+function termFilters(term: MetricTerm): MetricTerm['filters'] {
+  const filters = filtersFor(term.measure, { ...(term.filters ?? {}) } as MetricFilters) ?? {};
   const rest = { ...filters };
   delete rest.period;
   return rest;
 }
 
+/** Whether a dimension other than the period is set. */
+const splitsBeyondPeriod = (dimensions: readonly MetricDimension[]): boolean =>
+  dimensions.some((d) => d.kind !== 'period');
+
 /**
- * A calculated query made consistent: kept only on a kind that offers it and
- * two divisible measures; then no dimension but one period both measures
- * accept (none on a KPI or a gauge), no percentage, no top N, and the
- * divisor's filters those its measure takes.
+ * A calculated query made consistent, or null when its kind offers none: the
+ * measure is the first term's, the top-level filters only the period, no
+ * percentage; a dimension stays while at least one term accepts it (the
+ * period while every term does); a term that refuses a kept dimension uses
+ * its total, and without a dimension beyond the period no term does; each
+ * term keeps the filters its measure takes; Top N needs a first dimension
+ * that is not a period.
  */
-function normaliseDivided(kind: WidgetKind, query: MetricQuery): MetricQuery | null {
-  const divisor = query.divide_by;
-  if (!divisor) return null;
-  if (!offersDivide(kind, query.measure) || !isDivisible(divisor.measure)) return null;
+export function normaliseFormula(kind: WidgetKind, query: MetricQuery): MetricQuery | null {
+  const formula = query.formula;
+  if (!formula || formula.terms.length === 0 || !offersFormula(kind)) return null;
+  const terms = formula.terms.map((term) => ({ ...term, filters: termFilters(term) }));
   const dimensions = (query.dimensions ?? [])
-    .filter((d) => d.kind === 'period' && isValidDimension(query.measure, 'period') && isValidDimension(divisor.measure, 'period'))
-    .slice(0, noDimensionKind(kind, query.measure, true) ? 0 : 1);
-  const filters = filtersFor(query.measure, query.filters);
+    .filter((d) =>
+      d.kind === 'period'
+        ? terms.every((t) => isValidDimension(t.measure, 'period'))
+        : terms.some((t) => isValidDimension(t.measure, d.kind))
+    )
+    .slice(0, noDimensionKind(kind, terms[0].measure, true) ? 0 : MAX_DIMENSIONS[kind]);
+  const split = splitsBeyondPeriod(dimensions);
+  const shaped = terms.map((term) => {
+    const refuses = dimensions.some((d) => d.kind !== 'period' && !isValidDimension(term.measure, d.kind));
+    const next: MetricTerm = { ...term };
+    if (split && (refuses || term.total)) next.total = true;
+    else delete next.total;
+    return next;
+  });
+  const period = query.filters?.period;
+  const topN = dimensions.length === 0 || dimensions[0].kind === 'period' ? null : query.top_n ?? null;
   return {
     ...query,
-    ...(filters ? { filters } : {}),
+    measure: shaped[0].measure,
+    filters: period ? { period } : {},
     dimensions,
     percent_of: null,
-    top_n: null,
-    divide_by: { ...divisor, filters: divisorFilters(divisor) },
+    top_n: topN,
+    formula: { ...formula, terms: shaped },
   };
 }
 
@@ -249,13 +283,11 @@ export const kpiWithoutDimension = noDimensionKind;
  * needs a first dimension that is not a period.
  */
 export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuery {
-  const divided = normaliseDivided(kind, query);
-  if (divided) return divided;
-  if (query.divide_by) {
-    // A kind or a measure that does not divide: the plain widget of the numerator.
-    const plain = { ...query };
-    delete plain.divide_by;
-    return normaliseQuery(kind, plain);
+  const calculated = normaliseFormula(kind, query);
+  if (calculated) return calculated;
+  if (query.formula) {
+    // A kind that offers no calculation: the plain widget of the first term.
+    return normaliseQuery(kind, endFormula(query));
   }
   const noPercent = NO_PERCENT_MEASURES.has(query.measure);
   const dimensions = (query.dimensions ?? [])
@@ -288,21 +320,29 @@ export function dropUnheld(query: MetricQuery, holds: (key: PermissionKey | null
   const dimensions = (query.dimensions ?? []).filter((d) => holds(dimensionNeeds(d.kind, query.measure)));
   const source = query.filters ?? {};
   const refused = (Object.keys(source) as FilterKey[]).filter((key) => !holds(filterNeeds(key, query.measure)));
-  const divisor = query.divide_by;
-  const divisorSource = divisor?.filters ?? {};
-  const divisorRefused = divisor
-    ? (Object.keys(divisorSource) as FilterKey[]).filter((key) => !holds(filterNeeds(key, divisor.measure)))
-    : [];
-  if (refused.length === 0 && divisorRefused.length === 0 && dimensions.length === (query.dimensions ?? []).length) {
+  const terms = query.formula?.terms ?? [];
+  const termRefused = terms.map((term) =>
+    (Object.keys(term.filters ?? {}) as FilterKey[]).filter(
+      (key) => !holds(filterNeeds(key)) || !holds(filterNeeds(key, term.measure))
+    )
+  );
+  const anyTermRefused = termRefused.some((keys) => keys.length > 0);
+  if (refused.length === 0 && !anyTermRefused && dimensions.length === (query.dimensions ?? []).length) {
     return query;
   }
   const filters = { ...source };
   for (const key of refused) delete filters[key];
   const next: MetricQuery = { ...query, dimensions, filters };
-  if (divisor && divisorRefused.length > 0) {
-    const kept = { ...divisorSource };
-    for (const key of divisorRefused) delete kept[key as keyof typeof kept];
-    next.divide_by = { ...divisor, filters: kept };
+  if (query.formula && anyTermRefused) {
+    next.formula = {
+      ...query.formula,
+      terms: terms.map((term, i) => {
+        if (termRefused[i].length === 0) return term;
+        const kept = { ...(term.filters ?? {}) };
+        for (const key of termRefused[i]) delete kept[key as keyof typeof kept];
+        return { ...term, filters: kept };
+      }),
+    };
   }
   return next;
 }
@@ -337,7 +377,7 @@ export function parseTarget(text: string): number | null {
 export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
   const clean: WidgetOptions = {};
   if (kind === 'bar') {
-    const stackable = !NO_PERCENT_MEASURES.has(query.measure) && !query.divide_by;
+    const stackable = !NO_PERCENT_MEASURES.has(query.measure) && !query.formula;
     if (stackable && options.percent) clean.percent = true;
     if (stackable && (options.stacked || options.percent)) clean.stacked = true;
     if (options.orientation === 'horizontal') clean.orientation = 'horizontal';
@@ -426,14 +466,162 @@ export function cleanQuery(query: MetricQuery): MetricQuery {
   if (query.dimensions && query.dimensions.length > 0) clean.dimensions = query.dimensions.map((d) => ({ ...d }));
   if (query.percent_of) clean.percent_of = query.percent_of;
   if (query.top_n) clean.top_n = query.top_n;
-  if (query.divide_by) {
-    const divisor: MetricDivisor = { measure: query.divide_by.measure };
-    const divisorClean = cleanFilters(query.divide_by.filters ?? {});
-    if (Object.keys(divisorClean).length > 0) divisor.filters = divisorClean;
-    if (query.divide_by.result === 'number') divisor.result = 'number';
-    clean.divide_by = divisor;
-  }
+  if (query.formula) clean.formula = cleanFormula(query.formula);
   return clean;
+}
+
+/** A formula as stored: each term's empty filters and unset `total` left out, `result` only when a number. */
+export function cleanFormula(formula: MetricFormula): MetricFormula {
+  const clean: MetricFormula = {
+    expression: formula.expression,
+    terms: formula.terms.map((term) => {
+      const out: MetricTerm = { name: term.name, measure: term.measure };
+      const filters = cleanFilters(term.filters ?? {});
+      if (Object.keys(filters).length > 0) out.filters = filters;
+      if (term.total) out.total = true;
+      return out;
+    }),
+  };
+  if (formula.result === 'number') clean.result = 'number';
+  return clean;
+}
+
+// --- Starting, leaving and the examples of a calculation -----------------------------
+
+/** The measures of booked person time, whose natural partner is the capacity in the same unit. */
+const CAPACITY_PARTNER: Partial<Record<Measure, Measure>> = {
+  booked_weeks: 'capacity_weeks',
+  booked_days: 'capacity_days',
+};
+
+/** The first term of a calculation started from a plain query: its measure and filters. */
+function firstTermOf(query: MetricQuery): MetricTerm {
+  // Utilisation is booked days over capacity days: the calculation starts there.
+  const measure: Measure = isTermMeasure(query.measure)
+    ? query.measure
+    : query.measure === 'utilisation'
+      ? 'booked_days'
+      : 'booked_weeks';
+  const term: MetricTerm = { name: 'a', measure, filters: { ...(query.filters ?? {}) } };
+  return { ...term, filters: termFilters(term) };
+}
+
+/**
+ * The second term beside `first`: the capacity in the same unit for booked
+ * person time when the viewer may use it (`canCapacity`: `views.staff`), the
+ * same measure otherwise (the result then reads 100 %).
+ */
+function partnerOf(first: MetricTerm, canCapacity: boolean): MetricTerm {
+  const capacity = CAPACITY_PARTNER[first.measure];
+  return { name: 'b', measure: capacity && canCapacity ? capacity : first.measure, filters: {} };
+}
+
+/**
+ * A plain query turned into a calculation with nothing to type: term `a` is
+ * the widget's measure and filters, term `b` its natural partner
+ * (`partnerOf`), the formula `a / b` and the result a percentage. The kind's
+ * rules then apply (`normaliseQuery`).
+ */
+export function startFormula(kind: WidgetKind, query: MetricQuery, canCapacity: boolean): MetricQuery {
+  const first = firstTermOf(query);
+  const formula: MetricFormula = { expression: 'a / b', terms: [first, partnerOf(first, canCapacity)], result: 'percent' };
+  const period = query.filters?.period;
+  return normaliseQuery(kind, {
+    ...query,
+    measure: first.measure,
+    filters: period ? { period } : {},
+    percent_of: null,
+    formula,
+  });
+}
+
+/** A calculation turned back into the plain widget of its first term (its measure and filters). */
+export function endFormula(query: MetricQuery): MetricQuery {
+  const first = query.formula?.terms[0];
+  const plain: MetricQuery = { ...query };
+  delete plain.formula;
+  if (!first) return plain;
+  return {
+    ...plain,
+    measure: first.measure,
+    filters: { ...(first.filters ?? {}), ...(query.filters?.period ? { period: query.filters.period } : {}) },
+  };
+}
+
+/**
+ * Whether a calculation is still the one `startFormula` makes from its first
+ * term: leaving it or replacing it by an example loses nothing.
+ */
+export function isDefaultFormula(query: MetricQuery, canCapacity: boolean): boolean {
+  const formula = query.formula;
+  if (!formula || formula.terms.length === 0) return true;
+  const first = formula.terms[0];
+  const fresh: MetricFormula = {
+    expression: 'a / b',
+    terms: [{ ...first, name: 'a' }, partnerOf(first, canCapacity)],
+    result: 'percent',
+  };
+  const strip = (f: MetricFormula) => {
+    const clean = cleanFormula(f);
+    return { ...clean, terms: clean.terms.map(({ name, measure, filters }) => ({ name, measure, filters })) };
+  };
+  return stableKey(strip(formula)) === stableKey(strip(fresh));
+}
+
+/** The examples a calculation may start from (the editor's *Examples* menu). */
+export const FORMULA_EXAMPLES = [
+  { key: 'ratio', label: 'Ratio of two measures', expression: 'a / b' },
+  { key: 'capacity_share', label: 'Share of capacity', expression: 'a / b' },
+  { key: 'goal', label: 'Against a goal', expression: 'a / (b * 70%)' },
+  { key: 'difference', label: 'Difference', expression: 'a - b' },
+  { key: 'sum', label: 'Sum', expression: 'a + b' },
+] as const;
+export type FormulaExampleKey = (typeof FORMULA_EXAMPLES)[number]['key'];
+
+/** The examples that need the capacity measures (`views.staff`). */
+export const CAPACITY_EXAMPLES: ReadonlySet<FormulaExampleKey> = new Set<FormulaExampleKey>(['capacity_share', 'goal']);
+
+/**
+ * The calculation of an example, built on the current one: *Ratio*,
+ * *Difference* and *Sum* keep the first two terms (a second one is added
+ * when missing); *Share of capacity* is booked weeks (term `a`'s filters)
+ * over capacity weeks, *Against a goal* the same with *Has a customer* over
+ * 70 % of the capacity — the absorption of the built-in dashboard. A
+ * difference and a sum are numbers, the others percentages.
+ */
+export function exampleFormula(kind: WidgetKind, query: MetricQuery, key: FormulaExampleKey, canCapacity: boolean): MetricQuery {
+  const example = FORMULA_EXAMPLES.find((e) => e.key === key) ?? FORMULA_EXAMPLES[0];
+  const current = query.formula?.terms ?? [];
+  const first: MetricTerm = { ...(current[0] ?? firstTermOf(query)), name: 'a' };
+  let terms: MetricTerm[];
+  if (CAPACITY_EXAMPLES.has(key)) {
+    const booked: MetricTerm = { name: 'a', measure: 'booked_weeks', filters: { ...(first.filters ?? {}) } };
+    const filters = termFilters(booked) ?? {};
+    terms = [
+      { ...booked, filters: key === 'goal' ? { ...filters, has_customer: true } : filters },
+      { name: 'b', measure: 'capacity_weeks', filters: {} },
+    ];
+  } else {
+    const second: MetricTerm = current[1] ? { ...current[1], name: 'b' } : partnerOf(first, canCapacity);
+    terms = [first, second];
+  }
+  const result: MetricFormula['result'] = key === 'difference' || key === 'sum' ? 'number' : 'percent';
+  return normaliseQuery(kind, {
+    ...query,
+    measure: terms[0].measure,
+    formula: { expression: example.expression, terms, result },
+  });
+}
+
+/** A term added to a calculation: the next free name, the first term's measure, no filters. */
+export function addTerm(formula: MetricFormula, name: string): MetricFormula {
+  const measure = formula.terms[0]?.measure ?? 'booked_weeks';
+  return { ...formula, terms: [...formula.terms, { name, measure, filters: {} }] };
+}
+
+/** Whether every measure of a calculation is one the viewer may use. */
+export function formulaHeld(formula: MetricFormula, holds: (key: PermissionKey | null) => boolean): boolean {
+  return formula.terms.every((term) => holds(measureNeeds(term.measure)));
 }
 
 /** How many filters (besides the period) a query sets. */

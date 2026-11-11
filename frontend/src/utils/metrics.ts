@@ -64,6 +64,7 @@ export const MEASURES: readonly { key: Measure; label: string; unit: MetricUnit;
   { key: 'phases_due', label: 'Phases due', unit: 'phases', family: 'phase' },
   { key: 'phases_overdue', label: 'Phases overdue', unit: 'phases', family: 'phase' },
   { key: 'capacity_days', label: 'Capacity (days)', unit: 'days', family: 'capacity' },
+  { key: 'capacity_weeks', label: 'Capacity (weeks)', unit: 'weeks', family: 'capacity' },
   { key: 'available_days', label: 'Available days', unit: 'days', family: 'capacity' },
   { key: 'utilisation', label: 'Utilisation', unit: 'percent', family: 'capacity' },
   { key: 'people_over_capacity', label: 'People over capacity', unit: 'people', family: 'capacity' },
@@ -163,6 +164,7 @@ export const MATRIX: Readonly<Record<Measure, readonly DimensionKind[]>> = {
   phases_due: PHASE_KINDS,
   phases_overdue: PHASE_KINDS,
   capacity_days: CAPACITY_KINDS,
+  capacity_weeks: CAPACITY_KINDS,
   available_days: CAPACITY_KINDS,
   utilisation: CAPACITY_KINDS,
   people_over_capacity: CAPACITY_KINDS,
@@ -263,6 +265,7 @@ export const MEASURE_FILTERS: Readonly<Record<Measure, readonly FilterKey[]>> = 
   phases_due: PHASE_FILTERS,
   phases_overdue: PHASE_FILTERS,
   capacity_days: CAPACITY_FILTERS,
+  capacity_weeks: CAPACITY_FILTERS,
   available_days: CAPACITY_FILTERS,
   utilisation: UTILISATION_FILTERS,
   people_over_capacity: CAPACITY_FILTERS,
@@ -370,18 +373,22 @@ export const NO_PERCENT_MEASURES: ReadonlySet<Measure> = new Set<Measure>([
 ]);
 
 /**
- * The measures a calculated widget may divide, or divide by: the summed and
- * counted ones (`DIVISIBLE_MEASURES`, `divisible` in the JSON), never a
- * ratio, a difference or a per-bucket count.
+ * The measures a calculated widget's terms may use: the summed and counted
+ * ones (`TERM_MEASURES`, `term_measures` in the JSON), never a ratio, a
+ * difference or a per-bucket count.
  */
-export const DIVISIBLE_MEASURES: ReadonlySet<Measure> = new Set<Measure>(
+export const TERM_MEASURES: ReadonlySet<Measure> = new Set<Measure>(
   MEASURES.map((m) => m.key).filter((key) => !NO_PERCENT_MEASURES.has(key))
 );
 
-/** Whether `measure` can be divided, or divide another one. */
-export function isDivisible(measure: Measure): boolean {
-  return DIVISIBLE_MEASURES.has(measure);
+/** Whether `measure` may be a term of a calculation. */
+export function isTermMeasure(measure: Measure): boolean {
+  return TERM_MEASURES.has(measure);
 }
+
+/** A calculation's limits (`formula` in the JSON). */
+export const MAX_FORMULA_TERMS = 6;
+export const MAX_FORMULA_LENGTH = 200;
 
 export const RELATIVE_PERIODS: readonly { key: RelativePeriod; label: string }[] = [
   { key: 'this_year', label: 'This year' },
@@ -453,8 +460,8 @@ export function unitWord(
  * The unit a query's result comes in: the measure's, or `percent` with a
  * percentage; a calculated widget's `percent` or `number`.
  */
-export function queryUnit(query: Pick<MetricQuery, 'measure' | 'percent_of' | 'divide_by'>): MetricUnit {
-  if (query.divide_by) return query.divide_by.result === 'number' ? 'number' : 'percent';
+export function queryUnit(query: Pick<MetricQuery, 'measure' | 'percent_of' | 'formula'>): MetricUnit {
+  if (query.formula) return query.formula.result === 'number' ? 'number' : 'percent';
   if (query.percent_of) return 'percent';
   return MEASURE_BY_KEY.get(query.measure)?.unit ?? 'count';
 }

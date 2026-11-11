@@ -13,7 +13,6 @@ import {
   DIMENSION_KINDS,
   dimensionLabel,
   dimensionNeeds,
-  DIVISIBLE_MEASURES,
   FALLBACK_PALETTE,
   FAMILIES,
   FAMILY_DIMENSION_NEEDS,
@@ -25,7 +24,10 @@ import {
   formatMetric,
   GRAINS,
   isDimensionHidden,
-  isDivisible,
+  isTermMeasure,
+  MAX_FORMULA_LENGTH,
+  MAX_FORMULA_TERMS,
+  TERM_MEASURES,
   isValidDimension,
   MATRIX,
   MEASURE_FILTERS,
@@ -77,6 +79,7 @@ describe('metric matrix mirror', () => {
       phases_due: 'Phases due',
       phases_overdue: 'Phases overdue',
       capacity_days: 'Capacity (days)',
+      capacity_weeks: 'Capacity (weeks)',
       available_days: 'Available days',
       utilisation: 'Utilisation',
       people_over_capacity: 'People over capacity',
@@ -180,10 +183,14 @@ describe('metric matrix mirror', () => {
     expect(sorted(NO_PERCENT_MEASURES)).toEqual(matrix.no_percent);
   });
 
-  it('divides the same measures in a calculated widget', () => {
-    expect(sorted(DIVISIBLE_MEASURES)).toEqual(matrix.divisible);
-    expect(isDivisible('booked_days')).toBe(true);
-    expect(isDivisible('utilisation')).toBe(false);
+  it('takes the same measures as terms of a calculation, with the same limits', () => {
+    expect(sorted(TERM_MEASURES)).toEqual(matrix.term_measures);
+    expect(isTermMeasure('booked_days')).toBe(true);
+    expect(isTermMeasure('capacity_weeks')).toBe(true);
+    expect(isTermMeasure('utilisation')).toBe(false);
+    expect(MAX_FORMULA_TERMS).toBe(matrix.formula.max_terms);
+    expect(MAX_FORMULA_LENGTH).toBe(matrix.formula.max_length);
+    expect(matrix.formula.results).toEqual(['percent', 'number']);
   });
 
   it('offers the same relative periods and grains, in order', () => {
@@ -234,6 +241,7 @@ describe('matrix helpers', () => {
     expect(groups.flatMap((g) => g.options.map((o) => o.value))).toEqual(MEASURES.map((m) => m.key));
     expect(groups[3].options).toEqual([
       { value: 'capacity_days', label: 'Capacity (days)' },
+      { value: 'capacity_weeks', label: 'Capacity (weeks)' },
       { value: 'available_days', label: 'Available days' },
       { value: 'utilisation', label: 'Utilisation' },
       { value: 'people_over_capacity', label: 'People over capacity' },
@@ -273,8 +281,9 @@ describe('matrix helpers', () => {
     expect(queryUnit({ measure: 'utilisation' })).toBe('percent');
     expect(queryUnit({ measure: 'equipment_booked' })).toBe('equipment');
     expect(queryUnit({ measure: 'unknown' as Measure })).toBe('count');
-    expect(queryUnit({ measure: 'booked_days', divide_by: { measure: 'capacity_days' } })).toBe('percent');
-    expect(queryUnit({ measure: 'booked_days', divide_by: { measure: 'capacity_days', result: 'number' } })).toBe('number');
+    const terms = [{ name: 'a', measure: 'booked_days' as Measure }];
+    expect(queryUnit({ measure: 'booked_days', formula: { expression: 'a', terms } })).toBe('percent');
+    expect(queryUnit({ measure: 'booked_days', formula: { expression: 'a', terms, result: 'number' } })).toBe('number');
   });
 });
 

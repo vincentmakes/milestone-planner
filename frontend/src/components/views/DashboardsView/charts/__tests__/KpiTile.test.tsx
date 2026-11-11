@@ -178,3 +178,17 @@ describe('KpiTile — % of target (2.6.0)', () => {
     expect(percentOfTarget(null, 70)).toBeNull();
   });
 });
+
+describe('KpiTile — a calculation (2.6.0)', () => {
+  it('shows a plain number without a unit word, and a percentage with "%"', () => {
+    const formula = { expression: 'a / b', terms: [{ name: 'a', measure: 'booked_weeks' as const }, { name: 'b', measure: 'capacity_weeks' as const }] };
+    const { container, unmount } = render(
+      <KpiTile result={{ ...plain, unit: 'number', total: 0.755 }} query={{ measure: 'booked_weeks', formula: { ...formula, result: 'number' } }} />
+    );
+    expect(screen.getByText('0.76')).toBeInTheDocument();
+    expect(container.textContent).toBe('0.76');
+    unmount();
+    render(<KpiTile result={{ ...plain, unit: 'percent', total: 75.5 }} query={{ measure: 'booked_weeks', formula }} />);
+    expect(screen.getByText(/75\.5/)).toBeInTheDocument();
+  });
+});

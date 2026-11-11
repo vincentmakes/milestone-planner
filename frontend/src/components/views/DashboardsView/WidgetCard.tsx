@@ -56,7 +56,8 @@ export function WidgetCard({ widget, result, loading = false, editing = false, o
 
   const metric = result && !isError(result) ? result : null;
   const unit = metric?.unit ?? queryUnit(widget.query);
-  const unitText = UNIT_LABELS[unit] || '%';
+  // A percentage reads "%"; a calculation's plain number has no unit word.
+  const unitText = unit === 'percent' ? '%' : UNIT_LABELS[unit];
   const notes = metric
     ? [...metric.warnings, ...(metric.note ? [metric.note] : []), ...(metric.truncated ? [TRUNCATED_TEXT] : [])]
     : [];
@@ -79,7 +80,10 @@ export function WidgetCard({ widget, result, loading = false, editing = false, o
   } else if (!hasDrawableData(widget.kind, metric)) {
     body = <p className={styles.placeholder}>Nothing to show for this period.</p>;
   } else {
-    const measureLabel = MEASURES.find((m) => m.key === widget.query.measure)?.label;
+    // A calculation's series is named after the widget, not its first term's measure.
+    const measureLabel = widget.query.formula
+      ? widget.title
+      : MEASURES.find((m) => m.key === widget.query.measure)?.label;
     body = (
       <EChart
         kind={widget.kind}
@@ -105,7 +109,7 @@ export function WidgetCard({ widget, result, loading = false, editing = false, o
           </h3>
           {metric?.period && <p className={styles.period}>{resolvedPeriodLabel(metric.period)}</p>}
         </div>
-        {widget.kind !== 'kpi' && <span className={styles.unit}>{unitText}</span>}
+        {widget.kind !== 'kpi' && unitText && <span className={styles.unit}>{unitText}</span>}
         {editing && onEdit && (
           // `widgetAction` keeps a press on the button from starting a drag.
           <button

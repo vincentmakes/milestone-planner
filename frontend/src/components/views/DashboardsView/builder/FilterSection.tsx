@@ -2,12 +2,13 @@
  * FilterSection — the filters of one measure in the widget editor (2.6.0), a
  * collapsible section closed while none is set.
  *
- * Shared by the measure of a widget and the divisor of a calculated widget
- * (*Divide by*), each with its own filters: it shows only the filters the
+ * Shared by the measure of a widget and the terms of a calculated widget,
+ * each with its own filters (a term's row is its own disclosure:
+ * `disclosure={false}` shows the fields at once): it shows only the filters the
  * measure takes (`takesFilter`) and the user may use (`holds`: People needs
  * `views.staff`, and on a capacity measure `absences.view_others`; Equipment
  * and Equipment types `views.equipment`). The period is not here: a
- * calculated widget's two sides share the widget's period.
+ * calculated widget's terms share the widget's period.
  */
 
 import { useId, useMemo, useState } from 'react';
@@ -51,14 +52,28 @@ export interface FilterSectionProps {
   onChange: (patch: Partial<MetricFilters>) => void;
   /** Whether the user holds a key (null: nothing needed) */
   holds: (key: PermissionKey | null) => boolean;
-  /** The disclosure's name ("Filters", "Divisor filters") */
+  /** The disclosure's name ("Filters", "Filters of term a") */
   title?: string;
+  /** Without a disclosure of its own: the fields show at once (a term row opens and closes them) */
+  disclosure?: boolean;
+  /** The id of the fields' group (the opener's `aria-controls`) */
+  id?: string;
 }
 
 /** The filters a measure takes, each a shared field, under a disclosure. */
-export function FilterSection({ measure, filters, onChange, holds, title = 'Filters' }: FilterSectionProps) {
-  const [open, setOpen] = useState(() => activeFilterCount(filters) > 0);
-  const panelId = useId();
+export function FilterSection({
+  measure,
+  filters,
+  onChange,
+  holds,
+  title = 'Filters',
+  disclosure = true,
+  id,
+}: FilterSectionProps) {
+  const [opened, setOpen] = useState(() => activeFilterCount(filters) > 0);
+  const open = opened || !disclosure;
+  const ownId = useId();
+  const panelId = id ?? ownId;
   const canArchived = holds('views.archived');
   const fields = useAppStore((s) => s.projectFields);
   const settings = useAppStore((s) => s.instanceSettings);
@@ -139,7 +154,8 @@ export function FilterSection({ measure, filters, onChange, holds, title = 'Filt
   const count = activeFilterCount(filters);
 
   return (
-    <section className={styles.section}>
+    <section className={disclosure ? styles.section : styles.termFilters}>
+      {disclosure && (
       <Button
         type="button"
         variant="ghost"
@@ -151,6 +167,7 @@ export function FilterSection({ measure, filters, onChange, holds, title = 'Filt
       >
         {count > 0 ? `${title} (${count})` : title}
       </Button>
+      )}
       {open && (
         <div id={panelId} className={styles.filters} role="group" aria-label={title}>
           {measure === 'utilisation' && <p className={styles.hint}>{UTILISATION_FILTERS_HINT}</p>}

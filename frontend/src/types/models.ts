@@ -990,6 +990,7 @@ export type Measure =
   | 'phases_due'
   | 'phases_overdue'
   | 'capacity_days'
+  | 'capacity_weeks'
   | 'available_days'
   | 'utilisation'
   | 'people_over_capacity'
@@ -1082,10 +1083,21 @@ export interface MetricFilters {
   has_customer?: boolean | null;
 }
 
-/** The divisor of a calculated widget: a measure with its own filters, over the numerator's period. */
-export interface MetricDivisor {
+/** One named term of a calculated widget: a summed or counted measure with its own filters. */
+export interface MetricTerm {
+  /** A lowercase word (`a`, `customer_weeks`), used in the formula */
+  name: string;
   measure: Measure;
+  /** Its filters; the widget's period applies to every term */
   filters?: Omit<MetricFilters, 'period'>;
+  /** Not split by the dimensions other than the period (its whole-scope value in every row) */
+  total?: boolean;
+}
+
+/** A calculated widget: named terms combined by a formula (`a / (b * 70%)`). */
+export interface MetricFormula {
+  expression: string;
+  terms: MetricTerm[];
   /** A percentage (× 100, the default) or a plain number */
   result?: 'percent' | 'number';
 }
@@ -1096,8 +1108,8 @@ export interface MetricQuery {
   filters?: MetricFilters;
   percent_of?: 'total' | 'first_dimension' | null;
   top_n?: number | null;
-  /** A calculated widget: the measure divided by this one */
-  divide_by?: MetricDivisor | null;
+  /** A calculated widget: named terms combined by a formula */
+  formula?: MetricFormula | null;
 }
 
 /** One dimension value of a row: `key` true/false (confirmed, toggles), an id, a text, a period key, `null` (empty bucket) or `"__other__"`. */
@@ -1127,6 +1139,8 @@ export interface MetricResult {
   note?: string | null;
   /** The resolved period (`YYYY-MM-DD`) */
   period?: { from: string; to: string };
+  /** A calculated widget: each term's total over the period */
+  terms?: { name: string; value: number | null; unit: MetricUnit }[];
 }
 
 /** A widget whose query failed on `/data` (deleted field, missing permission, invalid spec). */
