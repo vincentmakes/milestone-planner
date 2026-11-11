@@ -10,6 +10,6 @@
     </div>
     <div class="milestone-cover__foot">
         <span>{{ config.site_url | replace("https://", "") | replace("http://", "") | trim("/") }}</span>
-        <span>Licence: FSL-1.1-MIT</span>
+        <span>License: FSL-1.1-MIT</span>
     </div>
 </div>

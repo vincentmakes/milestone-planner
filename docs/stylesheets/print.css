@@ -22,7 +22,7 @@ body:has(#print-site-page) .md-sidebar--secondary li:has(> a[href^="#section-"])
 
 /* The cover: a left-aligned document cover. The wordmark at a modest size,
    the title block a third of the way down after a short rule in the brand
-   blue, the address and the licence along the bottom margin. On screen it
+   blue, the address and the license along the bottom margin. On screen it
    reads as the top of the print page; on paper it fills the first page. */
 .milestone-cover {
   --milestone-brand: #0078fd;
