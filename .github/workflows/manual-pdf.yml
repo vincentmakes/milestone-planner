@@ -15,7 +15,6 @@ on:
       - "docs/**"
       - "mkdocs.yml"
       - "VERSION"
-      - "CHANGELOG.md"
       - "scripts/docs/export_manual_pdf.py"
       - ".github/workflows/manual-pdf.yml"
   pull_request:
@@ -23,7 +22,6 @@ on:
       - "docs/**"
       - "mkdocs.yml"
       - "VERSION"
-      - "CHANGELOG.md"
       - "scripts/docs/export_manual_pdf.py"
       - ".github/workflows/manual-pdf.yml"
   workflow_dispatch:

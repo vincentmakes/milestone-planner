@@ -85,7 +85,6 @@ export function selectWeekendsWorking(state: { instanceSettings: InstanceSetting
   return state.instanceSettings?.weekend_working_days?.trim().toLowerCase() === 'true';
 }
 
-/** The overview panel the Gantt opens with; anything unknown is `none`. */
 /** The longest manual address the server stores (`MAX_HELP_URL_LENGTH`). */
 export const MAX_HELP_URL_LENGTH = 500;
 
@@ -124,6 +123,7 @@ export function helpBaseUrl(settings: InstanceSettings | null | undefined): stri
   return normaliseHelpUrl(settings?.help_url) ?? DEFAULT_HELP_URL;
 }
 
+/** The overview panel the Gantt opens with; anything unknown is `none`. */
 export function ganttDefaultPanel(settings: InstanceSettings | null | undefined): GanttDefaultPanel {
   const value = settings?.gantt_default_panel;
   return value === 'staff' || value === 'equipment' ? value : 'none';
