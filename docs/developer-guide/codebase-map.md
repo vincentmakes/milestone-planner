@@ -387,8 +387,9 @@ frontend/
                        #   projectFilters,
                        #   kanbanCards, mentions, equipmentOverlap, subphaseUtils, persistFailure,
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
-                       #   roles, pendingBookings (+ assignmentLock), myAssignments, auditLabels, metrics, helpLinks (the manual's chapter per view), viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
-                       #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel /
+                       #   roles, pendingBookings (+ assignmentLock), myAssignments, auditLabels, metrics, helpLinks (the manual's chapter per view under the help_url
+                       #   base: DEFAULT_HELP_URL), viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
+                       #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel / helpBaseUrl / normaliseHelpUrl /
                        #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals / tooltipRowGate /
                        #   selectShowWeekends / selectWeekendsWorking),
                        #   workingDays (isWorkingDay / countWorkingDays: the working-day rule, mirror of
@@ -407,6 +408,8 @@ frontend/
 docs/                  # MkDocs Material source (user-guide/, admin-guide/, developer-guide/,
                        #   index.md, release-notes.md embedding CHANGELOG.md)
   build.sh             # Cloudflare Pages build command (mkdocs build --strict)
+  admin-guide/hosting-the-documentation.md  # Self-hosting the manual (Azure Static Web Apps,
+                       #   Storage static website, any static host) and the help_url setting
 migrations/            # Raw idempotent SQL migrations + run_migration.py / run_migration_master.py,
                        #   shell wrappers (run_migration.sh, migrate_all_tenants.sh), README.md
 scripts/

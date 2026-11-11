@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { HELP_BASE_URL, HELP_PAGES, helpUrl } from '../helpLinks';
+import { DEFAULT_HELP_URL, HELP_BASE_URL, HELP_PAGES, helpUrl } from '../helpLinks';
 import type { CurrentView } from '@/types';
 
 describe('helpUrl', () => {
@@ -32,5 +32,15 @@ describe('helpUrl', () => {
       expect(page).toMatch(/^user-guide\/[a-z-]+\/$/);
       expect(existsSync(resolve(docs, `${page.slice(0, -1)}.md`)), page).toBe(true);
     }
+  });
+});
+
+
+describe('helpUrl with a self-hosted manual', () => {
+  it('opens the same chapters under another home page', () => {
+    const base = 'https://intranet.example/milestone-docs/';
+    expect(helpUrl('kanban', base)).toBe('https://intranet.example/milestone-docs/user-guide/kanban-board/');
+    expect(helpUrl('archived', base)).toBe(base);
+    expect(HELP_BASE_URL).toBe(DEFAULT_HELP_URL);
   });
 });

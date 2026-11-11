@@ -7,7 +7,11 @@
  *   change the filter for their session; every new opening applies the
  *   default again;
  * - the Kanban board, the Nager bank-holiday import and the pre-selection of
- *   the predefined phases in a new project.
+ *   the predefined phases in a new project;
+ * - where Help in the user menu opens (`help_url`, 2.6.0): prefilled with the
+ *   effective address, checked before saving (`normaliseHelpUrl`), stored in
+ *   the server's canonical form; an emptied field saves `null`, so the public
+ *   manual applies again.
  *
  * Only the keys that changed are saved, in the canonical form the backend
  * stores (compact JSON lists, `true` / `false`). Stored skills and types that
@@ -18,6 +22,7 @@
 
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { Notice } from '@/components/common/Notice';
 import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
@@ -29,13 +34,16 @@ import { getEquipmentTypes } from '@/api/endpoints/equipment';
 import { checkAuth } from '@/api/endpoints/auth';
 import {
   ganttDefaultPanel,
+  helpBaseUrl,
   isSettingOn,
+  normaliseHelpUrl,
   parseIdList,
   parseNameList,
 } from '@/utils/instanceSettings';
 import type { InstanceSettings } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { DEFAULT_HELP_URL } from '@/utils/helpLinks';
 import styles from './DefaultsPanel.module.css';
 
 /**
@@ -54,7 +62,7 @@ type DefaultsKey = Exclude<
   | 'weekend_working_days'
 >;
 
-/** The seven settings as the backend stores them */
+/** The eight settings as the backend stores them (the manual's address as typed) */
 type Values = Record<DefaultsKey, string>;
 
 const SAVE_ORDER: DefaultsKey[] = [
@@ -65,7 +73,12 @@ const SAVE_ORDER: DefaultsKey[] = [
   'nager_enabled',
   'new_project_preselect_phases',
   'gantt_completion_badges',
+  'help_url',
 ];
+
+export const HELP_URL_HINT = 'Where Help in the user menu opens. Change it if you host the manual yourself.';
+export const HELP_URL_INVALID =
+  'Enter a web address starting with http:// or https://, without spaces, a user name, a query or a #fragment.';
 
 const PANEL_OPTIONS = [
   { value: 'none', label: 'Nothing' },
@@ -95,6 +108,7 @@ function valuesFrom(settings: InstanceSettings): Values {
     nager_enabled: switchValue(isSettingOn(settings, 'nager_enabled')),
     new_project_preselect_phases: switchValue(isSettingOn(settings, 'new_project_preselect_phases')),
     gantt_completion_badges: switchValue(isSettingOn(settings, 'gantt_completion_badges')),
+    help_url: helpBaseUrl(settings),
   };
 }
 
@@ -109,6 +123,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [helpUrlError, setHelpUrlError] = useState<string | null>(null);
   const { isSubmitting, begin, end } = useSubmitGuard();
 
   useEffect(() => {
@@ -131,7 +146,12 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
   }, []);
 
   const changedKeys = useMemo(
-    () => (values && original ? SAVE_ORDER.filter((key) => values[key] !== original[key]) : []),
+    () =>
+      values && original
+        ? SAVE_ORDER.filter((key) =>
+            key === 'help_url' ? values[key].trim() !== original[key] : values[key] !== original[key]
+          )
+        : [],
     [values, original]
   );
   const dirty = changedKeys.length > 0;
@@ -180,21 +200,35 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
     setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
     setError(null);
     setSuccess(null);
+    if (key === 'help_url') setHelpUrlError(null);
   };
 
   const handleReset = () => {
     setValues(original);
     setError(null);
     setSuccess(null);
+    setHelpUrlError(null);
   };
 
   const handleSave = async () => {
+    // A manual address the server would refuse is shown in place, nothing saved.
+    const helpText = values.help_url.trim();
+    if (changedKeys.includes('help_url') && helpText && normaliseHelpUrl(helpText) === null) {
+      setHelpUrlError(HELP_URL_INVALID);
+      return;
+    }
     if (!begin()) return; // a save is already running
     setError(null);
     setSuccess(null);
     const saved: Partial<Values> = {};
     try {
       for (const key of changedKeys) {
+        if (key === 'help_url') {
+          // Empty: back to the public manual (the row is deleted). Else the server's canonical form.
+          const res = await updateSetting(key, helpText || null);
+          saved[key] = helpText ? res.value : DEFAULT_HELP_URL;
+          continue;
+        }
         await updateSetting(key, values[key]);
         saved[key] = values[key];
       }
@@ -207,6 +241,10 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
       // keys are no longer unsaved, the failed one and the rest still are.
       if (Object.keys(saved).length > 0) {
         setOriginal((prev) => (prev ? { ...prev, ...saved } : prev));
+        if (saved.help_url !== undefined) {
+          const shown = saved.help_url;
+          setValues((prev) => (prev ? { ...prev, help_url: shown } : prev));
+        }
         setInstanceSettings({ ...(useAppStore.getState().instanceSettings ?? {}), ...saved });
       }
       if ('kanban_enabled' in saved) {
@@ -283,6 +321,23 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
           onChange={(on) => change('gantt_completion_badges', switchValue(on))}
           disabled={isSubmitting}
         />
+      </section>
+
+      <section className={styles.section}>
+        <h3 className={styles.sectionTitle}>Help</h3>
+        <Input
+          label="Documentation URL"
+          type="url"
+          inputMode="url"
+          fullWidth
+          value={values.help_url}
+          placeholder={DEFAULT_HELP_URL}
+          maxLength={500}
+          hint={`${HELP_URL_HINT} Empty: the public manual.`}
+          onChange={(e) => change('help_url', e.target.value)}
+          disabled={isSubmitting}
+        />
+        {helpUrlError && <Notice tone="error">{helpUrlError}</Notice>}
       </section>
 
       {error && <Notice tone="error">{error}</Notice>}

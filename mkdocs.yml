@@ -91,6 +91,7 @@ nav:
     - Database & Migrations: admin-guide/database.md
     - Backup & Recovery: admin-guide/backup-recovery.md
     - Monitoring & Troubleshooting: admin-guide/monitoring.md
+    - Hosting the Documentation: admin-guide/hosting-the-documentation.md
   - Developer Guide:
     - Architecture: developer-guide/architecture.md
     - Local Development: developer-guide/local-development.md

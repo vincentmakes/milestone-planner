@@ -597,6 +597,7 @@ The admin defaults and feature switches set in [Settings → Features & defaults
 | `audit_log_retention_days` | a whole number from `0` to `3650` | `365` | How long audit-log entries are kept, in days; `0` = indefinitely (2.4.0) |
 | `show_weekends` | `true` or `false` | `true` | `false` hides the Saturday and Sunday columns of the timelines (display only) |
 | `weekend_working_days` | `true` or `false` | `false` | *Weekends are working days* (2.5.0): `true` counts Saturday and Sunday as working days in the dashboards, capacity and availability. Not a switch: only a stored `true` turns it on |
+| `help_url` | an absolute `http://` or `https://` address with a host, no `user:password@`, query, fragment, whitespace or control character, at most 500 characters | `https://docs-milestone.verdet.me/` | Where **Help** in the user menu opens (2.6.0, a self-hosted manual): stored with its scheme and host in lower case and exactly one trailing slash (`https://Intranet.example/docs` → `https://intranet.example/docs/`); anything else — `javascript:`, `data:`, a scheme-less value — is `422` |
 
 Booleans also accept `1`/`0`, `yes`/`no` and `on`/`off` (any case) and are stored as `true`/`false`; a switch counts as on unless its value is exactly `false` — except `weekend_working_days`, on only when exactly `true`. Only the shape is validated: ids of deleted skills and names of renamed types are accepted and ignored by the client. A change broadcasts `change:settings`.
 

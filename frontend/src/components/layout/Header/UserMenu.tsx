@@ -6,6 +6,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useAuth } from '@/hooks/useAuth';
 import { getAppVersion } from '@/api/endpoints/health';
 import { helpUrl } from '@/utils/helpLinks';
+import { helpBaseUrl } from '@/utils/instanceSettings';
 import styles from './UserMenu.module.css';
 import { Icon, LogoutIcon, CalendarIcon, ChevronDownIcon, HelpIcon } from '@/components/common/Icon';
 
@@ -17,6 +18,8 @@ export function UserMenu() {
   const { logout } = useAuth();
   const openModal = useUIStore((s) => s.openModal);
   const currentView = useViewStore((s) => s.currentView);
+  // The configured manual (Settings → Features & defaults), the public one by default.
+  const helpBase = useAppStore((s) => helpBaseUrl(s.instanceSettings));
   const [version, setVersion] = useState<string | null>(null);
 
   const { onBlur } = useDismissableOverlay({
@@ -85,10 +88,10 @@ export function UserMenu() {
             <Icon icon={CalendarIcon} size={16} />
             <span>My absences</span>
           </button>
-          {/* The online manual, at the chapter of the current view, in a new tab. */}
+          {/* The manual (help_url), at the chapter of the current view, in a new tab. */}
           <a
             className={styles.menuItem}
-            href={helpUrl(currentView)}
+            href={helpUrl(currentView, helpBase)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setIsOpen(false)}

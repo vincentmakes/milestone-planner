@@ -10,6 +10,7 @@
  */
 
 import type { InstanceSettings } from '@/types';
+import { DEFAULT_HELP_URL } from './helpLinks';
 
 /** The on/off settings: on unless the value is exactly `false`. */
 export type SwitchSettingKey =
@@ -85,6 +86,44 @@ export function selectWeekendsWorking(state: { instanceSettings: InstanceSetting
 }
 
 /** The overview panel the Gantt opens with; anything unknown is `none`. */
+/** The longest manual address the server stores (`MAX_HELP_URL_LENGTH`). */
+export const MAX_HELP_URL_LENGTH = 500;
+
+/**
+ * A manual address in its stored form, or null when it is none: an absolute
+ * `http` / `https` URL with a host, no user name or password, query or
+ * fragment, no whitespace or control character, at most 500 characters, with
+ * exactly one trailing slash -- the rule of the server's `_help_url`. The
+ * value lands in an `<a href>`: `javascript:`, `data:` and scheme-less text
+ * are never one.
+ */
+export function normaliseHelpUrl(text: string | null | undefined): string | null {
+  const trimmed = (text ?? '').trim();
+  // eslint-disable-next-line no-control-regex
+  if (!trimmed || /[\s\u0000-\u001f\u007f]/.test(trimmed) || /[?#]/.test(trimmed)) return null;
+  if (!/^https?:\/\/[^/]/i.test(trimmed)) return null;
+  // No user name or password: no `@` before the path (the server's rule).
+  if (trimmed.replace(/^https?:\/\//i, '').split('/')[0].includes('@')) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) return null;
+  const canonical = `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}/`;
+  return canonical.length <= MAX_HELP_URL_LENGTH ? canonical : null;
+}
+
+/**
+ * The manual's home page Help opens: the stored `help_url` when it is a safe
+ * address (`normaliseHelpUrl`; a row written before validation or by hand
+ * may not be), the public manual otherwise.
+ */
+export function helpBaseUrl(settings: InstanceSettings | null | undefined): string {
+  return normaliseHelpUrl(settings?.help_url) ?? DEFAULT_HELP_URL;
+}
+
 export function ganttDefaultPanel(settings: InstanceSettings | null | undefined): GanttDefaultPanel {
   const value = settings?.gantt_default_panel;
   return value === 'staff' || value === 'equipment' ? value : 'none';

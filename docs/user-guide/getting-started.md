@@ -67,7 +67,7 @@ Which views you see depends on your role: a view your role does not include is n
 
 ### Checking your version
 
-**Help** in the user menu opens this manual in a new browser tab, at the chapter of the view you are in — the Gantt chart, the Kanban board, My Work, Dashboards, Staff, Equipment or Cross-Site — and at its home page from any other view.
+**Help** in the user menu opens this manual in a new browser tab, at the chapter of the view you are in — the Gantt chart, the Kanban board, My Work, Dashboards, Staff, Equipment or Cross-Site — and at its home page from any other view. If your organisation hosts its own copy of the manual, an administrator sets its address in [Settings → Features & defaults](settings.md#features-defaults) and Help opens that copy instead.
 
 The bottom of the user menu shows the version this instance is running, for example `v1.4.0`. It is read from the server each time you open the menu, so if your administrator upgrades the instance while you have the application open, the number changes here — reload the page to pick up the new version.
 

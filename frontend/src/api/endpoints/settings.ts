@@ -4,6 +4,7 @@
 
 import { apiGet, apiPut, apiPost, apiDelete } from '../client';
 import type { PredefinedPhase, SSOConfig, InstanceSettings } from '@/types';
+import { DEFAULT_HELP_URL } from '@/utils/helpLinks';
 
 // =============================================================================
 // INSTANCE SETTINGS
@@ -17,9 +18,9 @@ export async function getSetting(key: string): Promise<{ value: string | null }>
 }
 
 /**
- * Update a setting value
+ * Update a setting value (`null` on a known key deletes its row: the default applies again)
  */
-export async function updateSetting(key: string, value: string): Promise<{ value: string }> {
+export async function updateSetting(key: string, value: string | null): Promise<{ value: string }> {
   return apiPut<{ value: string }>(`/api/settings/${key}`, { value });
 }
 
@@ -56,6 +57,7 @@ export const INSTANCE_SETTING_DEFAULTS = {
   audit_log_retention_days: '365',
   show_weekends: 'true',
   weekend_working_days: 'false',
+  help_url: DEFAULT_HELP_URL,
 } as const;
 
 export type DefaultedSettingKey = keyof typeof INSTANCE_SETTING_DEFAULTS;

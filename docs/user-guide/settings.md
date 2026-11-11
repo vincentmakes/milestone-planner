@@ -12,7 +12,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | Group | Section | What it manages | Who sees it (default roles) |
 |-------|---------|-----------------|-------------|
 | General | [General](#general) | Instance title, theme, logos, display defaults; the [audit log](#audit-log) and its retention under *Data management* | Admin (Superuser: theme only) |
-| | [Features & defaults](#features-defaults) | What the Gantt opens with, the panels' default filters, the Kanban board, the bank-holiday import, phase pre-selection | Admin |
+| | [Features & defaults](#features-defaults) | What the Gantt opens with, the panels' default filters, the Kanban board, the bank-holiday import, phase pre-selection, where Help opens | Admin |
 | | [Roles](#roles-permissions) | Roles and their permissions; who approves own bookings ([Approvals](#approvals)) | Admin |
 | Sites & calendar | [Sites](#sites) | Locations, country/region, site Excel export | Admin |
 | | [Teams](#teams) | Teams per site, their members; the header team filter | Admin, Superuser |
@@ -92,6 +92,7 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 | **Kanban board** | Turns the [Kanban board](kanban-board.md) on or off for the whole workspace | On |
 | **Bank-holiday import (Nager)** | Turns the automatic [public-holiday fetching](#automatic-fetching) on or off | On |
 | **Pre-select predefined phases in new projects** | Whether a new project starts with every active [predefined phase](#predefined-phases) selected, or with none | On |
+| **Documentation URL** | Where **Help** in the user menu opens: the home page of the manual. Change it if you host the manual yourself (see [Hosting the Documentation](../admin-guide/hosting-the-documentation.md)); clear the field and save to go back to the public manual | `https://docs-milestone.verdet.me/` |
 | **Show completion badges in the Gantt** | Whether the project, phase and subphase rows of the Gantt chart show their completion badge (*40%*). Off hides the badges only: the bars stay filled to their completion, and the progress slider stays available through **Set progress…** in a phase's or subphase's right-click menu | On |
 
 The default filters are a starting point, not a restriction: people change them as usual, and the default applies again the next time the panel below the Gantt chart opens. The standalone Staff and Equipment views always open unfiltered. A skill that was deleted or an equipment type that was renamed is shown as *(no longer exists)* so you can untick it; until then it is simply ignored.
@@ -99,6 +100,8 @@ The default filters are a starting point, not a restriction: people change them 
 **With the Kanban board off**, nobody sees the board or its sidebar entry, whatever their role — administrators included — and it takes effect for people already signed in without a new login. Card comments stay stored and can still be read and added from the assignment dialog of a booking on the card ([My Work](my-work.md#comments-on-a-booking)); the board shows them again when it is turned on. [My Work](my-work.md) keeps working (its card links become plain text), and card notifications open the project on the Gantt chart instead. Turning the board off does not change any role: the [permission matrix](#the-permission-matrix) still shows the **Kanban board** permission as configured.
 
 **With the bank-holiday import off**, the **Refresh from Nager** button, the site form's **Refresh** button and its *Last updated* line disappear, and setting or changing a site's country no longer fetches holidays. The holidays already imported stay, and you can still add, edit, delete and [import](#importing-holidays-from-a-calendar-file) holidays by hand.
+
+**Documentation URL** takes a web address starting with `http://` or `https://` — `https://intranet.example.com/milestone-docs/`, for example — without spaces, a user name and password, a `?query` or a `#fragment`, up to 500 characters; anything else is refused with a message under the field and nothing is saved. It is stored with one trailing slash. Help adds each chapter's path to it (`user-guide/gantt-charts/`, …), so a copy built from Milestone's `docs/` folder opens the same chapters. The change reaches everyone's open Milestone tabs without a reload.
 
 **With phase pre-selection off**, the **New Project** dialog shows the predefined phases with none selected; click the ones the project needs. The phases you pick are created spread over the project's dates, as before.
 

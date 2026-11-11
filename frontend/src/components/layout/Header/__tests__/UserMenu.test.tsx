@@ -181,3 +181,23 @@ describe('UserMenu Help', () => {
     );
   });
 });
+
+
+describe('UserMenu Help with a configured manual', () => {
+  it('opens the help_url setting, and follows it when it changes', () => {
+    useViewStore.setState({ currentView: 'gantt' });
+    useAppStore.setState({ instanceSettings: { help_url: 'https://intranet.example/docs/' } });
+    render(<UserMenu />);
+    fireEvent.click(trigger());
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute(
+      'href',
+      'https://intranet.example/docs/user-guide/gantt-charts/'
+    );
+    // A row that is not a safe address falls back to the public manual.
+    act(() => useAppStore.setState({ instanceSettings: { help_url: 'javascript:alert(1)' } }));
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute(
+      'href',
+      'https://docs-milestone.verdet.me/user-guide/gantt-charts/'
+    );
+  });
+});

@@ -48,6 +48,7 @@ DEFAULTS = {
     "audit_log_retention_days": "365",
     "show_weekends": "true",
     "weekend_working_days": "false",
+    "help_url": "https://docs-milestone.verdet.me/",
 }
 
 
@@ -211,6 +212,11 @@ async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_sess
         ("volume_decimals", " Any ", "any"),
         ("volume_decimals", "2", "2"),
         ("project_tooltip_rows", '["staff", 9, "volume", 4, 9]', '["volume","staff",4,9]'),
+        (
+            "help_url",
+            " https://Intranet.Example/milestone-docs ",
+            "https://intranet.example/milestone-docs/",
+        ),
     ],
 )
 async def test_a_known_key_stores_its_canonical_form(
@@ -269,6 +275,8 @@ async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_se
         ("project_tooltip_rows", '["customer", "notes"]'),
         ("project_tooltip_rows", "[true]"),
         ("project_tooltip_rows", "[0]"),
+        ("help_url", "javascript:alert(1)"),
+        ("help_url", "intranet.example/docs"),
     ],
 )
 async def test_an_invalid_value_for_a_known_key_is_422(authed_client, mock_db_session, key, raw):
@@ -643,3 +651,31 @@ async def test_sso_settings_follow_the_settings_sso_permission(
     response = await client.put("/api/settings/sso", json={"enabled": False})
 
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_help_url_needs_settings_general(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user", {"project_fields.manage"}))
+
+    response = await client.put(
+        "/api/settings/help_url", json={"value": "https://intranet.example/docs/"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: settings.general"
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_help_url_is_stored_canonically(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(4, "ops", {"settings.general"}))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.put(
+        "/api/settings/help_url", json={"value": "https://intranet.example/milestone-docs"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "https://intranet.example/milestone-docs/"
