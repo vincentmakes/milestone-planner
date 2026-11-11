@@ -3480,11 +3480,11 @@ def test_a_formula_reads_the_families_of_its_terms():
 FORMULA_REFUSALS = [
     (
         {"formula": {"expression": "a / ", "terms": [term("a", "booked_days")]}},
-        "The formula ends too early",
+        "The formula ends too early: something is missing at the end",
     ),
     (
         {"formula": {"expression": "a / b", "terms": [term("a", "booked_days")]}},
-        'The formula uses "b", which is not a term',
+        '"b" is not one of your terms: a',
     ),
     (
         {
@@ -3493,7 +3493,7 @@ FORMULA_REFUSALS = [
                 "terms": [term("a", "booked_days"), term("b", "booked_days")],
             }
         },
-        'The term "b" is not used in the formula',
+        "Term b is not used in the formula: use it or remove it",
     ),
     (
         {
@@ -3505,7 +3505,7 @@ FORMULA_REFUSALS = [
         'Two terms are named "a"',
     ),
     (
-        {"formula": {"expression": "a", "terms": [term("A", "booked_days")]}},
+        {"formula": {"expression": "a", "terms": [term("1a", "booked_days")]}},
         "A term name is a lowercase word of letters, digits and _, starting with a letter (customer_weeks)",
     ),
     (
@@ -3650,3 +3650,22 @@ def test_widget_options_take_percent_of_target():
     )
     assert widget.options.percent_of_target is True and widget.options.target == 70
     assert widget.options.target_is_goal is True
+
+
+def test_term_names_are_case_insensitive_and_results_carry_term_totals():
+    query = calc(
+        "Customer / (B × 70%)",
+        [term("CUSTOMER", "booked_weeks", has_customer=True), term("b", "capacity_weeks")],
+    )
+    assert query.formula is not None and query.formula.terms[0].name == "customer"
+    result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
+    assert result["total"] == 32.47
+    assert result["terms"] == [
+        {"name": "customer", "value": 1.0, "unit": "weeks"},
+        {"name": "b", "value": 4.4, "unit": "weeks"},
+    ]
+    counts = calc("n", [term("n", "booking_count")], result="number")
+    assert aggregate(split_weeks(), counts, viewer=FULL).to_dict()["terms"] == [
+        {"name": "n", "value": 2, "unit": "count"}
+    ]
+    assert "terms" not in aggregate(split_weeks(), q("booked_days"), viewer=FULL).to_dict()

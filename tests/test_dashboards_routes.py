@@ -2068,7 +2068,7 @@ async def test_a_widget_with_a_bad_formula_is_refused(authed_client, sqlite):
     body = {"name": "Calc", "widgets": [widget_body("Ratio", bad_query)]}
     resp = await client.put(f"/api/dashboards/{dashboard_id}", json=body)
     assert resp.status_code == 422
-    assert _detail(resp) == '"Ratio": The formula uses "nobody", which is not a term'
+    assert _detail(resp) == '"Ratio": "nobody" is not one of your terms: everything, winterthur'
     good = {"name": "Calc", "widgets": [widget_body("Ratio", OVER_WINTERTHUR)]}
     resp = await client.put(f"/api/dashboards/{dashboard_id}", json=good)
     assert resp.status_code == 200

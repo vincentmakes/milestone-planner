@@ -36,7 +36,13 @@ from pydantic_core import PydanticCustomError
 
 from app.models.dashboard import DASHBOARD_VISIBILITIES, DASHBOARD_WIDGET_KINDS
 from app.services.dashboard_seed import GRID_COLUMNS
-from app.services.formula import MAX_FORMULA_LENGTH, FormulaError, parse
+from app.services.formula import (
+    MAX_FORMULA_LENGTH,
+    FormulaError,
+    parse,
+    unknown_name_detail,
+    unused_term_detail,
+)
 from app.services.metrics import (
     DIMENSION_LABELS,
     FILTER_KEYS,
@@ -237,6 +243,8 @@ class FormulaTerm(_Strict):
     @field_validator("name")
     @classmethod
     def _check_name(cls, value: str) -> str:
+        # Names are case-insensitive, like the formula's: stored in lower case.
+        value = value.strip().lower()
         if not re.fullmatch(TERM_NAME_PATTERN, value):
             raise _error(TERM_NAME_DETAIL)
         return value
@@ -323,10 +331,10 @@ class MetricQuery(_Strict):
                 raise _error(f'Two terms are named "{name}"')
         for name in parsed.names:
             if name not in names:
-                raise _error(f'The formula uses "{name}", which is not a term')
+                raise _error(unknown_name_detail(name, names))
         for name in names:
             if name not in parsed.names:
-                raise _error(f'The term "{name}" is not used in the formula')
+                raise _error(unused_term_detail(name))
         if self.measure != formula.terms[0].measure:
             raise _error("A calculation's measure is the measure of its first term")
         for key in FILTER_KEYS:

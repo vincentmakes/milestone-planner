@@ -7,14 +7,14 @@ language::
 
     expression := sum
     sum        := product (("+" | "-") product)*
-    product    := unary (("*" | "/") unary)*
+    product    := unary (("*" | "×" | "/" | "÷") unary)*
     unary      := "-" unary | primary
     primary    := number ["%"] | name | "(" sum ")"
     number     := digits ["." digits] | "." digits
-    name       := [a-z][a-z0-9_]*
+    name       := [A-Za-z][A-Za-z0-9_]*   (case-insensitive: read in lower case)
 
-``70%`` is 0.7; a decimal comma is refused with a message saying to use a
-point. The parser is hand-written recursive descent into a small tree, with
+``70%`` is 0.7; ``×`` and ``÷`` are ``*`` and ``/``; a decimal comma is
+refused with a message saying to use a point. The parser is hand-written recursive descent into a small tree, with
 a nesting limit (``MAX_DEPTH``); nothing is ever ``eval``-ed.
 
 **Mirror contract**: ``frontend/src/utils/formula.ts`` parses the same
@@ -39,10 +39,10 @@ MAX_DEPTH = 20
 
 EMPTY_DETAIL = "Enter a formula"
 TOO_LONG_DETAIL = f"A formula has at most {MAX_FORMULA_LENGTH} characters"
-DECIMAL_COMMA_DETAIL = "Use a point for decimals (0.7, not 0,7)"
+DECIMAL_COMMA_DETAIL = "Use a point for decimals: 0.7"
 TOO_DEEP_DETAIL = "The formula is nested too deeply"
-ENDS_EARLY_DETAIL = "The formula ends too early"
-UNCLOSED_DETAIL = 'A "(" is not closed'
+ENDS_EARLY_DETAIL = "The formula ends too early: something is missing at the end"
+UNCLOSED_DETAIL = "Missing closing bracket )"
 
 
 class FormulaError(ValueError):
@@ -85,6 +85,14 @@ class _Token:
         self.pos = pos  # 1-based position of its first character
 
 
+# The typed (and inserted) multiplication and division signs.
+OPERATOR_ALIASES = {"×": "*", "÷": "/"}
+
+
+def _is_letter(ch: str) -> bool:
+    return "a" <= ch <= "z" or "A" <= ch <= "Z"
+
+
 def _unexpected(text: str, pos: int) -> FormulaError:
     return FormulaError(f'Unexpected "{text}" at position {pos}')
 
@@ -112,18 +120,15 @@ def _tokens(source: str) -> list[_Token]:
                 raise FormulaError(DECIMAL_COMMA_DETAIL)
             out.append(_Token("num", source[start:i], start + 1))
             continue
-        if "a" <= ch <= "z":
+        if _is_letter(ch):
             start = i
-            while i < n and ("a" <= source[i] <= "z" or source[i].isdigit() or source[i] == "_"):
+            while i < n and (_is_letter(source[i]) or source[i].isdigit() or source[i] == "_"):
                 i += 1
-            if i < n and "A" <= source[i] <= "Z":
-                raise FormulaError(f"Term names are written in lowercase, at position {i + 1}")
-            out.append(_Token("name", source[start:i], start + 1))
+            # Names are case-insensitive: read in lower case.
+            out.append(_Token("name", source[start:i].lower(), start + 1))
             continue
-        if "A" <= ch <= "Z":
-            raise FormulaError(f"Term names are written in lowercase, at position {i + 1}")
-        if ch in "+-*/()%":
-            out.append(_Token("op", ch, i + 1))
+        if ch in "+-*/()%×÷":
+            out.append(_Token("op", OPERATOR_ALIASES.get(ch, ch), i + 1))
             i += 1
             continue
         raise _unexpected(ch, i + 1)
@@ -283,3 +288,12 @@ def _evaluate(node: Node, values: Mapping[str, float | None]) -> float | None:
     if node.kind == "*":
         return left * right
     return divide(left, right)
+
+
+def unknown_name_detail(name: str, terms: list[str]) -> str:
+    """A name the formula uses that no term has, with the names it may use."""
+    return f'"{name}" is not one of your terms: {", ".join(terms)}'
+
+
+def unused_term_detail(name: str) -> str:
+    return f"Term {name} is not used in the formula: use it or remove it"

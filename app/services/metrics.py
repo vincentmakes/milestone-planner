@@ -2098,6 +2098,9 @@ class MetricResult:
     warnings: list[str]
     period: tuple[date, date]
     note: str | None = None
+    # A calculated widget: each term's own total over the period,
+    # ``{name, value, unit}`` (the builder shows them beside the result).
+    terms: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -2111,6 +2114,8 @@ class MetricResult:
         }
         if self.note:
             data["note"] = self.note
+        if self.terms is not None:
+            data["terms"] = self.terms
         return data
 
 
@@ -2367,6 +2372,14 @@ def _formula_result(
 
     total_parts_all = {term.name: term.contributions for term in terms}
     total = result(evaluate_with(total_parts_all))
+    term_totals = [
+        {
+            "name": term.name,
+            "value": _rounded(term.measure, _base_value(term.measure, term.contributions), False),
+            "unit": UNITS[term.measure],
+        }
+        for term in terms
+    ]
     rows: list[dict[str, Any]] = []
     if not dimensions:
         rows.append({"keys": [], "value": total})
@@ -2389,6 +2402,7 @@ def _formula_result(
         warnings=warnings,
         period=period,
         note="; ".join(notes) or None,
+        terms=term_totals,
     )
 
 

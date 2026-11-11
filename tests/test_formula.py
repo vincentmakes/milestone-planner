@@ -43,18 +43,22 @@ FORMULA_CASES: list[tuple[str, str | None, tuple[str, ...] | str]] = [
     ("", None, "Enter a formula"),
     ("   ", None, "Enter a formula"),
     ("x" * (MAX_FORMULA_LENGTH + 1), None, "A formula has at most 200 characters"),
-    ("a * 0,7", None, "Use a point for decimals (0.7, not 0,7)"),
+    ("a * 0,7", None, "Use a point for decimals: 0.7"),
     ("a , b", None, 'Unexpected "," at position 3'),
-    ("a +", None, "The formula ends too early"),
-    ("(a", None, 'A "(" is not closed'),
+    ("a +", None, "The formula ends too early: something is missing at the end"),
+    ("(a", None, "Missing closing bracket )"),
     ("a)", None, 'Unexpected ")" at position 2'),
     ("a b", None, 'Unexpected "b" at position 3'),
     ("1.", None, 'Unexpected "." at position 2'),
     ("1..2", None, 'Unexpected "." at position 2'),
     ("a $ b", None, 'Unexpected "$" at position 3'),
     ("% a", None, 'Unexpected "%" at position 1'),
-    ("Weeks", None, "Term names are written in lowercase, at position 1"),
-    ("customerWeeks", None, "Term names are written in lowercase, at position 9"),
+    ("A / B", "(a / b)", ("a", "b")),
+    (
+        "Customer_Weeks ÷ (Capacity × 70%)",
+        "(customer_weeks / (capacity * 70%))",
+        ("customer_weeks", "capacity"),
+    ),
     ("(" * (MAX_DEPTH + 1) + "a" + ")" * (MAX_DEPTH + 1), None, "The formula is nested too deeply"),
     ("-" * (MAX_DEPTH + 1) + "a", None, "The formula is nested too deeply"),
 ]
@@ -118,3 +122,10 @@ def test_a_non_finite_result_is_empty():
 def test_formula_error_carries_its_message():
     error = FormulaError("x")
     assert error.message == "x" and str(error) == "x"
+
+
+def test_plain_word_details_for_the_terms():
+    from app.services.formula import unknown_name_detail, unused_term_detail
+
+    assert unknown_name_detail("capcity", ["a", "b"]) == '"capcity" is not one of your terms: a, b'
+    assert unused_term_detail("c") == "Term c is not used in the formula: use it or remove it"
