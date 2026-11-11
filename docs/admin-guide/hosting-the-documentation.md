@@ -131,9 +131,30 @@ mkdocs build --strict
 python scripts/docs/export_manual_pdf.py --site-dir site --output Milestone-Manual.pdf
 ```
 
-The script serves `site/` on a local port, waits for every screenshot and font, and writes an A4 PDF with a footer (title, version, page *n* / total), bookmarks for the chapters and their sections, and page numbers in the Contents (it renders the page, reads where each chapter starts, writes the numbers and renders again until they hold). A screenshot that would leave most of a page blank is shrunk a little to stay with its heading.
+The script serves `site/` on a local port, waits for every screenshot and font, and writes an A4 PDF: a cover with the version and build month, a footer from page 2 on (title, version, page *n* / total), bookmarks for the chapters and their sections, and page numbers in the Contents (it renders the page, reads where each chapter starts, writes the numbers and renders again until they hold). Between renderings it also fixes the layout: a screenshot that would leave most of a page blank is shrunk a little to stay with its heading, a heading stranded at the bottom of a page moves to the next one, and a chapter whose last page would hold only a few lines is tightened or broken earlier so the page carries a proper block. Short paragraphs are kept whole, so a page never holds one lone line of the paragraph before it.
 
-It then checks the layout of the PDF it wrote, with `pdfplumber`, and stops with a list of problems when it finds an image cut by a page edge, a heading left at the bottom of a page, text or a box outside the page's text area, a Contents number that does not match its chapter, or fewer pages or bytes than the manual can take. It also stops when the page does not load or an image is missing. It lists the pages that end more than a third early, which should only be the last page of a chapter and the two part dividers. The print rules are in `docs/stylesheets/print.css`, which also serves the browser's own **Print** of the print page.
+The result does not depend on the fonts installed on the machine: the body text is checked against the size the print rules ask for (Chromium shrinks the whole document when something is wider than the page, so the script also breaks long names in table code). Add `--block-web-fonts` to print with the machine's own fonts instead of the web fonts, as a stress test of the layout.
+
+It then checks the layout of the PDF it wrote, with `pdfplumber`, and stops with a list of problems when it finds:
+
+- an image cut by a page edge, or text or a box outside the page's text area;
+- a heading left at the bottom of a page;
+- a page inside a chapter that ends more than a third early (the message names the page and the heading that moved to the next one);
+- the last page of a chapter holding fewer than six lines with no image or table;
+- a Contents number that does not match its chapter, a body text smaller than the print rules ask for, or fewer pages or bytes than the manual can take.
+
+It also stops when the page does not load or an image is missing, and prints how full each chapter's last page is. The print rules are in `docs/stylesheets/print.css`, which also serves the browser's own **Print** of the print page.
+
+When a page's text changes so that the automatic passes cannot place it well, an author can steer the print layout from the Markdown with two attributes (the `attr_list` extension), which the online manual ignores:
+
+- `{.print-page-break}` on a heading or a paragraph starts it on a new page;
+- `{.print-keep-with-next}` keeps a heading or a paragraph on the same page as the block after it.
+
+```markdown
+## Keeping it internal {.print-page-break}
+
+The steps below need an administrator: {.print-keep-with-next}
+```
 
 Publish the PDF next to your copy of the manual if your users want a download.
 

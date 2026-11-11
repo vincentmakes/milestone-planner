@@ -202,9 +202,198 @@ def test_a_screenshot_that_left_a_page_half_blank_is_shrunk_to_fit():
     assert pdf.image_fits(no_image, AREA, skip=set()) == {}
 
 
-def test_the_footer_and_the_page_count():
-    footer = pdf.footer("2.6.0")
-    assert "Milestone Planner — User and Admin Manual · 2.6.0" in footer
-    assert 'class="pageNumber"' in footer and 'class="totalPages"' in footer
-    assert "&lt;" in pdf.footer("<b>")
+def test_the_footer_is_in_the_page_margin_and_left_off_the_cover():
+    css = pdf.page_css("2.6.0")
+    assert '@bottom-left { content: "Milestone Planner — User and Admin Manual · 2.6.0"' in css
+    assert 'counter(page) " / " counter(pages)' in css
+    assert (
+        "@page :first { @bottom-left { content: none; } @bottom-right { content: none; } }" in css
+    )
+    # A quote in the label cannot end the CSS string.
+    assert '\\"' in pdf.page_css('2"6')
     assert pdf.page_count(b"<< /Type /Pages >> << /Type /Page >> << /Type/Page >>") == 2
+
+
+def test_lines_are_counted_as_a_reader_sees_them():
+    # Two pieces on one baseline are one line; an image is no line.
+    boxes = [line(100), line(102, "same line"), line(120), image(140, 200)]
+    assert pdf.visual_lines(boxes) == 2
+    assert pdf.visual_lines([]) == 0
+
+
+def test_a_chapter_ending_on_a_scrap_is_found():
+    headings = [
+        heading("Staff Management", 1, 50, level=1),
+        heading("Real-Time Collaboration", 4, 50, level=1),
+        heading("Divider", 6, 300, level=1),
+    ]
+    pages = [
+        page(1, line(60, "Staff Management", height=20), line(100), line(780)),
+        page(2, line(50), line(780)),
+        page(3, line(50, "is not available yet.")),  # one line: a scrap
+        page(4, line(60, "Real-Time Collaboration", height=20), line(780)),
+        page(5, line(50), image(80, 300)),  # an image: a proper last page
+        page(6, line(300, "Divider", height=30)),  # one page: not a tail
+    ]
+    assert pdf.chapter_spans(headings, pages) == [
+        ("Staff Management", 1, 3),
+        ("Real-Time Collaboration", 4, 5),
+        ("Divider", 6, 6),
+    ]
+    tails = pdf.chapter_tails(headings, pages, AREA)
+    assert tails == [("Staff Management", 3, 1)]
+    message = pdf.tail_problems(tails)[0]
+    assert message.startswith('page 3: the last page of "Staff Management" holds only 1 line(s)')
+    assert "{.print-page-break}" in message
+    # The last rows of a table cut by the page before are a scrap too; a
+    # whole table (a box a quarter page tall) is a proper last page.
+    rows = page(3, pdf.Box(50, 40, 500, 110, "rect"), line(50, "Variable"), line(70), line(90))
+    assert pdf.chapter_tails(headings, [*pages[:2], rows, *pages[3:]], AREA)[0][1:] == (3, 3)
+    table = page(3, pdf.Box(50, 40, 500, 300, "rect"), line(50), line(70), line(90))
+    assert pdf.chapter_tails(headings, [*pages[:2], table, *pages[3:]], AREA) == []
+    # Six lines are enough.
+    six = page(3, *(line(50 + 15 * i) for i in range(6)))
+    assert pdf.chapter_tails(headings, [*pages[:2], six, *pages[3:]], AREA) == []
+
+
+def test_a_page_ending_early_inside_a_chapter_names_what_moved():
+    headings = [
+        heading("Gantt Charts", 1, 50, level=1),
+        heading("Context Menu", 3, 42),
+        heading("Kanban", 5, 50, level=1),
+    ]
+    pages = [
+        page(1, line(60, "Gantt Charts", height=20), line(780)),
+        page(2, line(50), line(400)),  # ends early: the section moved
+        page(3, line(44, "Context Menu", height=14), line(780)),
+        page(4, line(50), line(300)),  # the chapter's last page: allowed
+        page(5, line(60, "Kanban", height=20), line(780)),
+        page(6, line(50), line(780)),
+        page(7, line(50), line(300)),
+    ]
+    found = pdf.mid_chapter_gaps(headings, pages, AREA)
+    assert found == [
+        'page 2: ends more than a third early inside its chapter; the section "Context Menu" '
+        "moved to page 3 (shrink its screenshot, or mark a block {.print-keep-with-next} "
+        "or {.print-page-break})"
+    ]
+    # No heading at the top of the next page: its first line is named.
+    pages[2] = page(3, line(44, "A paragraph that did not fit"), line(780))
+    assert (
+        '"A paragraph that did not fit" moved to page 3'
+        in pdf.mid_chapter_gaps(headings[:1] + headings[2:], pages, AREA)[0]
+    )
+
+
+def test_a_stranded_heading_low_on_its_page_moves_to_the_next():
+    headings = [heading("Low", 1, 768), heading("High", 2, 300)]
+    pages = [
+        page(1, line(100), line(770, "Low", height=14), line(788)),
+        page(2, line(100), line(302, "High", height=14), line(320)),
+    ]
+    assert [i for i, _h, _l in pdf.stranded(headings, pages, AREA)] == [0, 1]
+    # Only the low one: moving the high one would leave its page too empty.
+    assert pdf.stranded_breaks(headings, pages, AREA) == [0]
+
+
+def test_a_one_line_introduction_followed_by_a_subsection_is_not_stranded():
+    headings = [heading("Section", 1, 768, level=2), heading("Subsection", 2, 42, level=3)]
+    pages = [
+        page(1, line(100), line(770, "Section", height=14), line(788)),
+        page(2, line(44, "Subsection", height=14), line(70), line(85)),
+    ]
+    assert pdf.stranded(headings, pages, AREA) == []
+    # Without the subsection there, the one line is too little.
+    assert len(pdf.stranded(headings[:1], pages, AREA)) == 1
+
+
+def test_a_chapter_tail_is_absorbed_by_a_screenshot_then_tightening_then_a_break():
+    headings = [heading("Chapter", 1, 50, level=1), heading("Late section", 2, 600)]
+    pages = [
+        page(1, line(60, "Chapter", height=20), image(100, 500), line(780)),
+        page(2, line(50), line(602, "Late section", height=14), line(620), line(780)),
+        page(3, line(50, "the scrap")),
+    ]
+    tails = [("Chapter", 3, 1)]
+    natural = {0: 400.0}
+    # 1. The screenshot can give up the scrap's height.
+    shrinks, tighten, breaks, texts = pdf.tail_fixes(headings, pages, AREA, tails, natural, {})
+    need = (60 - AREA.top) + pdf.FIT_MARGIN
+    assert shrinks == {0: pytest.approx(400 - need)} and not (tighten or breaks or texts)
+    # 2. Not within the shrink limit: the chapter is tightened.
+    shrinks, tighten, breaks, texts = pdf.tail_fixes(
+        headings, pages, AREA, tails, natural, {}, max_shrink=0.01
+    )
+    assert shrinks == {} and tighten == [0] and breaks == [] and texts == []
+    # 3. Tightened already: the late section starts the last page.
+    shrinks, tighten, breaks, texts = pdf.tail_fixes(
+        headings, pages, AREA, tails, natural, {}, tightened={0}, max_shrink=0.01
+    )
+    assert tighten == [] and breaks == [1] and texts == []
+    # 4. No heading low enough: the block a low line starts, never the line under a heading.
+    # ("Above" sits just over the band, so the line under it is skipped.)
+    plain = [heading("Chapter", 1, 50, level=1), heading("Above", 2, 560)]
+    pages[1] = page(
+        2,
+        line(50),
+        line(562, "Above", height=14),
+        line(580, "First line of Above"),
+        line(640, "A late paragraph"),
+        line(780),
+    )
+    _s, _t, breaks, texts = pdf.tail_fixes(
+        plain, pages, AREA, tails, natural, {}, tightened={0}, max_shrink=0.01
+    )
+    assert breaks == [] and (0, "A late paragraph") in texts
+    assert (0, "First line of Above") not in texts
+
+
+def test_the_cover_has_no_footer_and_a_modest_logo():
+    assert pdf.cover_problems([], AREA) == []
+    good = page(1, image(40, 40 + 13 * pdf.MM), line(300, "Milestone Planner", height=30))
+    assert pdf.cover_problems([good], AREA) == []
+    bad = page(1, image(40, 300), line(820, "Milestone Planner — User and Admin Manual"))
+    found = pdf.cover_problems([bad], AREA)
+    assert found[0] == "page 1: the cover carries the running footer"
+    assert "mm high (at most 20 mm)" in found[1]
+
+
+def test_a_document_shrunk_to_fit_is_refused():
+    assert pdf.scale_problems(10.2, 10.2) == []
+    assert pdf.scale_problems(10.2, None) == []
+    assert pdf.scale_problems(0, 9.0) == []
+    found = pdf.scale_problems(10.2, 9.7)
+    assert found and "9.70 pt instead of 10.20 pt" in found[0]
+
+
+HOOK = Path(__file__).resolve().parents[1] / "docs" / "hooks" / "manual_version.py"
+_hook_spec = importlib.util.spec_from_file_location("manual_version", HOOK)
+assert _hook_spec and _hook_spec.loader
+hook = importlib.util.module_from_spec(_hook_spec)
+_hook_spec.loader.exec_module(hook)
+
+
+def test_the_cover_reads_the_version_month_and_sentence_from_the_build(tmp_path, monkeypatch):
+    from datetime import datetime
+
+    assert hook.build_month(datetime(2026, 11, 3)) == "November 2026"
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "1767225600")  # 2026-01-01 UTC
+    assert hook.build_month() == "January 2026"
+    assert (
+        hook.cover_description("Milestone Planner — plan R&D projects and people.")
+        == "Using and running Milestone Planner: plan R&D projects and people."
+    )
+    assert hook.cover_description("") == ""
+    (tmp_path / "VERSION").write_text("2.6.0\n", encoding="utf-8")
+
+    class Config:
+        config_file_path = str(tmp_path / "mkdocs.yml")
+        site_description = "Docs — the manual"
+        extra: dict = {}
+
+    config = hook.on_config(Config())
+    assert config.extra == {
+        "version": "2.6.0",
+        "build_month": "January 2026",
+        "cover_description": "Using and running Milestone Planner: the manual.",
+    }
