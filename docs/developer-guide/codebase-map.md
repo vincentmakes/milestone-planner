@@ -96,7 +96,8 @@ app/
   main.py              # create_app()/create_wrapped_app(), lifespan, router registration,
                        #   CustomJSONResponse, CORS, gated API docs, static mounts + SPA catch-all
   config.py            # Pydantic settings (env vars); get_settings() lru_cached
-  database.py          # Tenant DB engine/session (get_db / get_db_readonly) + declarative Base
+  database.py          # Tenant DB engine/session (get_db = the one session per request, get_db_readonly =
+                       #   the same session; release_request_connection; pool_arguments) + declarative Base
   utils.py             # utcnow_naive() — all DB datetime columns are naive TIMESTAMP holding UTC
   scripts/             # init_db.py (AUTO_INIT_DB target), seed_demo.py (CLI for the `demo`
                        #   tenant: provision + register, then services/demo_seed), demo_data.py
@@ -414,6 +415,9 @@ scripts/
   setup_admin_password.py
   sql/                 # milestone_master_fresh_install.sql, tenant_schema_template.sql,
                        #   migrations/001_add_max_capacity.sql
+  loadtest/            # Load test (2.5.1): common.py, seed.py (pilot / stress workspaces through
+                       #   the API), run.py (simulated browsers: startup + write burst + refetches),
+                       #   journey.py (pool-of-one journey), ci.sh (the CI job), README.md
   screenshots/         # Playwright screenshot pipeline (capture.py, capture_collab.py,
                        #   capture_admin.py, README.md) — data comes from app.scripts.seed_demo
 tests/                 # Backend pytest suite (mock-based, no live DB): conftest.py (fixtures),
@@ -439,7 +443,8 @@ Settings are loaded by `app/config.py` (pydantic-settings, `.env`, case-insensit
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `localhost`/`5432`/`milestone_dev`/`milestone_dev_user`/`""` | Tenant DB (single-tenant mode) |
 | `DATABASE_URL` | *(unset)* | Overrides individual `DB_*` vars (`postgres://` auto-rewritten to `postgresql+asyncpg://`) |
 | `DB_SSL` | `false` | Require SSL to the tenant DB |
-| `DB_POOL_SIZE` / `DB_POOL_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `20`/`10`/`30` | Connection pool tuning |
+| `DB_POOL_SIZE` / `DB_POOL_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `20`/`10`/`30` | Connection pool of the default database **and, since 2.5.1, of every tenant pool** (it used hard-coded 20/10/30): connections kept, extra ones allowed, seconds a request waits for one before failing. Each request uses one connection (`get_db`) |
+| `DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced (`0` = never); every pool also pings a connection before use (`pool_pre_ping`, 2.5.1) |
 | `SESSION_SECRET` | insecure default (`.env.example` ships it empty) | Session signing / SSO-state HMAC secret; single-tenant mode also derives the encryption key from it. **Required in production**: with `DEBUG=false`, startup refuses an empty or published placeholder value (`Settings.check_startup_security()`, `INSECURE_SESSION_SECRETS` in `app/config.py`); `DEBUG=true` only logs |
 | `SESSION_COOKIE_NAME` | `connect.sid` | Tenant session cookie (express-session compatible) |
 | `SESSION_MAX_AGE` | `86400` | Session lifetime (seconds) |
@@ -498,12 +503,13 @@ Health endpoint responds at **both** `/health` and `/api/health` (status, mode, 
 
 Four workflows in `.github/workflows/`. `backend.yml`, `frontend.yml` and `docker.yml` trigger on push to `main` **and every PR, whatever its base branch** (so stacked PRs get the full gates); version-check runs only on PRs targeting `main`. `backend.yml` and `frontend.yml` additionally run weekly on crons — offset a day apart — where only their `Audit` jobs execute:
 
+- **Load test.** `backend.yml`'s `Load test` job (filter: the backend paths plus `scripts/loadtest/**`) runs `scripts/loadtest/ci.sh` against a PostgreSQL 16 service container: the pool-of-one journey (`DB_POOL_SIZE=1`), the pilot workspace with 28 browsers and the stress workspace with 10 × 6 + 1 unlimited; it fails on any non-2xx, a request over its ceiling, or `QueuePool limit` / `could not be written` in a server log (see [Load testing](conventions-in-depth.md#load-testing)).
 - **Path-filtered.** Each of the three starts with a `Detect Changes` job (`dorny/paths-filter@v3` in **git mode** — `token: ""`, `base` = the PR's base branch — because the REST API mode silently treats files past its 3000-file limit as unchanged). Every other job `needs: changes` and runs only when its filter matched: backend = `app/**`, `tests/**`, `requirements*.txt`, `pyproject.toml`, `migrations/**`, `shared/**`, `VERSION`; frontend = `frontend/**`, `shared/**`; docker = everything the image `COPY`s (`Dockerfile`, `.dockerignore`, `docker-entrypoint.sh`, `requirements.txt`, `app/`, `frontend/`, `shared/`, `migrations/`, `VERSION`, `public/`). `shared/permission-keys.json` is written by the backend catalogue test and read by the Vitest mirror test, so it re-runs all three. **A change to a workflow file re-runs that whole workflow.** The outputs are compared with `== 'true'` — paths-filter emits the *string* `'false'`, which is truthy, so never shorten them to `a || b`. The `Audit` jobs use `!cancelled() && (schedule || changed)` so the cron still runs them while `changes` is skipped. A workflow-level `concurrency` group cancels superseded PR runs, never `main` pushes (they publish the badges).
 - **Sharded tests.** Backend tests run as 3 `Tests (shard K/3)` jobs (`pytest --shard=K/3 --cov=app --cov-report= --cov-fail-under=0`, each uploading its `.coverage` as `coverage.shard-K`); frontend tests as 2 `Tests (shard K/2)` jobs (`vitest run --shard=K/2 --reporter=blob --coverage.enabled` with the thresholds zeroed, uploading `.vitest-reports/`). An aggregate **`Tests`** job per workflow fails unless every shard passed, checks that every shard's artifact arrived, then combines (`coverage combine` / `vitest run --merge-reports --coverage.enabled`) and enforces the suite floors, writes the summary, runs diff-cover on PRs and hands the badge total on `main`. Per-shard runs never gate on coverage. **Only the aggregate `Tests` job is the one to require in branch protection — the shard jobs need no rule of their own** (it runs even when a shard failed, via `!cancelled()`, so it fails instead of being skipped). The `matrix` is the **only** place the shard count is set: `strategy.job-total` carries it into the job names, the commands and the aggregate's count check.
 
 | Workflow | Jobs / enforcement |
 |----------|--------------------|
-| `backend.yml` | `pip-audit --strict` over `requirements*.txt` (**blocking**); ruff check + format check on `app/`; pytest in 3 shards + aggregate `Tests` with the combined coverage — the `fail_under` floor, a per-file table + `::notice` total in the job summary, and on PRs **diff-cover ≥ 80 %** on changed lines; mypy; on push to `main`, a `Coverage Badges` job publishes `backend.json` |
+| `backend.yml` | `pip-audit --strict` over `requirements*.txt` (**blocking**); ruff check + format check on `app/`; pytest in 3 shards + aggregate `Tests` with the combined coverage — the `fail_under` floor, a per-file table + `::notice` total in the job summary, and on PRs **diff-cover ≥ 80 %** on changed lines; mypy; the `Load test` job (`scripts/loadtest/ci.sh`: pool-of-one journey, pilot and stress scenarios against a real PostgreSQL and uvicorn); on push to `main`, a `Coverage Badges` job publishes `backend.json` |
 | `frontend.yml` | eslint; vitest in 2 shards + aggregate `Tests` with the merged coverage — the `coverage.thresholds` floors, a summary table + `::notice` total, and on PRs **diff-cover ≥ 80 %** on changed lines; `npm run build` (tsc + vite); `npm audit --audit-level=moderate` (**blocking** — see [below](#ci)); on push to `main`, a `Coverage Badges` job publishes `frontend.json` |
 | `docker.yml` | `docker build` of the production image (only when an image input changed) |
 | `version-check.yml` | PRs to `main` only: `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs the PR's **base commit** (not the live `main`, so a race with a merge cannot false-fail) **and** `CHANGELOG.md` has a matching `## [<version>]` heading; its paths-filter runs in git mode like the other three |
