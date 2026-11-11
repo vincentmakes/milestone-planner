@@ -198,7 +198,7 @@ A **KPI**, a **gauge**, a **bar** or a **line** can divide one measure by anothe
 
 ### Example: absorption
 
-The pilot's *absorption* is the time booked on customer projects over the people's capacity, against a 70 % goal. Two ways to show it:
+*Absorption* is the time booked on customer projects over the people's capacity, measured against a goal such as 70 %. Two ways to show it:
 
 1. A **gauge** of **Utilisation**, filtered with **Has a customer = With a customer**, **Target** `70` and **Show as % of target** on: the dial reads booked customer time over capacity, divided by 70 % — *91 % of target* means the team reaches 91 % of its goal (63.7 % utilisation on customer projects)
 2. A **line** by month of **Booked days** with **Has a customer = With a customer**, **Divide by** **Capacity (days)**, result **Percentage**: the customer utilisation month by month; set the filters of the divisor to a team to follow that team's absorption

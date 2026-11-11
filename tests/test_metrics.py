@@ -3355,3 +3355,32 @@ def test_widget_options_take_percent_of_target():
         }
     )
     assert widget.options.percent_of_target is True and widget.options.target == 70
+
+
+def test_a_ratio_groups_each_bucket_on_its_own():
+    # Monthly over Feb-May: Feb both sides, Mar numerator only, Apr denominator
+    # only, May neither.
+    data = facts(
+        projects=[project(1, customer="Acme"), project(2)],
+        bookings=[
+            booking(1, "2026-02-02", "2026-02-06", project_id=1),
+            booking(2, "2026-02-09", "2026-02-13", project_id=2),
+            booking(3, "2026-03-02", "2026-03-06", project_id=2),
+            booking(4, "2026-04-06", "2026-04-08", project_id=1),
+        ],
+    )
+    query = q(
+        "booked_days",
+        MONTHS,
+        {"from": "2026-02-01", "to": "2026-05-31"},
+        filters={"has_customer": False},
+        divide_by={"measure": "booked_days", "filters": {"has_customer": True}},
+    )
+    result = aggregate(data, query, viewer=FULL).to_dict()
+    assert [(row["keys"][0]["label"], row["value"]) for row in result["rows"]] == [
+        ("Feb 2026", 100.0),  # 5 internal days / 5 customer days
+        ("Mar 2026", None),  # 5 / 0
+        ("Apr 2026", 0.0),  # 0 / 3
+        ("May 2026", 0.0),  # 0 / 0
+    ]
+    assert result["total"] == 125.0  # 10 / 8

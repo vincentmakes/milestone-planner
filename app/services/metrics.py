@@ -2203,6 +2203,14 @@ def ratio_value(num: float, den: float, result: str) -> float | None:
     return value / 100
 
 
+def _by_first_key(contributions: list[_Contribution]) -> dict[Any, list[_Contribution]]:
+    """The contributions grouped by their first dimension value's key, in one pass."""
+    groups: dict[Any, list[_Contribution]] = {}
+    for c in contributions:
+        groups.setdefault(c.values[0].key, []).append(c)
+    return groups
+
+
 def _ratio_result(
     facts: Facts,
     query: Any,
@@ -2235,14 +2243,16 @@ def _ratio_result(
     if not dimensions:
         rows.append({"keys": [], "value": total})
     else:
-        # The one dimension is the period (the schema refuses any other).
+        # The one dimension is the period (the schema refuses any other):
+        # each side grouped by bucket once, an absent bucket is empty (0 / 0).
+        num_by_bucket = _by_first_key(numerator)
+        den_by_bucket = _by_first_key(denominator)
         for bucket in grid.values:
             rows.append(
                 {
                     "keys": [_key_dict(bucket)],
                     "value": value(
-                        [c for c in numerator if c.values[0].key == bucket.key],
-                        [c for c in denominator if c.values[0].key == bucket.key],
+                        num_by_bucket.get(bucket.key, []), den_by_bucket.get(bucket.key, [])
                     ),
                 }
             )
