@@ -1553,3 +1553,27 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     expect(screen.getByLabelText('Has a customer')).toHaveValue('true');
   });
 });
+
+
+describe('WidgetEditor — target is a goal (2.6.0)', () => {
+  const chooseKind = (name: string) => fireEvent.click(screen.getByRole('radio', { name }));
+  const goalSwitch = () => screen.getByRole('switch', { name: 'Target is a goal' });
+
+  it('offers the switch on a gauge once the target is above 0, and saves it', async () => {
+    const { onSave } = renderEditor();
+    fireEvent.change(screen.getByLabelText('Title *'), { target: { value: 'Absorption' } });
+    chooseKind('Gauge');
+    expect(goalSwitch()).toBeDisabled();
+    expect(screen.getByText('Green from the target up, amber within 15 % below it')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Target'), { target: { value: '70' } });
+    expect(goalSwitch()).not.toBeDisabled();
+    fireEvent.click(goalSwitch());
+    expect(goalSwitch()).toBeChecked();
+    await flushPreview();
+    fireEvent.click(saveButton());
+    expect(onSave.mock.calls[0][0].options).toEqual({ target: 70, target_is_goal: true });
+    // A KPI has no bands: no switch.
+    chooseKind('KPI');
+    expect(screen.queryByRole('switch', { name: 'Target is a goal' })).not.toBeInTheDocument();
+  });
+});

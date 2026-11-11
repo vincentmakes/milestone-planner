@@ -1144,6 +1144,8 @@ export interface WidgetOptions {
   target?: number | null;
   /** Show the value as a percentage of `target` (kept only with a target above 0) */
   percent_of_target?: boolean | null;
+  /** A gauge's target is a goal to reach: red below 85 % of it, amber up to it, green from it (target above 0 only) */
+  target_is_goal?: boolean | null;
 }
 
 export interface GridPosition {

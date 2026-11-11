@@ -2007,14 +2007,25 @@ async def test_a_widget_stores_percent_of_target(authed_client, sqlite):
             {
                 **widget_body("Absorption", OVER_WINTERTHUR),
                 "kind": "gauge",
-                "options": {"target": 70, "percent_of_target": True},
+                "options": {"target": 70, "percent_of_target": True, "target_is_goal": True},
             }
         ],
     }
     resp = await client.post("/api/dashboards", json=body)
     assert resp.status_code == 201
     widget = resp.json()["widgets"][0]
-    assert widget["options"] == {"target": 70, "percent_of_target": True}
+    assert widget["options"] == {"target": 70, "percent_of_target": True, "target_is_goal": True}
     assert widget["query"]["divide_by"] == OVER_WINTERTHUR["divide_by"]
     bad = {**body, "widgets": [{**body["widgets"][0], "options": {"percent_of_target": "maybe"}}]}
     assert (await client.post("/api/dashboards", json=bad)).status_code == 422
+
+
+def test_target_is_goal_is_a_boolean_option_on_any_kind():
+    from pydantic import ValidationError
+
+    from app.schemas.dashboard import WidgetOptions
+
+    assert WidgetOptions.model_validate({"target_is_goal": True}).target_is_goal is True
+    assert WidgetOptions.model_validate({}).target_is_goal is None
+    with pytest.raises(ValidationError):
+        WidgetOptions.model_validate({"target_is_goal": "maybe"})

@@ -671,3 +671,14 @@ describe('calculated widgets and % of target (2.6.0)', () => {
     expect(cleanOptions('kpi', query(), { target: 70, number_format: 'percent' })).toEqual({ target: 70 });
   });
 });
+
+
+describe('target is a goal (2.6.0)', () => {
+  it('is kept on a gauge with a target above 0 only', () => {
+    expect(cleanOptions('gauge', query(), { target: 70, target_is_goal: true })).toEqual({ target: 70, target_is_goal: true });
+    expect(cleanOptions('gauge', query(), { target: 0, target_is_goal: true })).toEqual({ target: 0 });
+    expect(cleanOptions('gauge', query(), { target_is_goal: true })).toEqual({});
+    expect(cleanOptions('kpi', query(), { target: 70, target_is_goal: true })).toEqual({ target: 70 });
+    expect(cleanOptions('bar', query(), { target: 70, target_is_goal: true })).toEqual({});
+  });
+});

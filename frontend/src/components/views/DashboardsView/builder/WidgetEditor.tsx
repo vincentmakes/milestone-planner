@@ -173,6 +173,7 @@ const DIVIDE_RESULT_OPTIONS = [
   { value: 'percent', label: 'Percentage (× 100)' },
   { value: 'number', label: 'Number' },
 ];
+export const GOAL_HINT = 'Green from the target up, amber within 15 % below it';
 export const DIVIDE_BY_HINT = 'The measure above divided by this one, over the same period and buckets';
 
 /** Picker ids of the dimension choices: a kind by its position, a project field by its id. */
@@ -869,6 +870,16 @@ function KindOptions({
           hint={unitHint}
         />
       )}
+      {kind === 'gauge' && (
+        <ToggleSwitch
+          label="Target is a goal"
+          checked={Boolean(options.target_is_goal) && hasTarget}
+          disabled={!hasTarget}
+          title={hasTarget ? undefined : 'Enter a target above 0 first'}
+          onChange={(isGoal) => onChange({ target_is_goal: isGoal })}
+        />
+      )}
+      {kind === 'gauge' && <p className={styles.hint}>{GOAL_HINT}</p>}
       {TARGET_KINDS.has(kind) && (
         <ToggleSwitch
           label="Show as % of target"

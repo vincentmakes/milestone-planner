@@ -331,7 +331,8 @@ export function parseTarget(text: string): number | null {
  * stacked nor 100 %: adding ratios up, or sharing out negative days, means
  * nothing. A gauge and a KPI keep their target when it is one (finite, from
  * 0 to `MAX_GAUGE_TARGET`: `gaugeTarget`, the renderer's rule), and *Show as
- * % of target* only with a target above 0.
+ * % of target* only with a target above 0; a gauge keeps *Target is a goal*
+ * on the same condition.
  */
 export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
   const clean: WidgetOptions = {};
@@ -345,6 +346,8 @@ export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: Widg
     const target = gaugeTarget(options.target);
     if (target !== null) clean.target = target;
     if (options.percent_of_target && target !== null && target > 0) clean.percent_of_target = true;
+    // Only a gauge draws bands: a goal-gauge keeps the flag (a KPI tile has none).
+    if (kind === 'gauge' && options.target_is_goal && target !== null && target > 0) clean.target_is_goal = true;
   }
   if (kind === 'line' && options.show_legend === false) clean.show_legend = false;
   if (kind === 'pie' && options.show_legend === true) clean.show_legend = true;

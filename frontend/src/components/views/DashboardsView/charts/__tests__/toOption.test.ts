@@ -10,6 +10,7 @@ import {
   escapeHtml,
   GAUGE_BANDS,
   gaugeScale,
+  GOAL_AMBER_FROM,
   hasDrawableData,
   gaugeTarget,
   MAX_GAUGE_TARGET,
@@ -1074,5 +1075,73 @@ describe('toOption — gauge as a percentage of its target (2.6.0)', () => {
     expect(relabelled.stops).toBe(scale.stops);
     expect(relabelled.band(50)).toBe(scale.band(10));
     expect(relabelled.band(150)).toBe(scale.band(30));
+  });
+});
+
+
+describe('gaugeScale — a target that is a goal (2.6.0)', () => {
+  it('is red below 85 % of the goal, amber up to it, green from it, for every unit', () => {
+    expect(GOAL_AMBER_FROM).toBe(0.85);
+    for (const unit of ['percent', 'days'] as const) {
+      const scale = gaugeScale(50, 70, unit, GAUGE_BANDS, true);
+      expect(scale.band(59.4)).toBe('bad'); // just below 85 % (59.5)
+      expect(scale.band(59.5)).toBe('warn'); // at 85 %
+      expect(scale.band(69.99)).toBe('warn'); // just below the goal
+      expect(scale.band(70)).toBe('good'); // at the goal
+      expect(scale.band(95)).toBe('good'); // above
+      const at = (v: number) => (v - scale.min) / (scale.max - scale.min);
+      expect(scale.stops).toEqual([
+        [at(59.5), 'bad'],
+        [at(70), 'warn'],
+        [1, 'good'],
+      ]);
+    }
+    // Min and max follow the limit rules, so the green zone above the goal shows.
+    const limit = gaugeScale(50, 70, 'percent');
+    const goal = gaugeScale(50, 70, 'percent', GAUGE_BANDS, true);
+    expect([goal.min, goal.max]).toEqual([limit.min, limit.max]);
+    expect(goal.max).toBeGreaterThan(70);
+  });
+
+  it('leaves the limit bands unchanged without the flag', () => {
+    const scale = gaugeScale(70, 85, 'percent', GAUGE_BANDS, false);
+    expect(scale.band(70)).toBe('good');
+    expect(scale.band(90)).toBe('warn');
+    expect(scale.band(110)).toBe('bad');
+  });
+});
+
+describe('toOption — a goal gauge (2.6.0)', () => {
+  const full: ChartTheme = {
+    palette: ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'],
+    textPrimary: 'primary',
+    textSecondary: 'secondary',
+    good: 'green',
+    warn: 'orange',
+    bad: 'red',
+  };
+  const utilisation = (total: number): MetricResult => ({ ...result([row([], total)], 0), unit: 'percent', total });
+  const colourOf = (total: number, options: Record<string, unknown>) =>
+    (toOption('gauge', utilisation(total), options, full) as AnyOption).series[0].progress.itemStyle.color;
+
+  it('colours the value bar by its goal band, and ignores the flag without a target above 0', () => {
+    expect(colourOf(50, { target: 70, target_is_goal: true })).toBe('red');
+    expect(colourOf(63.7, { target: 70, target_is_goal: true })).toBe('orange');
+    expect(colourOf(75, { target: 70, target_is_goal: true })).toBe('green');
+    expect(colourOf(75, { target: 70 })).toBe('orange');
+    expect(colourOf(50, { target_is_goal: true })).toBe('p0');
+    // A target of 0 keeps the limit bands (amber up to 100 % on a percentage).
+    expect(colourOf(50, { target: 0, target_is_goal: true })).toBe(colourOf(50, { target: 0 }));
+  });
+
+  it('keeps the goal bands as a percentage of the target', () => {
+    const options = { target: 70, target_is_goal: true, percent_of_target: true };
+    const series = (toOption('gauge', utilisation(63.7), options, full) as AnyOption).series[0];
+    expect(series.data[0].value).toBeCloseTo(91);
+    expect(series.progress.itemStyle.color).toBe('orange');
+    const fraction = (v: number) => (v - series.min) / (series.max - series.min);
+    expect(series.axisLine.lineStyle.color[0][0]).toBeCloseTo(fraction(85));
+    expect(series.axisLine.lineStyle.color[1][0]).toBeCloseTo(fraction(100));
+    expect(colourOf(70, options)).toBe('green');
   });
 });

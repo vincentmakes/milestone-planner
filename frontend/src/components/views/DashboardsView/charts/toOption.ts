@@ -173,6 +173,9 @@ export function niceCeil(value: number): number {
 // The target rule lives beside the KPI's (a KPI takes a target too, 2.6.0).
 export { gaugeTarget, MAX_GAUGE_TARGET } from './kpi';
 
+/** A goal gauge (`target_is_goal`) turns amber from this share of its target. */
+export const GOAL_AMBER_FROM = 0.85;
+
 /**
  * The scale of a gauge of `value` against `target`, in `unit`.
  *
@@ -185,12 +188,18 @@ export { gaugeTarget, MAX_GAUGE_TARGET } from './kpi';
  * then red — and red after; without
  * one it is the plain colour. The stops are fractions of the track from
  * `min` to `max`, so a negative minimum keeps every band at its value.
+ *
+ * With `isGoal` (2.6.0, `target_is_goal`) the target is a goal to reach, for
+ * every unit alike: red below `GOAL_AMBER_FROM` (85 %) of the target, amber
+ * from there up to the target, green from the target up (the same `max`, so
+ * the green zone above the target shows).
  */
 export function gaugeScale(
   value: number,
   target: number | null | undefined,
   unit: MetricUnit,
-  colours: GaugeColours = GAUGE_BANDS
+  colours: GaugeColours = GAUGE_BANDS,
+  isGoal = false
 ): GaugeScale {
   const goal = gaugeTarget(target);
   const percent = unit === 'percent';
@@ -199,6 +208,21 @@ export function gaugeScale(
     ? Math.max(120, ceil10(value), ceil10(goal ?? 0))
     : niceCeil(Math.max((goal ?? 0) * 1.25, value * 1.1, 1));
   if (goal === null) return { min, max, stops: [[1, colours.plain]], band: () => colours.plain };
+  if (isGoal) {
+    // Compared as values: amber from 85 % of the goal, green from the goal itself.
+    const amberFrom = goal * GOAL_AMBER_FROM;
+    const at = (v: number) => (v - min) / (max - min);
+    return {
+      min,
+      max,
+      stops: [
+        [at(amberFrom), colours.bad],
+        [at(goal), colours.warn],
+        [1, colours.good],
+      ],
+      band: (v) => (v >= goal ? colours.good : v >= amberFrom ? colours.warn : colours.bad),
+    };
+  }
   // The amber band's end, as a value: 100 % or 115 % of the target, never before the target.
   const amber = Math.max(goal, Math.min(max, percent ? 100 : goal * 1.15));
   const fraction = (v: number) => (v - min) / (max - min);
@@ -245,12 +269,19 @@ function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartThem
   const raw = result.total ?? 0;
   const target = gaugeTarget(opts.target);
   const base = targetBase(opts);
-  const plain = gaugeScale(raw, target, unit, {
-    good: theme.good ?? palette[1],
-    warn: theme.warn ?? palette[2],
-    bad: theme.bad ?? palette[7] ?? palette[0],
-    plain: palette[0],
-  });
+  const plain = gaugeScale(
+    raw,
+    target,
+    unit,
+    {
+      good: theme.good ?? palette[1],
+      warn: theme.warn ?? palette[2],
+      bad: theme.bad ?? palette[7] ?? palette[0],
+      plain: palette[0],
+    },
+    // A goal to reach (red, then amber within 15 % below it, green from it up).
+    Boolean(opts.target_is_goal) && (target ?? 0) > 0
+  );
   const scale = base === null ? plain : percentOfTargetScale(plain, base);
   const value = base === null ? raw : percentOfTarget(raw, base) ?? 0;
   const detail = (v: number): string => {

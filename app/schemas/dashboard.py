@@ -310,6 +310,10 @@ class WidgetOptions(_Strict):
     # Show the value as a percentage of ``target`` (2.6.0): value / target x
     # 100, computed by the client; ignored without a target above 0.
     percent_of_target: bool | None = None
+    # A gauge's target is a goal to reach (2.6.0): red below 85 % of it, amber
+    # up to it, green from it. Kept by the client on a gauge with a target
+    # above 0 only.
+    target_is_goal: bool | None = None
 
 
 class GridPosition(_Strict):

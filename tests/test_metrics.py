@@ -3346,7 +3346,7 @@ def test_widget_options_take_percent_of_target():
             "kind": "kpi",
             "title": "Absorption",
             "query": {"measure": "booked_days"},
-            "options": {"target": 70, "percent_of_target": True},
+            "options": {"target": 70, "percent_of_target": True, "target_is_goal": True},
             "layout": {
                 "lg": {"x": 0, "y": 0, "w": 3, "h": 2},
                 "md": {"x": 0, "y": 0, "w": 4, "h": 2},
@@ -3355,6 +3355,7 @@ def test_widget_options_take_percent_of_target():
         }
     )
     assert widget.options.percent_of_target is True and widget.options.target == 70
+    assert widget.options.target_is_goal is True
 
 
 def test_a_ratio_groups_each_bucket_on_its_own():

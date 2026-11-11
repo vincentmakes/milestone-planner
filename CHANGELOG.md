@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Dashboards: Utilisation takes the project filters (projects, project teams, project managers, tags, project fields, Confirmed, Has a customer), which narrow the booked time while the capacity stays that of the people in scope.
 - Dashboards: a Has a customer filter keeps the projects with a customer, or those without one, on every measure that reads projects.
 - Dashboards: a KPI or a gauge can show its value as a percentage of its target ("91 % of target"); a KPI now takes a target like the gauge.
+- Dashboards: a gauge's target can be a goal to reach — red well below it, amber just below it, green from the target up.
 - Dashboards: calculated widgets divide one measure by another, each with its own filters, as a percentage or a number — on a KPI, a gauge, or a bar or line by period.
 
 ## [2.5.1] - 2026-11-11
