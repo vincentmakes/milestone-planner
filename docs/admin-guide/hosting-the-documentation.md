@@ -68,7 +68,7 @@ jobs:
           api_location: ""         # no API
 ```
 
-`CHANGELOG.md` is in the trigger paths because the Release Notes page includes it.
+`CHANGELOG.md` is in this workflow's trigger paths because the site's Release Notes page includes it. (Milestone's own `Manual PDF` workflow does not watch it: the PDF leaves the Developer Guide, and its Release Notes, out.)
 
 #### With the Static Web Apps CLI
 
@@ -125,13 +125,17 @@ Every build has a **print page**, `print_page/` under the manual's home page (`h
 To produce the PDF without a browser dialog — the same file the public manual offers — print that page with headless Chromium:
 
 ```bash
-pip install -r docs/requirements.txt playwright
+pip install -r docs/requirements.txt playwright==1.63.0 pdfplumber==0.11.7
 python -m playwright install --with-deps chromium
 mkdocs build --strict
 python scripts/docs/export_manual_pdf.py --site-dir site --output Milestone-Manual.pdf
 ```
 
-The script serves `site/` on a local port, waits for every screenshot and font, and writes an A4 PDF with a footer (title, version, page numbers). It stops with an error when the page does not load, an image is missing, or the PDF is implausibly small. Publish the PDF next to your copy of the manual if your users want a download.
+The script serves `site/` on a local port, waits for every screenshot and font, and writes an A4 PDF with a footer (title, version, page *n* / total), bookmarks for the chapters and their sections, and page numbers in the Contents (it renders the page, reads where each chapter starts, writes the numbers and renders again until they hold). A screenshot that would leave most of a page blank is shrunk a little to stay with its heading.
+
+It then checks the layout of the PDF it wrote, with `pdfplumber`, and stops with a list of problems when it finds an image cut by a page edge, a heading left at the bottom of a page, text or a box outside the page's text area, a Contents number that does not match its chapter, or fewer pages or bytes than the manual can take. It also stops when the page does not load or an image is missing. It lists the pages that end more than a third early, which should only be the last page of a chapter and the two part dividers. The print rules are in `docs/stylesheets/print.css`, which also serves the browser's own **Print** of the print page.
+
+Publish the PDF next to your copy of the manual if your users want a download.
 
 ## 3. Point Milestone at your copy
 

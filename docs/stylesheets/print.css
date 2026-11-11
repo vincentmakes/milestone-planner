@@ -56,26 +56,175 @@ body:has(#print-site-page) .md-sidebar--secondary li:has(> a[href^="#section-"])
   color: var(--md-default-fg-color--light);
 }
 
+/* The Contents page numbers: written by scripts/docs/export_manual_pdf.py into
+   the PDF only (empty, and hidden, elsewhere). */
+#print-page-toc .milestone-toc-page {
+  display: none;
+}
+
 @media print {
   .milestone-cover {
     padding-top: 45mm;
   }
 
-  /* Screenshots stay inside the page and are not split across two. */
-  #print-site-page img {
-    max-width: 100%;
+  /*
+   * Pagination. Measured on the PDF the export script writes (its checks
+   * fail the build on a cut image, a stranded heading or content outside
+   * the text area), not assumed.
+   */
+
+  /* Each chapter starts on a new page (the plugin's rule, kept); the two part
+     dividers stand alone on theirs. */
+  #print-site-page section.print-page.md-section > h1 {
+    break-after: page;
+  }
+
+  /* A paragraph may break across pages (the plugin keeps every one whole,
+     which leaves half pages blank), with no orphan or widow lines. */
+  #print-site-page p {
+    break-inside: auto;
+  }
+
+  #print-site-page p,
+  #print-site-page li,
+  #print-site-page td,
+  #print-site-page th {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* A heading stays with the start of its section. */
+  #print-site-page h1,
+  #print-site-page h2,
+  #print-site-page h3,
+  #print-site-page h4,
+  #print-site-page h5,
+  #print-site-page h6 {
+    break-after: avoid;
     break-inside: avoid;
   }
 
-  /* No copy button over the code blocks on paper. */
+  /* So does a sentence that introduces a screenshot, a table, a list, a
+     code block or a note ("… as follows:"). */
+  #print-site-page p:not(:has(> img)):has(+ p > img),
+  #print-site-page p:not(:has(> img)):has(+ .md-typeset__scrollwrap),
+  #print-site-page p:not(:has(> img)):has(+ .md-typeset__table),
+  #print-site-page p:not(:has(> img)):has(+ table),
+  #print-site-page p:not(:has(> img)):has(+ ul),
+  #print-site-page p:not(:has(> img)):has(+ ol),
+  #print-site-page p:not(:has(> img)):has(+ .highlight),
+  #print-site-page p:not(:has(> img)):has(+ pre),
+  #print-site-page p:not(:has(> img)):has(+ .admonition) {
+    break-after: avoid;
+  }
+
+  /* A paragraph that does not introduce what follows (it does not end with a
+     colon: marked by the export script) lets the page break after it. */
+  #print-site-page p.milestone-loose {
+    break-after: auto !important;
+  }
+
+  /* Nothing shorter than a page is cut: screenshots, notes, code, rows,
+     short list items. */
+  #print-site-page img,
+  #print-site-page figure,
+  #print-site-page p:has(> img:only-child),
+  #print-site-page .admonition,
+  #print-site-page details,
+  #print-site-page pre,
+  #print-site-page .highlight,
+  #print-site-page tr,
+  #print-site-page li {
+    break-inside: avoid;
+  }
+
+  /* Screenshots sized for paper: never wider than the text, never so tall
+     that a heading, its introduction and the picture cannot share a page. */
+  #print-site-page img {
+    max-width: 100%;
+    max-height: 105mm;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  #print-site-page p:has(> img) {
+    text-align: center;
+  }
+
+  /* Tables: the full width, rows that wrap instead of overflowing, and the
+     header row repeated on each page of a long table. */
+  #print-site-page .md-typeset__scrollwrap,
+  #print-site-page .md-typeset__table {
+    overflow: visible;
+    margin: 0;
+    padding: 0;
+  }
+
+  #print-site-page .md-typeset table:not([class]) {
+    display: table;
+    width: 100%;
+    table-layout: auto;
+  }
+
+  #print-site-page thead {
+    display: table-header-group;
+  }
+
+  #print-site-page td,
+  #print-site-page th,
+  #print-site-page code {
+    overflow-wrap: break-word;
+  }
+
+  /* A table's code is not cut mid-word to make its column narrower (the
+     theme's `word-break: break-word` would, "dashboard_sit es"). */
+  #print-site-page td code,
+  #print-site-page th code {
+    word-break: normal;
+  }
+
+  /* Code wraps on paper instead of running off the page. */
+  #print-site-page pre,
+  #print-site-page pre > code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    max-height: none;
+  }
+
+  /* On-screen only: copy buttons, permalinks. */
   #print-site-page .md-code__nav,
-  #print-site-page .md-clipboard {
+  #print-site-page .md-clipboard,
+  #print-site-page .headerlink {
     display: none;
   }
 
-  /* A table row or a code block is not cut in the middle of a line. */
-  #print-site-page tr,
-  #print-site-page pre {
-    break-inside: avoid;
+  /* The Contents page numbers, right-aligned with leaders (PDF only). */
+  #print-page-toc .milestone-toc-page {
+    display: inline;
+    margin-left: auto;
+    padding-left: 0.5em;
+  }
+
+  #print-page-toc a.md-nav__link:has(.milestone-toc-page) {
+    display: flex;
+    align-items: baseline;
+  }
+
+  #print-page-toc a.md-nav__link:has(.milestone-toc-page) > .md-ellipsis {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  #print-page-toc a.md-nav__link:has(.milestone-toc-page) > .md-ellipsis::after {
+    content: "";
+    flex: 1;
+    margin: 0 0.25em;
+    border-bottom: 1px dotted currentColor;
+    opacity: 0.5;
   }
 }

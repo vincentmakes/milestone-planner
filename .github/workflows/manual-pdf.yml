@@ -38,6 +38,8 @@ env:
   # The Playwright release whose Chromium prints the PDF (pinned, like a
   # dependency; the screenshot pipeline documents the same pairing).
   PLAYWRIGHT_VERSION: "1.63.0"
+  # The PDF reader the export script checks the layout with (MIT; pinned).
+  PDFPLUMBER_VERSION: "0.11.7"
 
 jobs:
   build:
@@ -51,18 +53,23 @@ jobs:
           cache: pip
           cache-dependency-path: docs/requirements.txt
 
-      - name: Install MkDocs and Playwright
+      - name: Install MkDocs, Playwright and pdfplumber
         run: |
-          python -m pip install -r docs/requirements.txt "playwright==${PLAYWRIGHT_VERSION}"
+          python -m pip install -r docs/requirements.txt "playwright==${PLAYWRIGHT_VERSION}" \
+            "pdfplumber==${PDFPLUMBER_VERSION}"
           python -m playwright install --with-deps chromium
 
       - name: Build the manual
         run: mkdocs build --strict
 
-      - name: Print the manual to PDF
+      # Fails on sloppy output: a cut image, a stranded heading, content
+      # outside the text area, a wrong Contents page number.
+      - name: Print the manual to PDF and check its layout
         run: python scripts/docs/export_manual_pdf.py --site-dir site --output Milestone-Manual.pdf
 
+      # Uploaded even when the checks fail, to look at what they found.
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && hashFiles('Milestone-Manual.pdf') != '' }}
         with:
           name: Milestone-Manual
           path: Milestone-Manual.pdf

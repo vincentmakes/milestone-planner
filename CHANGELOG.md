@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Help in the user menu opens the online manual in a new tab, at the chapter of the view you are in.
 - The manual can be printed or saved as PDF from one page, with a cover and a table of contents.
-- A ready-made PDF of the manual is published with every update of the manual.
+- A ready-made PDF of the manual is published with every update of the manual, laid out for paper: chapters on new pages, nothing cut across pages, page numbers in the contents and bookmarks.
 - Settings → Features & defaults → Documentation URL: point Help at a copy of the manual you host yourself; the new admin guide page explains how to build it and host it, for example on Azure Static Web Apps.
 - Dashboards: Utilisation takes the project filters (projects, project teams, project managers, tags, project fields, Confirmed, Has a customer), which narrow the booked time while the capacity stays that of the people in scope.
 - Dashboards: a Has a customer filter keeps the projects with a customer, or those without one, on every measure that reads projects.
