@@ -118,6 +118,21 @@ Keep `$web` in single quotes, so the shell does not read it as a variable. The m
 
 Because the build output is plain files, any web server inside your network works: copy the contents of `site/` to an **nginx** or **Apache** document root, an **IIS** site, an internal file share served over HTTP, or an object store with static-site hosting. Serve `index.html` as the folder index, and `404.html` for missing pages if the server allows it.
 
+## Printing and PDF
+
+Every build has a **print page**, `print_page/` under the manual's home page (`https://intranet.example.com/milestone-docs/print_page/`): the User Guide and the Admin Guide on one page, with a cover naming the version and a table of contents, ready for the browser's **Print → Save as PDF**. It is made by the `mkdocs-print-site-plugin` listed in `docs/requirements.txt`, so a self-hosted build has it too.
+
+To produce the PDF without a browser dialog — the same file the public manual offers — print that page with headless Chromium:
+
+```bash
+pip install -r docs/requirements.txt playwright
+python -m playwright install --with-deps chromium
+mkdocs build --strict
+python scripts/docs/export_manual_pdf.py --site-dir site --output Milestone-Manual.pdf
+```
+
+The script serves `site/` on a local port, waits for every screenshot and font, and writes an A4 PDF with a footer (title, version, page numbers). It stops with an error when the page does not load, an image is missing, or the PDF is implausibly small. Publish the PDF next to your copy of the manual if your users want a download.
+
 ## 3. Point Milestone at your copy
 
 In Milestone, open **Settings → Features & defaults** and enter the address of your manual's home page in **Documentation URL** (an administrator, or any role with **Edit instance settings**), then **Save Changes**. See [Settings → Features & defaults](../user-guide/settings.md#features-defaults).

@@ -408,6 +408,9 @@ frontend/
 docs/                  # MkDocs Material source (user-guide/, admin-guide/, developer-guide/,
                        #   index.md, release-notes.md embedding CHANGELOG.md)
   build.sh             # Cloudflare Pages build command (mkdocs build --strict)
+  hooks/manual_version.py  # MkDocs hook: /VERSION into config.extra.version (the print cover)
+  print-templates/     # The print page's cover and on-screen banner (mkdocs-print-site-plugin;
+                       #   kept out of the site by exclude_docs); stylesheets/print.css styles them
   admin-guide/hosting-the-documentation.md  # Self-hosting the manual (Azure Static Web Apps,
                        #   Storage static website, any static host) and the help_url setting
 migrations/            # Raw idempotent SQL migrations + run_migration.py / run_migration_master.py,
@@ -419,6 +422,8 @@ scripts/
   setup_admin_password.py
   sql/                 # milestone_master_fresh_install.sql, tenant_schema_template.sql,
                        #   migrations/001_add_max_capacity.sql
+  docs/export_manual_pdf.py  # The manual's print page to an A4 PDF (Python Playwright; 2.6.0,
+                       #   run by .github/workflows/manual-pdf.yml)
   loadtest/            # Load test (2.5.1): common.py, seed.py (pilot / stress workspaces through
                        #   the API), run.py (simulated browsers: startup + write burst + refetches),
                        #   journey.py (pool-of-one journey), ci.sh (the CI job), README.md
@@ -516,12 +521,13 @@ Four workflows in `.github/workflows/`. `backend.yml`, `frontend.yml` and `docke
 | `backend.yml` | `pip-audit --strict` over `requirements*.txt` (**blocking**); ruff check + format check on `app/`; pytest in 3 shards + aggregate `Tests` with the combined coverage — the `fail_under` floor, a per-file table + `::notice` total in the job summary, and on PRs **diff-cover ≥ 80 %** on changed lines; mypy; the `Load test` job (`scripts/loadtest/ci.sh`: pool-of-one journey, pilot and stress scenarios against a real PostgreSQL and uvicorn); on push to `main`, a `Coverage Badges` job publishes `backend.json` |
 | `frontend.yml` | eslint; vitest in 2 shards + aggregate `Tests` with the merged coverage — the `coverage.thresholds` floors, a summary table + `::notice` total, and on PRs **diff-cover ≥ 80 %** on changed lines; `npm run build` (tsc + vite); `npm audit --audit-level=moderate` (**blocking** — see [below](#ci)); on push to `main`, a `Coverage Badges` job publishes `frontend.json` |
 | `docker.yml` | `docker build` of the production image (only when an image input changed) |
+| `manual-pdf.yml` | The manual as one PDF (2.6.0): on PRs and pushes touching `docs/**`, `mkdocs.yml`, `VERSION`, `CHANGELOG.md`, the script or itself (and `workflow_dispatch`), builds the site (`mkdocs build --strict`), prints its print page with `scripts/docs/export_manual_pdf.py` (Python Playwright, pinned `PLAYWRIGHT_VERSION`, `playwright install --with-deps chromium`) and uploads the artifact; on `main` only, the `publish` job (`contents: write`, its own `manual-pdf-publish` concurrency group) replaces `Milestone-Manual.pdf` on the rolling pre-release `manual-latest` with `gh` and `GITHUB_TOKEN` — the only docs artefact Actions builds |
 | `version-check.yml` | PRs to `main` only: `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs the PR's **base commit** (not the live `main`, so a race with a merge cannot false-fail) **and** `CHANGELOG.md` has a matching `## [<version>]` heading; its paths-filter runs in git mode like the other three |
 
 The README coverage badges are shields.io endpoint badges reading `backend.json` / `frontend.json` from the orphan **`coverage`** data branch. Only the two `Coverage Badges` jobs write it (push to `main`, `contents: write`, one shared `coverage-badges` concurrency group, `[skip ci]` commits, each job touching only its own file) — never commit to it by hand.
 
 There is no GHCR-pulls badge because `docker.yml` only builds the image, it publishes nothing, and no GitHub Sponsors badge by choice (`.github/FUNDING.yml` still powers the repo's Sponsor button).
 
-Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/build.sh` on push. There are no issue or PR templates in `.github/` (only `FUNDING.yml`).
+The docs **site** is not built by Actions — Cloudflare Pages builds it from `docs/build.sh` on push; `manual-pdf.yml` builds only the PDF of the manual (above). There are no issue or PR templates in `.github/` (only `FUNDING.yml`).
 
 **Both `Audit` jobs are blocking, and a new advisory can turn them red on a PR that didn't touch dependencies.** That is intended. On the backend, fix the pin in `requirements*.txt`; if a finding is genuinely unexploitable here, a `--ignore-vuln` flag with an explanatory comment in `backend.yml` is the sanctioned escape hatch. On the frontend, the audit is the only check that notices when a pin in `frontend/package.json`'s `overrides` block has gone stale, which happens silently whenever a *newer* advisory widens the affected range of an already-pinned package — the block currently holds ~8 transitive security pins (note the scoped `"minimatch@3"` syntax, which overrides only the v3 range). When it fires, fix the pin rather than lowering the threshold; `--audit-level=moderate` was chosen deliberately (the advisories that originally motivated the job were moderate). If a finding is genuinely unreachable (dev-only tooling, no patched release available) and blocking is unacceptable, prefer a scoped, commented `overrides` entry over relaxing the gate.

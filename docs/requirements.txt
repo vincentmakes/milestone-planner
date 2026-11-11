@@ -1,2 +1,4 @@
 mkdocs>=1.6
 mkdocs-material>=9.5
+# The print page (/print_page/): pure Python, builds on Cloudflare Pages too.
+mkdocs-print-site-plugin==2.8

@@ -1,0 +1,81 @@
+/*
+ * The print page (/print_page/, mkdocs-print-site-plugin): the User and
+ * Admin Manual to print or save as PDF. Only what the plugin's own styles
+ * leave broken:
+ *
+ * - the plugin cannot exclude a whole nav section: it keeps the heading of a
+ *   section whose pages are all excluded (the Developer Guide). Such a
+ *   section, and its entry in the contents, are hidden;
+ * - the cover: the logo at a sensible size, the title block on one page.
+ */
+
+/* A section without a page of its own (all its pages excluded). */
+#print-site-page section.md-section:not(:has(section.print-page:not(.md-section))) {
+  display: none;
+}
+
+/* Its contents entry: an item whose links all point at sections. */
+#print-page-toc li:has(> a[href^="#section-"]):not(:has(a[href]:not([href^="#section-"]))),
+body:has(#print-site-page) .md-sidebar--secondary li:has(> a[href^="#section-"]):not(:has(a[href]:not([href^="#section-"]))) {
+  display: none;
+}
+
+/* The cover */
+.milestone-cover {
+  text-align: center;
+  padding-top: 4rem;
+}
+
+.milestone-cover__logo {
+  width: 8rem;
+  height: auto;
+  margin-bottom: 2rem;
+}
+
+#print-site-cover-page .milestone-cover h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2.4rem;
+  font-weight: 600;
+}
+
+.milestone-cover__subtitle {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.milestone-cover__version {
+  margin: 1.5rem 0 0;
+  font-size: 1rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.milestone-cover__note {
+  max-width: 32rem;
+  margin: 3rem auto 0;
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+}
+
+@media print {
+  .milestone-cover {
+    padding-top: 45mm;
+  }
+
+  /* Screenshots stay inside the page and are not split across two. */
+  #print-site-page img {
+    max-width: 100%;
+    break-inside: avoid;
+  }
+
+  /* No copy button over the code blocks on paper. */
+  #print-site-page .md-code__nav,
+  #print-site-page .md-clipboard {
+    display: none;
+  }
+
+  /* A table row or a code block is not cut in the middle of a line. */
+  #print-site-page tr,
+  #print-site-page pre {
+    break-inside: avoid;
+  }
+}
