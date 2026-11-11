@@ -15,9 +15,10 @@
  * shared table — change one, change both. The editor validates as the user
  * types; the server stays the judge and evaluates (never this module).
  *
- * Beside the parser: `readBack` (the formula said in words), `renameTerm`
- * (a rename that updates the references, and nothing else in the text) and
- * `nextTermName` (`a`, `b`, … for a new term).
+ * Beside the parser: `readBack` (the formula with its terms replaced, as
+ * the editor's line of numbers), `formulaTokens` (the tokens and their
+ * positions, for the formula field) and `nextTermName` (`a`, `b`, … for a
+ * new term).
  */
 
 import { MAX_FORMULA_LENGTH } from './metrics';
@@ -55,7 +56,7 @@ export interface ParsedFormula {
   canonical: string;
 }
 
-interface Token {
+export interface FormulaToken {
   kind: 'num' | 'name' | 'op' | 'end';
   /** As read (names in lower case, `×` / `÷` as `*` / `/`) */
   text: string;
@@ -72,8 +73,8 @@ const isLetter = (ch: string | undefined): boolean =>
 const unexpected = (text: string, pos: number): FormulaError =>
   new FormulaError(`Unexpected "${text}" at position ${pos}`);
 
-function tokens(source: string): Token[] {
-  const out: Token[] = [];
+function tokens(source: string): FormulaToken[] {
+  const out: FormulaToken[] = [];
   const n = source.length;
   let i = 0;
   while (i < n) {
@@ -115,13 +116,13 @@ class Parser {
   private index = 0;
   private depth = 0;
 
-  constructor(private readonly toks: Token[]) {}
+  constructor(private readonly toks: FormulaToken[]) {}
 
-  peek(): Token {
+  peek(): FormulaToken {
     return this.toks[this.index];
   }
 
-  private take(): Token {
+  private take(): FormulaToken {
     const token = this.toks[this.index];
     this.index += 1;
     return token;
@@ -225,46 +226,6 @@ export function parseFormula(source: string): ParsedFormula {
   return { tree, names, canonical: canonical(tree) };
 }
 
-/** A name the formula uses that no term has (the server's `unknown_name_detail`). */
-export const unknownNameDetail = (name: string, terms: readonly string[]): string =>
-  `"${name}" is not one of your terms: ${terms.join(', ')}`;
-
-/** A term the formula does not use (the server's `unused_term_detail`). */
-export const unusedTermDetail = (name: string): string =>
-  `Term ${name} is not used in the formula: use it or remove it`;
-
-export const TERM_NAME_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
-export const TERM_NAME_DETAIL =
-  'A term name is a lowercase word of letters, digits and _, starting with a letter (customer_weeks)';
-
-/**
- * Why a formula over `termNames` cannot be computed, or null: a parse error,
- * a bad or repeated term name, a name that is no term, a term not used — the
- * server's refusals, in the same words.
- */
-export function formulaProblem(expression: string, termNames: readonly string[]): string | null {
-  const names = termNames.map((name) => name.trim().toLowerCase());
-  for (const name of names) {
-    if (!TERM_NAME_PATTERN.test(name)) return TERM_NAME_DETAIL;
-  }
-  let parsed: ParsedFormula;
-  try {
-    parsed = parseFormula(expression);
-  } catch (err) {
-    return err instanceof FormulaError ? err.message : String(err);
-  }
-  for (const name of names) {
-    if (names.indexOf(name) !== names.lastIndexOf(name)) return `Two terms are named "${name}"`;
-  }
-  for (const name of parsed.names) {
-    if (!names.includes(name)) return unknownNameDetail(name, names);
-  }
-  for (const name of names) {
-    if (!parsed.names.includes(name)) return unusedTermDetail(name);
-  }
-  return null;
-}
-
 const PRECEDENCE: Readonly<Record<FormulaNode['kind'], number>> = {
   '+': 1,
   '-': 1,
@@ -322,28 +283,13 @@ export function readBack(expression: string, labels: Readonly<Record<string, str
   }
 }
 
-/**
- * `expression` with the term `from` renamed `to`: only whole name tokens
- * (any case) change, the rest of the text stays as typed. Unreadable text
- * is returned unchanged.
- */
-export function renameTerm(expression: string, from: string, to: string): string {
-  let toks: Token[];
+/** The tokens of `expression` with their positions, or null when it cannot be read. */
+export function formulaTokens(expression: string): FormulaToken[] | null {
   try {
-    toks = tokens(expression);
+    return tokens(expression);
   } catch {
-    return expression;
+    return null;
   }
-  const wanted = from.toLowerCase();
-  let out = expression;
-  // From the end, so earlier positions stay valid.
-  for (const token of [...toks].reverse()) {
-    if (token.kind === 'name' && token.text === wanted) {
-      const start = token.pos - 1;
-      out = out.slice(0, start) + to + out.slice(start + token.length);
-    }
-  }
-  return out;
 }
 
 /** The first of `a`, `b`, … `z`, `a2`, … no term is named yet. */

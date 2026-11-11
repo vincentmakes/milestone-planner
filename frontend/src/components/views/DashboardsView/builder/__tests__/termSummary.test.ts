@@ -3,7 +3,7 @@
  * words, a term's label for the read-back line and the summary on its row.
  */
 import { describe, it, expect } from 'vitest';
-import { filterParts, filterSummary, measureLabelOf, noResultReason, termLabel } from '../termSummary';
+import { filterParts, measureLabelOf, noResultReason, pillLabel } from '../termSummary';
 import type { NameLookups } from '../termSummary';
 
 const lookups: NameLookups = {
@@ -65,15 +65,16 @@ describe('filterParts', () => {
   });
 });
 
-describe('termLabel and filterSummary', () => {
-  it('names a term by its measure and filters, and sums them up on its row', () => {
-    expect(termLabel({ measure: 'booked_weeks', filters: { has_customer: true } }, lookups)).toBe(
-      'Booked weeks (has a customer)'
+describe('pillLabel', () => {
+  it('names a pill by its measure, its filters after a dot, more than two as a count', () => {
+    expect(pillLabel('booked_weeks', { has_customer: true }, lookups)).toBe('Booked weeks · Has a customer');
+    expect(pillLabel('booked_weeks', { has_customer: true, team_ids: [5] }, lookups)).toBe(
+      'Booked weeks · Has a customer, Team Chemistry'
     );
-    expect(termLabel({ measure: 'capacity_weeks' }, lookups)).toBe('Capacity (weeks)');
-    expect(filterSummary({}, lookups)).toBe('No filters');
-    expect(filterSummary({ has_customer: true }, lookups)).toBe('1 filter: Has a customer');
-    expect(filterSummary({ has_customer: true, team_ids: [5] }, lookups)).toBe('2 filters: Has a customer, Team Chemistry');
+    expect(pillLabel('booked_weeks', { has_customer: true, team_ids: [5], site_ids: [1] }, lookups)).toBe(
+      'Booked weeks · 3 filters'
+    );
+    expect(pillLabel('capacity_weeks', undefined, lookups)).toBe('Capacity (weeks)');
     expect(measureLabelOf('nope' as never)).toBe('nope');
   });
 });

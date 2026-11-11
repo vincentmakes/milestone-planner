@@ -1,0 +1,162 @@
+/*
+ * FormulaField: a textarea over a mirror painting the pills (the technique of
+ * MentionTextarea). The two must lay text out identically or the pills drift
+ * off their words: every metric below is shared — change one, change both.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.field {
+  --formula-pad-x: 10px;
+  --formula-pad-y: 8px;
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+}
+
+.field:focus-within {
+  border-color: var(--accent-primary);
+}
+
+.invalid,
+.invalid:focus-within {
+  border-color: var(--accent-red);
+}
+
+.mirror,
+.textarea {
+  box-sizing: border-box;
+  margin: 0;
+  border: none;
+  padding: var(--formula-pad-y) var(--formula-pad-x);
+  font-family: inherit;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.6;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-indent: 0;
+  text-align: left;
+  text-transform: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  color: transparent;
+}
+
+.textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: var(--text-primary);
+  resize: none;
+  overflow: hidden;
+}
+
+.textarea:focus {
+  outline: none;
+}
+
+/* Only the background: the glyphs come from the textarea on top. */
+.pill {
+  background: var(--accent-blue-alpha);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--accent-blue-alpha);
+}
+
+.pillHover {
+  background: color-mix(in srgb, var(--accent-blue) 28%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 28%, transparent);
+}
+
+/* The pointer over a pill (the textarea takes the events) */
+.overPill {
+  cursor: pointer;
+}
+
+.list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: var(--z-dropdown);
+  max-height: 15rem;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.flip {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.item {
+  display: block;
+}
+
+.group {
+  display: block;
+  padding: 5px 10px 3px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.option {
+  display: block;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.active {
+  background: var(--bg-hover);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.panelFooter {
+  display: flex;
+  justify-content: flex-end;
+}

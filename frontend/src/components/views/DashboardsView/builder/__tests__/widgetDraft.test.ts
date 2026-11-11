@@ -32,9 +32,7 @@ import {
   endFormula,
   isDefaultFormula,
   exampleFormula,
-  addTerm,
   cleanFormula,
-  formulaHeld,
   FORMULA_EXAMPLES,
   parseTarget,
   placeNewWidget,
@@ -703,8 +701,13 @@ describe('calculated widgets and % of target (2.6.0)', () => {
     });
     // Booked days pair with capacity days; without views.staff, or for another measure, b repeats a.
     expect(startFormula('bar', query({ measure: 'booked_days' }), true).formula?.terms[1].measure).toBe('capacity_days');
-    expect(startFormula('bar', plain, false).formula?.terms[1].measure).toBe('booked_weeks');
-    expect(startFormula('bar', query({ measure: 'project_count' }), true).formula?.terms[1].measure).toBe('project_count');
+    // Without views.staff, or for another measure: the measure alone, as a number.
+    expect(startFormula('bar', plain, false).formula).toEqual({
+      expression: 'a',
+      result: 'number',
+      terms: [{ name: 'a', measure: 'booked_weeks', filters: { has_customer: true } }],
+    });
+    expect(startFormula('bar', query({ measure: 'project_count' }), true).formula?.expression).toBe('a');
     // Utilisation is booked days over capacity days; another ratio starts from booked weeks.
     expect(startFormula('bar', query({ measure: 'utilisation' }), true).formula?.terms.map((t) => t.measure)).toEqual([
       'booked_days',
@@ -727,7 +730,8 @@ describe('calculated widgets and % of target (2.6.0)', () => {
     expect(endFormula(calc({ filters: {} }, { terms: [] })).measure).toBe('booked_weeks');
     // Any change counts: the expression, a term's measure or filters, a third term, the result.
     expect(isDefaultFormula({ ...started, formula: { ...started.formula!, expression: 'a / b * 2' } }, true)).toBe(false);
-    expect(isDefaultFormula({ ...started, formula: addTerm(started.formula!, 'c') }, true)).toBe(false);
+    const third = { name: 'c', measure: 'project_count' as const };
+    expect(isDefaultFormula({ ...started, formula: { ...started.formula!, terms: [...started.formula!.terms, third] } }, true)).toBe(false);
     expect(isDefaultFormula({ ...started, formula: { ...started.formula!, result: 'number' } }, true)).toBe(false);
     expect(isDefaultFormula(query(), true)).toBe(true);
   });
@@ -770,14 +774,6 @@ describe('calculated widgets and % of target (2.6.0)', () => {
     const fromPlain = exampleFormula('bar', query({ measure: 'booked_days' }), 'sum', true).formula!;
     expect(fromPlain.terms.map((t) => t.measure)).toEqual(['booked_days', 'capacity_days']);
     expect(exampleFormula('bar', current, 'nope' as never, true).formula?.expression).toBe('a / b');
-  });
-
-  it('adds a term and tells whether every measure is held', () => {
-    const f = calc().formula!;
-    expect(addTerm(f, 'c').terms[2]).toEqual({ name: 'c', measure: 'booked_weeks', filters: {} });
-    expect(addTerm({ expression: '', terms: [] }, 'a').terms[0].measure).toBe('booked_weeks');
-    expect(formulaHeld(f, () => true)).toBe(true);
-    expect(formulaHeld(f, (key) => key === null)).toBe(false);
   });
 
   it('stores the formula cleaned: empty filters, unset totals and the default result left out', () => {

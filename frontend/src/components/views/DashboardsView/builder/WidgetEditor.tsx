@@ -26,8 +26,8 @@
  * 2.6.0: the filters are the shared `FilterSection` (Utilisation adds the
  * project filters with a hint, every project-backed measure *Has a
  * customer*); a KPI, a gauge, a bar, a line, a table and a heatmap may be a
- * *Calculation* (`CalculationSection`): named terms, each a measure with its
- * own filters, combined by a formula. Turning it on needs no typing (term `a`
+ * *Calculation* (`CalculationSection`): one formula field in which measures
+ * are pills, each with its own filters. Turning it on needs no typing (the
  * is the widget's measure and filters, `b` its natural partner, `a / b`);
  * while it is on the top *Measure* and *Filters* give way to the terms, an
  * invalid formula keeps the last valid preview on screen (dimmed) and blocks
@@ -46,7 +46,10 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { confirmAction } from '@/utils/confirmDialog';
-import { formulaProblem } from '@/utils/formula';
+import { fieldFromFormula, formulaFromField, insertPill, measureOptions } from '@/utils/formulaField';
+import type { FieldProblem, FieldState, TermFilters } from '@/utils/formulaField';
+import { CALCULATIONS_HELP_PAGE } from '@/utils/helpLinks';
+import { helpBaseUrl } from '@/utils/instanceSettings';
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
@@ -107,6 +110,8 @@ import { gaugeTarget } from '../charts/toOption';
 import { plainError } from './useDashboardEditor';
 import { FilterSection } from './FilterSection';
 import { CalculationSection } from './CalculationSection';
+import { pillLabel } from './termSummary';
+import { useNameLookups } from './useNameLookups';
 import {
   changeMeasure,
   cleanOptions,
@@ -181,11 +186,12 @@ function measureHint(measure: Measure): string | undefined {
 export const GOAL_HINT = 'Green from the target up, amber within 15 % below it';
 export const CALCULATION_HINT = 'Combine measures, each with its own filters, with a formula';
 export const STALE_PREVIEW = 'The last valid result: fix the formula to update it';
+export const PENDING_PREVIEW = 'Updates when the formula is complete';
 export const FIX_FORMULA = 'Fix the formula to see the preview';
 export const LEAVE_CALCULATION =
-  'Turn the calculation off? The widget goes back to term a alone; the other terms and the formula are lost.';
+  'Turn the calculation off? The widget goes back to the formula’s first measure alone; the formula is lost.';
 const replaceWithExample = (label: string): string =>
-  `Replace your calculation with the example “${label}”? Its terms and formula are lost.`;
+  `Replace your formula with the example “${label}”?`;
 
 /** Picker ids of the dimension choices: a kind by its position, a project field by its id. */
 const FIELD_ID_BASE = 1000;
@@ -256,16 +262,39 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const holds = (key: PermissionKey | null): boolean => key === null || heldKeys.has(key);
   const fields = useAppStore((s) => s.projectFields);
   const settings = useAppStore((s) => s.instanceSettings);
+  // The configured manual (Settings → Features & defaults), the public one by default.
+  const helpBase = useAppStore((s) => helpBaseUrl(s.instanceSettings));
 
   const dimensions = useMemo(() => query.dimensions ?? [], [query.dimensions]);
   const filters = useMemo<MetricFilters>(() => query.filters ?? {}, [query.filters]);
   const formula = query.formula ?? null;
+  // The formula field: text and pills; the query's formula follows it while it reads.
+  const lookups = useNameLookups();
+  const labelOf = (measure: Measure, termFilters: TermFilters | undefined) => pillLabel(measure, termFilters, lookups);
+  const [field, setField] = useState<FieldState | null>(() =>
+    query.formula ? fieldFromFormula(query.formula, (t) => pillLabel(t.measure, t.filters, lookups)) : null
+  );
+  const fieldOptions = useMemo(
+    () => measureOptions((m) => m === query.measure || holds(measureNeeds(m))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- holds reads heldKeys
+    [heldKeys, query.measure]
+  );
+  const fieldRead = useMemo(
+    () => (formula && field ? formulaFromField(field, fieldOptions) : null),
+    [formula, field, fieldOptions]
+  );
+  const fieldProblem: FieldProblem | null = fieldRead && 'problem' in fieldRead ? fieldRead.problem : null;
+  // A word that starts a measure's name is still being typed: the list helps, no message yet.
+  const typing =
+    fieldProblem?.word !== undefined &&
+    fieldOptions.some((o) => o.label.toLowerCase().startsWith(fieldProblem.word!.text.toLowerCase()));
+  const shownProblem = typing ? null : fieldProblem;
   const noPercent = NO_PERCENT_MEASURES.has(query.measure);
   // A gauge, and a KPI of a measure that takes no percentage or of a calculated widget, show the total.
   const noDimension = noDimensionKind(kind, query.measure, formula !== null);
   const problem = queryProblem(kind, query);
-  // The formula's own problem (the server's words): shown under the field, the last valid preview kept.
-  const formulaError = formula ? formulaProblem(formula.expression, formula.terms.map((t) => t.name)) : null;
+  // The field's problem: shown under it, the last valid preview kept, Save blocked.
+  const formulaError = fieldProblem ? shownProblem?.message ?? 'Finish typing the measure’s name' : null;
   const clean = useMemo(() => cleanQuery(query), [query]);
   const previewKey = problem || formulaError ? null : stableKey(clean);
   const keepPreviewRef = useRef(false);
@@ -352,23 +381,52 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   };
 
   // --- Calculation ---------------------------------------------------------------------
+  /** The query with `next`'s formula, and the field showing it. */
+  const showFormula = (next: MetricQuery) => {
+    const normalised = normaliseQuery(kind, next);
+    setField(normalised.formula ? fieldFromFormula(normalised.formula, (t) => labelOf(t.measure, t.filters)) : null);
+    update(kind, next);
+  };
+
+  const customised = !isDefaultFormula(query, canStaff) || fieldProblem !== null;
+
   const setCalculation = async (on: boolean) => {
     if (on) {
-      update(kind, dropUnheld(startFormula(kind, query, canStaff), holds));
+      showFormula(dropUnheld(startFormula(kind, query, canStaff), holds));
       return;
     }
-    if (!isDefaultFormula(query, canStaff) && !(await confirmAction({ message: LEAVE_CALCULATION, confirmLabel: 'Turn off' }))) {
+    if (customised && !(await confirmAction({ message: LEAVE_CALCULATION, confirmLabel: 'Turn off' }))) {
       return;
     }
+    setField(null);
     update(kind, endFormula(query));
+  };
+
+  const changeField = (next: FieldState) => {
+    setField(next);
+    const read = formulaFromField(next, fieldOptions);
+    if ('problem' in read || !formula) return;
+    update(kind, dropUnheld({ ...query, measure: read.formula.terms[0].measure, formula: { ...formula, ...read.formula } }, holds));
+  };
+
+  const acceptSuggestion = (fieldIssue: FieldProblem) => {
+    const word = fieldIssue.word;
+    if (!field || !word?.suggestion) return;
+    const inserted = insertPill(field, word, { measure: word.suggestion.measure }, labelOf(word.suggestion.measure, undefined));
+    changeField(inserted.state);
   };
 
   const pickExample = async (key: FormulaExampleKey) => {
     const label = FORMULA_EXAMPLES_BY_KEY.get(key) ?? key;
-    if (!isDefaultFormula(query, canStaff) && !(await confirmAction({ message: replaceWithExample(label), confirmLabel: 'Replace' }))) {
+    if (customised && !(await confirmAction({ message: replaceWithExample(label), confirmLabel: 'Replace' }))) {
       return;
     }
-    update(kind, dropUnheld(exampleFormula(kind, query, key, canStaff), holds));
+    showFormula(dropUnheld(exampleFormula(kind, query, key, canStaff), holds));
+    // On a gauge, the goal example draws its goal band like the built-in absorption gauge.
+    if (kind === 'gauge' && key === 'goal') {
+      setTargetText('100');
+      setOptions((prev) => ({ ...prev, target: 100, target_is_goal: true }));
+    }
   };
 
   const setTopN = (text: string) => {
@@ -601,20 +659,28 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
             )}
             {offersFormula(kind) && (
               <p className={styles.hint} id={calculationHintId}>
-                {CALCULATION_HINT}
+                {CALCULATION_HINT}.{' '}
+                <a href={`${helpBase}${CALCULATIONS_HELP_PAGE}`} target="_blank" rel="noopener noreferrer">
+                  How calculations work
+                </a>
               </p>
             )}
 
-            {formula ? (
+            {formula && field ? (
               <CalculationSection
-                query={{ ...query, formula }}
-                onChange={(next) => update(kind, dropUnheld(next, holds))}
+                formula={formula}
+                field={field}
+                onFieldChange={changeField}
+                onResultChange={(result) => update(kind, { ...query, formula: { ...formula, result } })}
+                options={fieldOptions}
+                label={labelOf}
                 holds={holds}
                 canCapacity={canStaff}
                 dimensions={dimensions}
-                formulaError={formulaError}
-                result={previewResult}
-                stale={formulaError !== null}
+                problem={shownProblem}
+                typing={typing}
+                onAcceptSuggestion={acceptSuggestion}
+                result={preview.status === 'ok' && preview.key === previewKey ? preview.result : null}
                 onExample={(key) => void pickExample(key)}
               />
             ) : (
@@ -723,7 +789,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
       if (!previewResult || !previewQuery) return <p className={styles.previewNote}>{FIX_FORMULA}</p>;
       return (
         <div className={styles.stalePreview}>
-          <p className={styles.hint}>{STALE_PREVIEW}</p>
+          <p className={styles.hint}>{typing ? PENDING_PREVIEW : STALE_PREVIEW}</p>
           <div className={styles.stale}>{previewCard(previewQuery, previewResult, false)}</div>
         </div>
       );

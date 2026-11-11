@@ -1,8 +1,8 @@
 /**
- * The words of a calculation's terms (2.6.0): what a term's filters say
- * ("has a customer", "team Chemistry"), its label in the read-back line
- * ("Booked weeks (has a customer)") and the summary on its row ("2 filters:
- * Has a customer, Team Chemistry"). Pure: the names come in as lookups.
+ * The words of a calculation (2.6.0): what a measure's filters say ("has a
+ * customer", "team Chemistry"), the pill of a measure in the formula field
+ * ("Booked weeks · Has a customer") and why a result has no value. Pure: the
+ * names come in as lookups (`useNameLookups`).
  */
 
 import type { MetricFilters, MetricResult, MetricTerm, ProjectField } from '@/types';
@@ -73,18 +73,23 @@ const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text
 export const measureLabelOf = (measure: MetricTerm['measure']): string =>
   MEASURES.find((m) => m.key === measure)?.label ?? measure;
 
-/** A term in words: its measure, with its filters in brackets ("Booked weeks (has a customer)"). */
-export function termLabel(term: Pick<MetricTerm, 'measure' | 'filters'>, lookups: NameLookups): string {
-  const parts = filterParts(term.filters, lookups);
-  const measure = measureLabelOf(term.measure);
-  return parts.length > 0 ? `${measure} (${parts.join(', ')})` : measure;
-}
+/** At most this many filters are spelled out in a pill; more read as a count. */
+const PILL_FILTERS = 2;
 
-/** The summary on a term's row: "No filters", "1 filter: Has a customer", "2 filters: …". */
-export function filterSummary(filters: Omit<MetricFilters, 'period'> | undefined, lookups: NameLookups): string {
+/**
+ * A measure's pill in the formula field: its name, with its filters after a
+ * dot ("Booked weeks · Has a customer"; "Booked weeks · 3 filters").
+ */
+export function pillLabel(
+  measure: MetricTerm['measure'],
+  filters: Omit<MetricFilters, 'period'> | undefined,
+  lookups: NameLookups
+): string {
   const parts = filterParts(filters, lookups);
-  if (parts.length === 0) return 'No filters';
-  return `${parts.length} ${parts.length === 1 ? 'filter' : 'filters'}: ${parts.map(capitalise).join(', ')}`;
+  const name = measureLabelOf(measure);
+  if (parts.length === 0) return name;
+  if (parts.length > PILL_FILTERS) return `${name} · ${parts.length} filters`;
+  return `${name} · ${parts.map(capitalise).join(', ')}`;
 }
 
 /**

@@ -29,6 +29,9 @@ export const HELP_PAGES: Readonly<Partial<Record<CurrentView, string>>> = {
   crosssite: 'user-guide/cross-site-view/',
 };
 
+/** The manual's chapter on calculated widgets (the widget editor's *How calculations work*). */
+export const CALCULATIONS_HELP_PAGE = 'user-guide/dashboards/#calculated-widgets';
+
 /**
  * The manual's page for `view` under `baseUrl` (a home page ending in `/`,
  * `helpBaseUrl`'s answer): its chapter, the home page otherwise.

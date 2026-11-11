@@ -54,7 +54,6 @@ import {
   filterNeeds,
   isTermMeasure,
   isValidDimension,
-  measureNeeds,
   NO_PERCENT_MEASURES,
   queryUnit,
   takesFilter,
@@ -517,14 +516,24 @@ function partnerOf(first: MetricTerm, canCapacity: boolean): MetricTerm {
 }
 
 /**
- * A plain query turned into a calculation with nothing to type: term `a` is
- * the widget's measure and filters, term `b` its natural partner
- * (`partnerOf`), the formula `a / b` and the result a percentage. The kind's
- * rules then apply (`normaliseQuery`).
+ * The calculation a plain query starts as: booked person time over the
+ * capacity in its unit (`a / b`, a percentage) when the viewer may use it,
+ * otherwise the measure alone (`a`, a number) — a valid result either way.
+ */
+function startingFormula(first: MetricTerm, canCapacity: boolean): MetricFormula {
+  const partner = partnerOf(first, canCapacity);
+  if (partner.measure === first.measure) return { expression: 'a', terms: [first], result: 'number' };
+  return { expression: 'a / b', terms: [first, partner], result: 'percent' };
+}
+
+/**
+ * A plain query turned into a calculation with nothing to type
+ * (`startingFormula`: term `a` is the widget's measure and filters). The
+ * kind's rules then apply (`normaliseQuery`).
  */
 export function startFormula(kind: WidgetKind, query: MetricQuery, canCapacity: boolean): MetricQuery {
   const first = firstTermOf(query);
-  const formula: MetricFormula = { expression: 'a / b', terms: [first, partnerOf(first, canCapacity)], result: 'percent' };
+  const formula = startingFormula(first, canCapacity);
   const period = query.filters?.period;
   return normaliseQuery(kind, {
     ...query,
@@ -555,12 +564,7 @@ export function endFormula(query: MetricQuery): MetricQuery {
 export function isDefaultFormula(query: MetricQuery, canCapacity: boolean): boolean {
   const formula = query.formula;
   if (!formula || formula.terms.length === 0) return true;
-  const first = formula.terms[0];
-  const fresh: MetricFormula = {
-    expression: 'a / b',
-    terms: [{ ...first, name: 'a' }, partnerOf(first, canCapacity)],
-    result: 'percent',
-  };
+  const fresh = startingFormula({ ...formula.terms[0], name: 'a' }, canCapacity);
   const strip = (f: MetricFormula) => {
     const clean = cleanFormula(f);
     return { ...clean, terms: clean.terms.map(({ name, measure, filters }) => ({ name, measure, filters })) };
@@ -611,17 +615,6 @@ export function exampleFormula(kind: WidgetKind, query: MetricQuery, key: Formul
     measure: terms[0].measure,
     formula: { expression: example.expression, terms, result },
   });
-}
-
-/** A term added to a calculation: the next free name, the first term's measure, no filters. */
-export function addTerm(formula: MetricFormula, name: string): MetricFormula {
-  const measure = formula.terms[0]?.measure ?? 'booked_weeks';
-  return { ...formula, terms: [...formula.terms, { name, measure, filters: {} }] };
-}
-
-/** Whether every measure of a calculation is one the viewer may use. */
-export function formulaHeld(formula: MetricFormula, holds: (key: PermissionKey | null) => boolean): boolean {
-  return formula.terms.every((term) => holds(measureNeeds(term.measure)));
 }
 
 /** How many filters (besides the period) a query sets. */

@@ -5,18 +5,7 @@
  * `[expression, null, error]`.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  FormulaError,
-  formulaProblem,
-  MAX_DEPTH,
-  MAX_FORMULA_LENGTH,
-  nextTermName,
-  parseFormula,
-  readBack,
-  renameTerm,
-  unknownNameDetail,
-  unusedTermDetail,
-} from '../formula';
+import { FormulaError, formulaTokens, MAX_DEPTH, MAX_FORMULA_LENGTH, nextTermName, parseFormula, readBack } from '../formula';
 
 type Case = [string, string | null, readonly string[] | string];
 
@@ -75,23 +64,6 @@ describe('formula mirror table', () => {
   });
 });
 
-describe('formulaProblem', () => {
-  it('names the problem and the fix, like the server', () => {
-    expect(formulaProblem('a / b', ['a', 'b'])).toBeNull();
-    expect(formulaProblem('A / b', ['a', 'B'])).toBeNull();
-    expect(formulaProblem('a / capcity', ['a', 'b'])).toBe('"capcity" is not one of your terms: a, b');
-    expect(formulaProblem('a', ['a', 'b', 'c'])).toBe('Term b is not used in the formula: use it or remove it');
-    expect(formulaProblem('(a', ['a'])).toBe('Missing closing bracket )');
-    expect(formulaProblem('a * 0,7', ['a'])).toBe('Use a point for decimals: 0.7');
-    expect(formulaProblem('a + a', ['a', 'a'])).toBe('Two terms are named "a"');
-    expect(formulaProblem('a', ['1a'])).toBe(
-      'A term name is a lowercase word of letters, digits and _, starting with a letter (customer_weeks)'
-    );
-    expect(unknownNameDetail('x', ['a'])).toBe('"x" is not one of your terms: a');
-    expect(unusedTermDetail('c')).toBe('Term c is not used in the formula: use it or remove it');
-  });
-});
-
 describe('readBack', () => {
   const labels = {
     customer_weeks: 'Booked weeks (has a customer)',
@@ -115,19 +87,24 @@ describe('readBack', () => {
   });
 });
 
-describe('renameTerm', () => {
-  it('renames whole references only, in any case, keeping the rest as typed', () => {
-    expect(renameTerm('a / (ab * A)', 'a', 'customer_weeks')).toBe('customer_weeks / (ab * customer_weeks)');
-    expect(renameTerm('a ÷ b', 'b', 'capacity')).toBe('a ÷ capacity');
-    expect(renameTerm('a $ b', 'a', 'x')).toBe('a $ b');
-  });
-});
-
 describe('nextTermName', () => {
   it('gives the first free letter', () => {
     expect(nextTermName([])).toBe('a');
     expect(nextTermName(['a', 'B'])).toBe('c');
     const all = Array.from({ length: 26 }, (_, i) => String.fromCharCode(97 + i));
     expect(nextTermName(all)).toBe('a2');
+  });
+});
+
+describe('formulaTokens', () => {
+  it('gives each token with its position, or null when the text cannot be read', () => {
+    expect(formulaTokens('a / 70%')?.map((t) => [t.kind, t.text, t.pos, t.length])).toEqual([
+      ['name', 'a', 1, 1],
+      ['op', '/', 3, 1],
+      ['num', '70', 5, 2],
+      ['op', '%', 7, 1],
+      ['end', '', 8, 0],
+    ]);
+    expect(formulaTokens('a $ b')).toBeNull();
   });
 });
