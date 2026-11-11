@@ -124,6 +124,7 @@ def test_filters_per_family():
         "field_options",
         "archived",
         "period",
+        "has_customer",
     }
     for measure in BOOKING:
         assert MEASURE_FILTERS[measure] == project | {"team_ids", "person_ids"}
@@ -131,14 +132,11 @@ def test_filters_per_family():
         assert MEASURE_FILTERS[measure] == project
     for measure in PHASE:
         assert MEASURE_FILTERS[measure] == project | {"milestones"}
-    for measure in CAPACITY:
-        assert MEASURE_FILTERS[measure] == {
-            "site_ids",
-            "team_ids",
-            "person_ids",
-            "archived",
-            "period",
-        }
+    capacity = {"site_ids", "team_ids", "person_ids", "archived", "period"}
+    for measure in ("capacity_days", "available_days", "people_over_capacity"):
+        assert MEASURE_FILTERS[measure] == capacity
+    # Utilisation's project filters narrow its booked side (the site stays the person's).
+    assert MEASURE_FILTERS["utilisation"] == capacity | (project - {"site_ids"})
     for measure in EQUIPMENT[:3]:
         assert MEASURE_FILTERS[measure] == project | {"equipment_ids", "equipment_types"}
     # Utilisation is the equipment's: its sites, the equipment, its type.
@@ -362,3 +360,23 @@ def test_matrix_message_in_plain_words():
         matrix_error("people_booked", "period") == "People booked cannot be broken down by period"
     )
     assert matrix_error("project_count", "person") == "Projects cannot be broken down by person"
+
+
+def test_divisible_measures_are_the_summed_and_counted_ones():
+    from app.services.metrics import DIVISIBLE_MEASURES, divide_error
+
+    assert DIVISIBLE_MEASURES == set(MEASURES) - set(COMPOSITES)
+    assert not DIVISIBLE_MEASURES & INTERNAL_MEASURES
+    assert divide_error("booked_days") is None
+    assert divide_error("utilisation") == (
+        "Utilisation cannot be divided nor divide another measure: "
+        "choose a summed or counted measure"
+    )
+    assert json.loads(metric_matrix_json())["divisible"] == sorted(DIVISIBLE_MEASURES)
+
+
+def test_has_customer_filter_is_labelled_and_needs_nothing():
+    assert FILTER_LABELS["has_customer"] == "Has a customer"
+    assert FILTER_KEYS[-1] == "has_customer"
+    assert "has_customer" not in FILTER_NEEDS
+    assert all(key != "has_customer" for _, key in FAMILY_FILTER_NEEDS)

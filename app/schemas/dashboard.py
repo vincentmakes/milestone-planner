@@ -1,9 +1,10 @@
 """
-Dashboards (2.3.0): the metric-query spec, widget and dashboard bodies, responses.
+Dashboards (2.6.0): the metric-query spec, widget and dashboard bodies, responses.
 
 ``MetricQuery`` is what a widget asks the metric engine
 (``app/services/metrics.py``): a measure, up to two dimensions, filters with a
-period, an optional percentage and top N. Every refusal is a 422 in plain
+period, an optional percentage and top N -- or, for a calculated widget,
+``divide_by``: a second measure with its own filters it is divided by. Every refusal is a 422 in plain
 words (``PydanticCustomError``, no "Value error," prefix), including the
 validity matrix (``metrics.MATRIX``): "<measure> cannot be broken down by
 <dimension>". The engine's constants are the one source; this module imports
@@ -38,6 +39,7 @@ from app.services.metrics import (
     FILTER_KEYS,
     MAX_PERIOD_DAYS,
     PERIOD_TOO_LONG_DETAIL,
+    divide_error,
     filter_error,
     filter_given,
     matrix_error,
@@ -175,7 +177,12 @@ Period = Annotated[
 IdList = Annotated[list[int], Field(max_length=MAX_FILTER_IDS)]
 
 
-class MetricFilters(_Strict):
+class DivisorFilters(_Strict):
+    """
+    The filters of a query, the period aside: those of a calculated widget's
+    divisor (``DivideBy``), which shares the numerator's period.
+    """
+
     site_ids: IdList | None = None
     team_ids: IdList | None = None
     project_team_ids: IdList | None = None
@@ -186,7 +193,6 @@ class MetricFilters(_Strict):
     confirmed: bool | None = None
     field_options: dict[int, IdList] | None = Field(default=None, max_length=100)
     archived: Literal["exclude", "include", "only"] = "exclude"
-    period: Period = Field(default_factory=lambda: RelativePeriod(relative="this_year"))
     equipment_ids: IdList | None = None
     equipment_types: (
         Annotated[
@@ -196,6 +202,32 @@ class MetricFilters(_Strict):
         | None
     ) = None
     milestones: Literal["include", "only", "exclude"] = "include"
+    # True: projects with a customer (not blank); False: projects without one.
+    has_customer: bool | None = None
+
+
+class MetricFilters(DivisorFilters):
+    period: Period = Field(default_factory=lambda: RelativePeriod(relative="this_year"))
+
+
+class DivideBy(_Strict):
+    """
+    The divisor of a calculated widget (2.6.0): a measure and its own filters
+    over the numerator's period and buckets; the result is a percentage
+    (x 100) or a plain number.
+    """
+
+    measure: Measure
+    filters: DivisorFilters = Field(default_factory=DivisorFilters)
+    result: Literal["percent", "number"] = "percent"
+
+
+def _check_filters(measure: str, filters: DivisorFilters) -> None:
+    """A filter the measure's facts do not carry would be silently ignored: a 422."""
+    for key in FILTER_KEYS:
+        message = filter_error(measure, key)
+        if message and filter_given(filters, key):
+            raise _error(message)
 
 
 class MetricQuery(_Strict):
@@ -204,6 +236,8 @@ class MetricQuery(_Strict):
     filters: MetricFilters = Field(default_factory=MetricFilters)
     percent_of: Literal["total", "first_dimension"] | None = None
     top_n: int | None = Field(default=None, ge=1, le=50)
+    # A calculated widget: this query's measure divided by another one.
+    divide_by: DivideBy | None = None
 
     @model_validator(mode="after")
     def _check_query(self) -> "MetricQuery":
@@ -218,12 +252,10 @@ class MetricQuery(_Strict):
             message = matrix_error(self.measure, kind)
             if message:
                 raise _error(message)
-        # A filter the measure's facts do not carry would be silently ignored
-        # (``metrics.MEASURE_FILTERS``); a default value is no filter.
-        for key in FILTER_KEYS:
-            message = filter_error(self.measure, key)
-            if message and filter_given(self.filters, key):
-                raise _error(message)
+        # The measure's filters (``metrics.MEASURE_FILTERS``).
+        _check_filters(self.measure, self.filters)
+        if self.divide_by is not None:
+            self._check_divisor(self.divide_by, kinds)
         if self.percent_of is not None:
             message = percent_error(self.measure)
             if message:
@@ -240,6 +272,28 @@ class MetricQuery(_Strict):
                 raise _error(f"Top N cannot be used when the first dimension is the {label}")
         return self
 
+    def _check_divisor(self, divisor: DivideBy, kinds: list[str]) -> None:
+        """
+        A calculated widget: no dimension or one period, no percentage nor
+        top N, two summed or counted measures, each side's filters valid for
+        its own measure, the period dimension valid for both.
+        """
+        if kinds and kinds != ["period"]:
+            raise _error("A calculated widget can only be broken down by period")
+        if self.percent_of is not None:
+            raise _error("A calculated widget cannot show a percentage of a dimension")
+        if self.top_n is not None:
+            raise _error("A calculated widget has no top N")
+        for measure in (self.measure, divisor.measure):
+            message = divide_error(measure)
+            if message:
+                raise _error(message)
+        for kind in kinds:
+            message = matrix_error(divisor.measure, kind)
+            if message:
+                raise _error(message)
+        _check_filters(divisor.measure, divisor.filters)
+
 
 class WidgetOptions(_Strict):
     stacked: bool | None = None
@@ -251,8 +305,11 @@ class WidgetOptions(_Strict):
     kpi_bucket: bool | int | Annotated[str, Field(max_length=MAX_KPI_BUCKET_LENGTH)] | None = None
     # The gauge's target (the bands sit around it), in the measure's unit.
     # Accepted on any kind, like the other options; the client keeps it for a
-    # gauge only.
+    # gauge and a KPI.
     target: float | None = Field(default=None, ge=0, le=MAX_GAUGE_TARGET, allow_inf_nan=False)
+    # Show the value as a percentage of ``target`` (2.6.0): value / target x
+    # 100, computed by the client; ignored without a target above 0.
+    percent_of_target: bool | None = None
 
 
 class GridPosition(_Strict):

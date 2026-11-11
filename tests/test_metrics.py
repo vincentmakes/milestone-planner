@@ -2940,3 +2940,418 @@ def test_the_calendar_helpers_default_to_weekends_off():
     assert (calendar.weekends_working, calendar.days_per_week) == (False, 5)
     assert WorkingCalendar({}, True).days_per_week == 7
     assert Facts.__dataclass_fields__["weekends_working"].default is False
+
+
+# --- 2.6.0: Utilisation's booked-side project filters, Has a customer -------
+
+# Ann (100 %, site 1, March = 22 weekdays) is booked 10 days on a customer
+# project and 5 days on an internal one at another site.
+CUSTOMER_MIX = [
+    project(1, customer="Acme", tag_ids=(20,), confirmed=True, field_values={30: 301}),
+    project(2, site_id=2, customer="  ", team_ids=(10,), pm_id=2),
+]
+CUSTOMER_MIX_BOOKINGS = [
+    booking(1, "2026-03-02", "2026-03-13", project_id=1),
+    booking(2, "2026-03-16", "2026-03-20", project_id=2),
+]
+
+
+def customer_mix() -> Facts:
+    return facts(
+        projects=CUSTOMER_MIX, bookings=CUSTOMER_MIX_BOOKINGS, capacity=[person_capacity()]
+    )
+
+
+@pytest.mark.parametrize(
+    ("filters", "expected"),
+    [
+        ({}, 68.18),  # 15 / 22
+        ({"has_customer": True}, 45.45),  # 10 / 22: the capacity stays Ann's
+        ({"has_customer": False}, 22.73),  # a blank customer is none
+        ({"project_ids": [2]}, 22.73),
+        ({"tag_ids": [20]}, 45.45),
+        ({"confirmed": True}, 45.45),
+        ({"project_team_ids": [10]}, 22.73),
+        ({"project_manager_ids": [2]}, 22.73),
+        ({"field_options": {30: [301]}}, 45.45),
+        # Sites stay the person's: Ann works at site 1, the internal project is at site 2.
+        ({"site_ids": [1]}, 68.18),
+        ({"site_ids": [2]}, 0.0),
+    ],
+)
+def test_utilisation_project_filters_narrow_the_booked_side_only(filters, expected):
+    result = aggregate(customer_mix(), q("utilisation", filters=filters), viewer=FULL)
+    assert result.total == expected
+    capacity = aggregate(customer_mix(), q("capacity_days"), viewer=FULL)
+    assert capacity.total == 22
+
+
+def test_utilisation_by_person_with_a_customer_filter_keeps_every_person_in_scope():
+    data = facts(
+        projects=CUSTOMER_MIX,
+        bookings=[*CUSTOMER_MIX_BOOKINGS, booking(3, "2026-03-02", "2026-03-06", person=2)],
+        capacity=[person_capacity(), person_capacity(2)],
+    )
+    result = aggregate(
+        data, q("utilisation", PERSON, filters={"has_customer": False}), viewer=FULL
+    ).to_dict()
+    # Bob's booking is on the customer project: he stays with 0 %.
+    assert [(r["keys"][0]["label"], r["value"]) for r in result["rows"]] == [
+        ("Ann", 22.73),
+        ("Bob", 0.0),
+    ]
+    assert result["total"] == 11.36  # 5 / 44
+
+
+@pytest.mark.parametrize(
+    ("customer", "has"),
+    [("Acme", True), ("", False), ("   ", False), (None, False), (" Lab ", True)],
+)
+def test_has_customer_follows_the_customer_dimension_blank_rule(customer, has):
+    data = facts(
+        projects=[project(1, customer=customer)],
+        bookings=[booking(1, "2026-03-02", "2026-03-06")],
+    )
+    for wanted in (True, False):
+        result = aggregate(data, q("booked_days", filters={"has_customer": wanted}), viewer=FULL)
+        assert result.total == (5 if wanted == has else 0)
+
+
+@pytest.mark.parametrize(
+    "measure", ["booked_days", "project_count", "phase_count", "equipment_booked_days"]
+)
+def test_has_customer_filters_every_project_backed_family(measure):
+    data = facts(
+        projects=[project(1, customer="Acme"), project(2)],
+        bookings=[
+            booking(1, "2026-03-02", "2026-03-06"),
+            booking(2, "2026-03-02", "2026-03-06", project_id=2),
+        ],
+        phases=[
+            PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-06")),
+            PhaseFact(2, 2, "Design", d("2026-03-02"), d("2026-03-06")),
+        ],
+        equipment_bookings=[
+            used(1, "2026-03-02", "2026-03-06"),
+            used(2, "2026-03-02", "2026-03-06", project_id=2),
+        ],
+    )
+    every = aggregate(data, q(measure), viewer=FULL).total
+    customer = aggregate(data, q(measure, filters={"has_customer": True}), viewer=FULL).total
+    internal = aggregate(data, q(measure, filters={"has_customer": False}), viewer=FULL).total
+    assert customer == internal == every / 2
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            {"measure": "available_days", "filters": {"has_customer": True}},
+            "The Has a customer filter does not apply to available days",
+        ),
+        (
+            {"measure": "people_over_capacity", "filters": {"tag_ids": [20]}},
+            "The Tags filter does not apply to people over capacity",
+        ),
+        (
+            {"measure": "equipment_utilisation", "filters": {"has_customer": False}},
+            "The Has a customer filter does not apply to equipment utilisation",
+        ),
+        (
+            {"measure": "utilisation", "filters": {"equipment_ids": [1]}},
+            "The Equipment filter does not apply to utilisation",
+        ),
+    ],
+)
+def test_project_filters_stay_refused_beside_utilisation(body, message):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(body)
+    assert caught.value.errors()[0]["msg"] == message
+
+
+def test_utilisation_project_filters_need_no_permission_beyond_the_staff_view():
+    query = q("utilisation", filters={"project_ids": [1], "has_customer": True, "tag_ids": [20]})
+    assert metrics.missing_permission(query, Viewer(frozenset({"views.staff"}))) is None
+    assert metrics.filter_needs("utilisation") == {"person_ids": "absences.view_others"}
+
+
+# --- 2.6.0: calculated widgets (divide_by) -------------------------------------
+
+
+def divided(
+    measure: str,
+    divisor: str,
+    dimensions: list[dict[str, Any]] | None = None,
+    *,
+    filters: dict[str, Any] | None = None,
+    divisor_filters: dict[str, Any] | None = None,
+    result: str | None = None,
+) -> MetricQuery:
+    divide_by: dict[str, Any] = {"measure": divisor, "filters": divisor_filters or {}}
+    if result:
+        divide_by["result"] = result
+    return q(measure, dimensions, filters=filters or {}, divide_by=divide_by)
+
+
+# Week 1 (2 March): 5 days on the customer project; week 2: 5 internal days.
+SPLIT_WEEKS = [
+    booking(1, "2026-03-02", "2026-03-06", project_id=1),
+    booking(2, "2026-03-09", "2026-03-13", project_id=2),
+]
+
+
+def split_weeks() -> Facts:
+    return facts(projects=CUSTOMER_MIX, bookings=SPLIT_WEEKS, capacity=[person_capacity()])
+
+
+def test_a_ratio_divides_the_totals():
+    query = divided("booked_days", "booked_days", divisor_filters={"has_customer": True})
+    result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
+    assert result["rows"] == [{"keys": [], "value": 200.0}]
+    assert result["total"] == 200.0 and result["unit"] == "percent"
+    assert result["dimensions"] == []
+
+
+def test_a_ratio_as_a_number_has_two_decimals_and_no_unit():
+    query = divided("booked_days", "capacity_days", result="number")
+    result = aggregate(split_weeks(), query, viewer=FULL)
+    assert result.total == 0.45  # 10 / 22
+    assert result.unit == "number"
+
+
+def test_a_ratio_per_period_bucket_with_zero_denominators():
+    query = divided("booked_days", "booked_days", WEEKS, divisor_filters={"has_customer": True})
+    result = aggregate(split_weeks(), query, viewer=FULL).to_dict()
+    rows = [(row["keys"][0]["key"], row["value"]) for row in result["rows"]]
+    weeks = metrics.buckets("week", d("2026-03-01"), d("2026-03-31"))
+    assert [key for key, _ in rows] == [bucket.key for bucket in weeks]
+    values = dict(rows)
+    # The week of 2 March: 5 / 5; of 9 March: 5 / 0 (no ratio); the others 0 / 0.
+    assert values[weeks[1].key] == 100.0
+    assert values[weeks[2].key] is None
+    assert [values[b.key] for b in (weeks[0], *weeks[3:])] == [0.0] * (len(weeks) - 2)
+    assert result["total"] == 200.0
+    assert result["dimensions"] == [{"kind": "period", "label": "Week"}]
+
+
+def test_a_ratio_of_nothing_over_something_is_zero_and_the_reverse_is_none():
+    data = split_weeks()
+    # No project carries the Blue tag: nothing booked over Ann's 22 days.
+    nothing = divided("booked_days", "capacity_days", filters={"tag_ids": [21]})
+    assert aggregate(data, nothing, viewer=FULL).total == 0.0
+    over_nothing = divided("booked_days", "booked_days", divisor_filters={"person_ids": [3]})
+    assert aggregate(data, over_nothing, viewer=FULL).total is None
+
+
+def test_a_ratio_of_counts_over_a_sum():
+    data = split_weeks()
+    query = divided("booking_count", "booked_weeks", result="number")
+    assert aggregate(data, query, viewer=FULL).total == 1.0  # 2 bookings / 2 weeks
+
+
+def test_a_ratio_merges_the_warnings_of_both_sides():
+    query = divided(
+        "booked_days",
+        "booked_days",
+        filters={"tag_ids": [99]},
+        divisor_filters={"project_ids": [98], "tag_ids": [99]},
+    )
+    result = aggregate(split_weeks(), query, viewer=FULL)
+    assert result.warnings == ["Tag 99 no longer exists", "Project 98 no longer exists"]
+
+
+def test_a_ratio_keeps_each_sides_archived_mode():
+    data = facts(
+        projects=[project(1), project(2, archived=True)],
+        bookings=[
+            booking(1, "2026-03-02", "2026-03-06"),
+            booking(2, "2026-03-02", "2026-03-06", project_id=2),
+        ],
+    )
+    query = divided("booked_days", "booked_days", divisor_filters={"archived": "include"})
+    assert aggregate(data, query, viewer=FULL).total == 50.0
+    assert metrics.query_archived_modes(query) == ("exclude", "include")
+    assert metrics.query_archived_modes(q("booked_days")) == ("exclude",)
+
+
+@pytest.mark.parametrize(
+    ("query", "viewer_keys", "needed"),
+    [
+        # The divisor's family.
+        (lambda: divided("booked_days", "capacity_days"), {"views.equipment"}, "views.staff"),
+        (
+            lambda: divided("booked_days", "equipment_booked_days"),
+            {"views.staff"},
+            "views.equipment",
+        ),
+        # The numerator's family first.
+        (lambda: divided("capacity_days", "equipment_booked_days"), set(), "views.staff"),
+        # The divisor's filters and archived mode.
+        (
+            lambda: divided("booked_days", "booked_days", divisor_filters={"person_ids": [1]}),
+            {"views.archived"},
+            "views.staff",
+        ),
+        (
+            lambda: divided("booked_days", "capacity_days", divisor_filters={"person_ids": [1]}),
+            {"views.staff"},
+            "absences.view_others",
+        ),
+        (
+            lambda: divided("booked_days", "booked_days", divisor_filters={"archived": "only"}),
+            {"views.staff"},
+            "views.archived",
+        ),
+        (lambda: divided("booked_days", "booked_days"), set(), None),
+    ],
+)
+def test_a_ratio_checks_the_permissions_of_both_sides(query, viewer_keys, needed):
+    built = query()
+    viewer = Viewer(frozenset(viewer_keys))
+    assert metrics.missing_permission(built, viewer) == needed
+    if needed is not None:
+        with pytest.raises(MetricError) as caught:
+            aggregate(split_weeks(), built, viewer=viewer)
+        assert caught.value.message == metrics.permission_message(needed)
+
+
+def test_a_ratio_reads_the_families_of_both_sides():
+    assert metrics.query_families(divided("booked_days", "capacity_days")) == (
+        "booking",
+        "capacity",
+    )
+    assert metrics.query_families(divided("capacity_days", "booked_days")) == (
+        "capacity",
+        "booking",
+    )
+    assert metrics.query_families(q("utilisation")) == ("capacity", "booking")
+    assert metrics.divisor_query(q("booked_days")) is None
+
+
+def test_the_divisor_shares_the_numerators_period_and_dimensions():
+    query = divided("booked_days", "capacity_days", WEEKS, divisor_filters={"team_ids": [10]})
+    divisor = metrics.divisor_query(query)
+    assert divisor is not None
+    assert divisor.measure == "capacity_days"
+    assert divisor.dimensions == query.dimensions
+    assert divisor.filters.period == query.filters.period
+    assert divisor.filters.team_ids == [10]
+    assert divisor.percent_of is None and divisor.top_n is None and divisor.divide_by is None
+
+
+def test_ratio_value_rule():
+    assert metrics.ratio_value(1, 4, "percent") == 25.0
+    assert metrics.ratio_value(1, 4, "number") == 0.25
+    assert metrics.ratio_value(0, 0, "number") == 0.0
+    assert metrics.ratio_value(2, 0, "number") is None
+    assert metrics.ratio_value(2, 0, "percent") is None
+
+
+RATIO_REFUSALS = [
+    (
+        {"dimensions": [{"kind": "site"}]},
+        "A calculated widget can only be broken down by period",
+    ),
+    (
+        {"dimensions": [{"kind": "period", "grain": "month"}, {"kind": "site"}]},
+        "A calculated widget can only be broken down by period",
+    ),
+    (
+        {"dimensions": [{"kind": "period", "grain": "month"}], "percent_of": "total"},
+        "A calculated widget cannot show a percentage of a dimension",
+    ),
+    (
+        {"dimensions": [{"kind": "period", "grain": "month"}], "top_n": 3},
+        "A calculated widget has no top N",
+    ),
+    (
+        {"measure": "utilisation"},
+        "Utilisation cannot be divided nor divide another measure: "
+        "choose a summed or counted measure",
+    ),
+    (
+        {"divide_by": {"measure": "available_days"}},
+        "Available days cannot be divided nor divide another measure: "
+        "choose a summed or counted measure",
+    ),
+    (
+        {"divide_by": {"measure": "booked_days", "filters": {"milestones": "only"}}},
+        "The Milestones filter does not apply to booked days",
+    ),
+    (
+        {
+            "divide_by": {"measure": "capacity_days", "filters": {"has_customer": True}},
+        },
+        "The Has a customer filter does not apply to capacity (days)",
+    ),
+    (
+        {
+            "dimensions": [{"kind": "period", "grain": "month"}],
+            "divide_by": {"measure": "project_volume"},
+        },
+        "Project volume cannot be broken down by period",
+    ),
+    (
+        {"divide_by": {"measure": "booked_days", "result": "fraction"}},
+        "Input should be 'percent' or 'number'",
+    ),
+]
+
+
+@pytest.mark.parametrize(("extra", "message"), RATIO_REFUSALS)
+def test_ratio_spec_refusals(extra, message):
+    from pydantic import ValidationError
+
+    body = {"measure": "booked_days", "divide_by": {"measure": "capacity_days"}, **extra}
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(body)
+    assert caught.value.errors()[0]["msg"] == message
+
+
+def test_the_divisor_has_no_period_of_its_own():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(
+            {
+                "measure": "booked_days",
+                "divide_by": {
+                    "measure": "capacity_days",
+                    "filters": {"period": {"relative": "this_year"}},
+                },
+            }
+        )
+    assert caught.value.errors()[0]["type"] == "extra_forbidden"
+
+
+def test_a_ratio_spec_round_trips_with_its_defaults():
+    query = MetricQuery.model_validate(
+        {
+            "measure": "phases_due",
+            "dimensions": [{"kind": "period", "grain": "quarter"}],
+            "divide_by": {"measure": "phase_count", "filters": {"milestones": "exclude"}},
+        }
+    )
+    assert query.divide_by is not None
+    assert query.divide_by.result == "percent"
+    dumped = query.model_dump(mode="json", by_alias=True, exclude_unset=True)
+    assert dumped["divide_by"] == {"measure": "phase_count", "filters": {"milestones": "exclude"}}
+
+
+def test_widget_options_take_percent_of_target():
+    widget = WidgetIn.model_validate(
+        {
+            "kind": "kpi",
+            "title": "Absorption",
+            "query": {"measure": "booked_days"},
+            "options": {"target": 70, "percent_of_target": True},
+            "layout": {
+                "lg": {"x": 0, "y": 0, "w": 3, "h": 2},
+                "md": {"x": 0, "y": 0, "w": 4, "h": 2},
+                "sm": {"x": 0, "y": 0, "w": 4, "h": 2},
+            },
+        }
+    )
+    assert widget.options.percent_of_target is True and widget.options.target == 70

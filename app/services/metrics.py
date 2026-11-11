@@ -1,5 +1,5 @@
 """
-The dashboards' metric engine (2.3.0): facts, working days, aggregation.
+The dashboards' metric engine (2.6.0): facts, working days, aggregation.
 
 A dashboard widget asks one *metric query* (``app/schemas/dashboard.py``
 ``MetricQuery``): a measure, up to two dimensions, filters, a period, and
@@ -56,7 +56,19 @@ Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
   days exceed their capacity in the group. The booked side counts only the
   bookings of people with a capacity, keeps the project-site calendar and the
   ``archived`` filter, and reads ``site`` / ``team`` / ``person`` (dimensions
-  and filters) from the person, like the capacity side.
+  and filters) from the person, like the capacity side. Utilisation also
+  takes the project filters but the site (``_PROJECT_ATTRIBUTE_FILTERS``,
+  2.6.0): they narrow its booked side only, the capacity stays that of the
+  people in scope.
+- ``has_customer`` (every project-backed family, and Utilisation's booked
+  side): True keeps the projects whose customer is not blank (None, empty or
+  spaces, like the ``customer`` dimension), False the others.
+- A **calculated widget** (``divide_by``, 2.6.0) divides a summed or counted
+  measure (``DIVISIBLE_MEASURES``) by another one with its own filters, over
+  the numerator's period and buckets: per bucket and for the total,
+  ``ratio_value`` (``ratio_percent``'s rule: a non-zero numerator over 0 is
+  None, 0 over 0 is 0), as a percentage or a plain number (unit
+  ``number``). ``missing_permission`` checks both sides.
 - The **equipment** family (``views.equipment``): ``equipment_booked_days``
   = working days of the *project's* site of each equipment booking (whole
   days, no allocation); ``equipment_booking_count`` / ``equipment_booked``
@@ -288,6 +300,20 @@ FLOAT_MEASURES: frozenset[str] = frozenset(
     {"utilisation", "equipment_utilisation", "available_days"}
 )
 
+# A calculated widget (2.6.0, ``MetricQuery.divide_by``) divides one measure
+# by another over the same period and buckets. Both sides are summed or
+# counted measures -- never a composite, whose value is already a ratio,
+# difference or per-bucket count.
+DIVISIBLE_MEASURES: frozenset[str] = frozenset(
+    measure
+    for measure in MEASURES
+    if measure in ADDITIVE_MEASURES or measure in COUNT_MEASURES or measure == "project_volume"
+)
+# The result of a calculated widget: a percentage (x 100) or a plain number.
+RATIO_RESULTS: tuple[str, ...] = ("percent", "number")
+# The unit of a plain-number ratio (two decimals, no unit word).
+NUMBER_UNIT = "number"
+
 UNITS: dict[str, str] = {
     "booked_days": "days",
     "booked_weeks": "weeks",
@@ -382,6 +408,7 @@ FILTER_KEYS: tuple[str, ...] = (
     "equipment_ids",
     "equipment_types",
     "milestones",
+    "has_customer",
 )
 FILTER_LABELS: dict[str, str] = {
     "site_ids": "Sites",
@@ -398,6 +425,7 @@ FILTER_LABELS: dict[str, str] = {
     "equipment_ids": "Equipment",
     "equipment_types": "Equipment types",
     "milestones": "Milestones",
+    "has_customer": "Has a customer",
 }
 # The value of a filter that is no filter (lists and ``confirmed``: None or
 # empty). ``period`` always applies and is never refused.
@@ -414,20 +442,30 @@ _PROJECT_FILTERS: frozenset[str] = frozenset(
         "field_options",
         "archived",
         "period",
+        "has_customer",
     }
+)
+# The project filters that are not the site: the booked side of Utilisation
+# takes them (``site_ids`` there is the person's site, like on capacity).
+_PROJECT_ATTRIBUTE_FILTERS: frozenset[str] = _PROJECT_FILTERS - {"site_ids", "archived", "period"}
+_CAPACITY_FILTERS: frozenset[str] = frozenset(
+    {"site_ids", "team_ids", "person_ids", "archived", "period"}
 )
 FAMILY_FILTERS: dict[str, frozenset[str]] = {
     # The person's teams and the person exist only on a booking.
     "booking": _PROJECT_FILTERS | {"team_ids", "person_ids"},
     "project": _PROJECT_FILTERS,
     "phase": _PROJECT_FILTERS | {"milestones"},
-    "capacity": frozenset({"site_ids", "team_ids", "person_ids", "archived", "period"}),
+    "capacity": _CAPACITY_FILTERS,
     "equipment": _PROJECT_FILTERS | {"equipment_ids", "equipment_types"},
 }
 # A measure whose filters differ from its family's: equipment utilisation is
 # the equipment's (its sites, the equipment, its type), with the archived
-# test on the booked side.
+# test on the booked side. Utilisation (2.6.0) also takes the project
+# filters, applied to its booked side only: the capacity stays that of the
+# people in scope, so "booked on customer projects / capacity" is one widget.
 MEASURE_FILTER_OVERRIDES: dict[str, frozenset[str]] = {
+    "utilisation": _CAPACITY_FILTERS | _PROJECT_ATTRIBUTE_FILTERS,
     "equipment_utilisation": frozenset(
         {"site_ids", "equipment_ids", "equipment_types", "archived", "period"}
     ),
@@ -461,6 +499,72 @@ def percent_error(measure: str) -> str | None:
     if measure not in NO_PERCENT_MEASURES:
         return None
     return NO_PERCENT_MESSAGES.get(measure, f"{MEASURE_LABELS[measure]} is already a percentage")
+
+
+def divide_error(measure: str) -> str | None:
+    """The refusal of ``measure`` on either side of a calculated widget, or None."""
+    if measure in DIVISIBLE_MEASURES:
+        return None
+    return (
+        f"{MEASURE_LABELS[measure]} cannot be divided nor divide another measure: "
+        "choose a summed or counted measure"
+    )
+
+
+class _DivisorQuery(NamedTuple):
+    """The denominator of a calculated widget as a query of its own (``divisor_query``)."""
+
+    measure: str
+    dimensions: list[Any]
+    filters: Any
+    percent_of: None = None
+    top_n: None = None
+    divide_by: None = None
+
+
+class _DivisorFilters:
+    """The divisor's own filters with the numerator's period (it has none of its own)."""
+
+    def __init__(self, filters: Any, period: Any):
+        self._filters = filters
+        self.period = period
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._filters, name)
+
+
+def divisor_query(query: Any) -> _DivisorQuery | None:
+    """
+    The denominator of ``query`` (``divide_by``) as a query: its measure and
+    filters, the numerator's dimensions and period; None without a divisor.
+    """
+    divisor = getattr(query, "divide_by", None)
+    if divisor is None:
+        return None
+    return _DivisorQuery(
+        measure=divisor.measure,
+        dimensions=list(query.dimensions),
+        filters=_DivisorFilters(divisor.filters, query.filters.period),
+    )
+
+
+def query_families(query: Any) -> tuple[str, ...]:
+    """The families whose facts ``query`` reads: its measure's, then its divisor's."""
+    families = list(measure_families(query.measure))
+    divisor = divisor_query(query)
+    if divisor is not None:
+        for family in measure_families(divisor.measure):
+            if family not in families:
+                families.append(family)
+    return tuple(families)
+
+
+def query_archived_modes(query: Any) -> tuple[str, ...]:
+    """The archived modes ``query`` reads: its own, then its divisor's."""
+    divisor = divisor_query(query)
+    if divisor is None:
+        return (query.filters.archived,)
+    return (query.filters.archived, divisor.filters.archived)
 
 
 def measure_families(measure: str) -> tuple[str, ...]:
@@ -601,7 +705,9 @@ def metric_matrix_json() -> str:
     (``FILTER_NEEDS``, plus ``archived`` for ``include`` / ``only``) in one
     map, kind or filter key -> permission key: the two vocabularies share no
     name. ``no_percent`` lists the measures ``percent_of`` is refused on; the
-    ``*_labels`` maps are the names the frontend's lists must spell.
+    ``*_labels`` maps are the names the frontend's lists must spell;
+    ``divisible`` lists the measures a calculated widget may divide
+    (``DIVISIBLE_MEASURES``).
     """
     data: dict[str, Any] = {
         "measures": {
@@ -617,6 +723,7 @@ def metric_matrix_json() -> str:
         },
         "needs": {**NEEDS, **FILTER_NEEDS, "archived": ARCHIVED_NEEDS},
         "no_percent": sorted(NO_PERCENT_MEASURES),
+        "divisible": sorted(DIVISIBLE_MEASURES),
         "relative_periods": list(RELATIVE_PERIODS),
         "grains": list(GRAINS),
         "measure_labels": {measure: MEASURE_LABELS[measure] for measure in MEASURES},
@@ -665,7 +772,8 @@ def missing_permission(query: Any, viewer: Viewer) -> str | None:
     Checked in order: the measure's families (``MEASURE_NEEDS``), each
     dimension (``NEEDS``, then the asked measure's family need
     ``FAMILY_DIMENSION_NEEDS``), each given filter (``FILTER_NEEDS``, then
-    ``FAMILY_FILTER_NEEDS``), then the archived mode.
+    ``FAMILY_FILTER_NEEDS``), then the archived mode -- and the same for the
+    divisor of a calculated widget (``divisor_query``).
     """
     family = FAMILY[query.measure]
     for measure_family in measure_families(query.measure):
@@ -687,7 +795,8 @@ def missing_permission(query: Any, viewer: Viewer) -> str | None:
                 return needed
     if query.filters.archived != "exclude" and not viewer.has(ARCHIVED_NEEDS):
         return ARCHIVED_NEEDS
-    return None
+    divisor = divisor_query(query)
+    return missing_permission(divisor, viewer) if divisor is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -1291,6 +1400,8 @@ class _Filters:
     milestones: str = "include"
     equipment_ids: set[int] | None = None
     equipment_types: set[str] | None = None
+    # True: the project has a customer (not blank); False: it has none.
+    has_customer: bool | None = None
 
 
 def _known(
@@ -1346,6 +1457,7 @@ def _resolve_filters(facts: Facts, spec: Any, warnings: list[str]) -> _Filters:
         milestones=getattr(spec, "milestones", "include"),
         equipment_ids=_known(spec.equipment_ids, facts.equipment, "Equipment", warnings),
         equipment_types=_known_types(spec.equipment_types, facts, warnings),
+        has_customer=getattr(spec, "has_customer", None),
     )
     for field_id, option_ids in (spec.field_options or {}).items():
         if field_id not in facts.fields:
@@ -1381,11 +1493,26 @@ def _archived_passes(project: ProjectFact, archived: str) -> bool:
     return True
 
 
+def _has_customer(project: ProjectFact) -> bool:
+    """Whether the project's customer is not blank (None, empty or spaces: the ``customer`` dimension's rule)."""
+    return bool((project.customer or "").strip())
+
+
 def _project_passes(project: ProjectFact, flt: _Filters) -> bool:
     if not _archived_passes(project, flt.archived):
         return False
     if flt.site_ids is not None and project.site_id not in flt.site_ids:
         return False
+    return _project_attributes_pass(project, flt)
+
+
+def _project_attributes_pass(project: ProjectFact, flt: _Filters) -> bool:
+    """
+    The project filters but the archived mode and the site
+    (``_PROJECT_ATTRIBUTE_FILTERS``): ``_project_passes`` after its own two
+    tests, and the booked side of Utilisation, whose ``site_ids`` are the
+    person's.
+    """
     if flt.project_team_ids is not None and not flt.project_team_ids.intersection(project.team_ids):
         return False
     if flt.project_ids is not None and project.id not in flt.project_ids:
@@ -1395,6 +1522,8 @@ def _project_passes(project: ProjectFact, flt: _Filters) -> bool:
     if flt.tag_ids is not None and not flt.tag_ids.intersection(project.tag_ids):
         return False
     if flt.confirmed is not None and project.confirmed != flt.confirmed:
+        return False
+    if flt.has_customer is not None and _has_customer(project) != flt.has_customer:
         return False
     for field_id, option_ids in flt.field_options.items():
         if not option_ids & _selected_option_ids(project.field_values.get(field_id)):
@@ -1497,6 +1626,10 @@ def _items(
             if fact is None or project is None or not _archived_passes(project, flt.archived):
                 continue
             if not _capacity_passes(fact, flt):
+                continue
+            # Utilisation's project filters narrow the booked time only (the
+            # other capacity measures refuse them: ``MEASURE_FILTERS``).
+            if not _project_attributes_pass(project, flt):
                 continue
             yield _Item(
                 "booking",
@@ -1985,6 +2118,145 @@ def _rank(value: float | None) -> tuple[bool, float]:
     return (value is None, -(value or 0.0))
 
 
+class _Buckets(NamedTuple):
+    """The period dimension's buckets of one query (empty without a period dimension)."""
+
+    index: int | None  # the period dimension's position
+    buckets: list[Bucket]
+    starts: list[date]
+    values: list[DimValue]
+
+
+def _collect(
+    facts: Facts,
+    measure: str,
+    flt: _Filters,
+    dimensions: list[_Dimension],
+    period: tuple[date, date],
+    grid: _Buckets,
+    calendar: WorkingCalendar,
+) -> tuple[list[_Contribution], set[int]]:
+    """
+    The contributions of ``measure`` over ``period``, split into the
+    dimension values (and the period buckets of ``grid``), with the indexes of
+    the dimensions where a fact fell in several values.
+    """
+    start, end = period
+    family = FAMILY[measure]
+    # One pass per side: a composite's numerator and denominator bases, else
+    # the measure itself. Every contribution lands in the one list below.
+    sides: list[tuple[str, str]] = (
+        [(COMPOSITES[measure][0], "num"), (COMPOSITES[measure][1], "den")]
+        if measure in COMPOSITES
+        else [(measure, "num")]
+    )
+    contributions: list[_Contribution] = []
+    several: set[int] = set()
+    for base, side in sides:
+        for item in _items(facts, base, flt, family, measure):
+            first, last = max(item.start, start), min(item.end, end)
+            if first > last:
+                continue
+            lists: list[list[DimValue] | None] = []
+            for index, dimension in enumerate(dimensions):
+                if index == grid.index:
+                    lists.append(None)
+                    continue
+                values = _values(facts, dimension, item, family)
+                if len(values) > 1:
+                    several.add(index)
+                lists.append(values)
+            pieces: Iterable[tuple[int | None, date, date]] = (
+                _pieces(grid.buckets, grid.starts, first, last)
+                if grid.index is not None
+                else [(None, first, last)]
+            )
+            ident = _ident(base, item)
+            subject = _subject(base, item)
+            for bucket_index, piece_start, piece_end in pieces:
+                amount = _amount(base, item, calendar, piece_start, piece_end)
+                if base in ADDITIVE_MEASURES and amount == 0:
+                    continue
+                fid = (item.kind, item.id, bucket_index)
+                combos = [
+                    [grid.values[bucket_index]]
+                    if values is None and bucket_index is not None
+                    else values or []
+                    for values in lists
+                ]
+                for combo in product(*combos):
+                    contributions.append(
+                        _Contribution(tuple(combo), fid, ident, amount, side, subject)
+                    )
+    return contributions, several
+
+
+def ratio_value(num: float, den: float, result: str) -> float | None:
+    """
+    A calculated widget's value: ``num / den`` as a percentage
+    (``ratio_percent``) or, for ``result == "number"``, as a plain number --
+    None when ``den`` is 0 but ``num`` is not, 0.0 when both are 0.
+    """
+    value = ratio_percent(num, den)
+    if value is None or result == "percent":
+        return value
+    return value / 100
+
+
+def _ratio_result(
+    facts: Facts,
+    query: Any,
+    divisor: _DivisorQuery,
+    numerator: list[_Contribution],
+    dimensions: list[_Dimension],
+    period: tuple[date, date],
+    grid: _Buckets,
+    calendar: WorkingCalendar,
+    truncated: bool,
+    warnings: list[str],
+) -> MetricResult:
+    """
+    A calculated widget (``divide_by``): the divisor's facts over the same
+    period and buckets, then the numerator's sum over the divisor's, for the
+    total and for each bucket (every bucket listed, an empty one is 0).
+    """
+    result: str = query.divide_by.result
+    den_flt = _resolve_filters(facts, divisor.filters, warnings)
+    denominator, _ = _collect(facts, divisor.measure, den_flt, dimensions, period, grid, calendar)
+
+    def value(num_part: list[_Contribution], den_part: list[_Contribution]) -> float | None:
+        ratio = ratio_value(
+            _base_value(query.measure, num_part), _base_value(divisor.measure, den_part), result
+        )
+        return None if ratio is None else round(ratio, 2)
+
+    total = value(numerator, denominator)
+    rows: list[dict[str, Any]] = []
+    if not dimensions:
+        rows.append({"keys": [], "value": total})
+    else:
+        # The one dimension is the period (the schema refuses any other).
+        for bucket in grid.values:
+            rows.append(
+                {
+                    "keys": [_key_dict(bucket)],
+                    "value": value(
+                        [c for c in numerator if c.values[0].key == bucket.key],
+                        [c for c in denominator if c.values[0].key == bucket.key],
+                    ),
+                }
+            )
+    return MetricResult(
+        unit=PERCENT_UNIT if result == "percent" else NUMBER_UNIT,
+        dimensions=[{"kind": d.kind, "label": d.label} for d in dimensions],
+        rows=rows,
+        total=total,
+        truncated=truncated,
+        warnings=warnings,
+        period=period,
+    )
+
+
 def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
     """Answer ``query`` (a ``MetricQuery``) over ``facts``; pure."""
     needed = missing_permission(query, viewer)
@@ -2007,54 +2279,24 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
         grain = dimensions[period_index].grain
         assert grain is not None
         bucket_list = buckets(grain, start, end)
-    bucket_starts = [b.start for b in bucket_list]
     bucket_values = [_value(b.key, b.label, None, i) for i, b in enumerate(bucket_list)]
+    grid = _Buckets(period_index, bucket_list, [b.start for b in bucket_list], bucket_values)
 
-    # One pass per side: a composite's numerator and denominator bases, else
-    # the measure itself. Every contribution lands in the one list below.
-    sides: list[tuple[str, str]] = (
-        [(COMPOSITES[measure][0], "num"), (COMPOSITES[measure][1], "den")]
-        if measure in COMPOSITES
-        else [(measure, "num")]
-    )
-    contributions: list[_Contribution] = []
-    several: set[int] = set()
-    for base, side in sides:
-        for item in _items(facts, base, flt, family, measure):
-            first, last = max(item.start, start), min(item.end, end)
-            if first > last:
-                continue
-            lists: list[list[DimValue] | None] = []
-            for index, dimension in enumerate(dimensions):
-                if index == period_index:
-                    lists.append(None)
-                    continue
-                values = _values(facts, dimension, item, family)
-                if len(values) > 1:
-                    several.add(index)
-                lists.append(values)
-            pieces: Iterable[tuple[int | None, date, date]] = (
-                _pieces(bucket_list, bucket_starts, first, last)
-                if period_index is not None
-                else [(None, first, last)]
-            )
-            ident = _ident(base, item)
-            subject = _subject(base, item)
-            for bucket_index, piece_start, piece_end in pieces:
-                amount = _amount(base, item, calendar, piece_start, piece_end)
-                if base in ADDITIVE_MEASURES and amount == 0:
-                    continue
-                fid = (item.kind, item.id, bucket_index)
-                combos = [
-                    [bucket_values[bucket_index]]
-                    if values is None and bucket_index is not None
-                    else values or []
-                    for values in lists
-                ]
-                for combo in product(*combos):
-                    contributions.append(
-                        _Contribution(tuple(combo), fid, ident, amount, side, subject)
-                    )
+    contributions, several = _collect(facts, measure, flt, dimensions, (start, end), grid, calendar)
+    divisor = divisor_query(query)
+    if divisor is not None:
+        return _ratio_result(
+            facts,
+            query,
+            divisor,
+            contributions,
+            dimensions,
+            (start, end),
+            grid,
+            calendar,
+            truncated,
+            warnings,
+        )
 
     total_raw = _combine(measure, contributions)
     percent = query.percent_of is not None

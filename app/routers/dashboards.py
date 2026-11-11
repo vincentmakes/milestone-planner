@@ -1,5 +1,5 @@
 """
-Dashboards API (2.3.0): KPI and chart dashboards over the planning data.
+Dashboards API (2.6.0): KPI and chart dashboards over the planning data.
 
 - ``GET /dashboards`` (``views.dashboards``) -- the dashboards the caller may
   open (own, ``everyone``, ``shared`` with one of the caller's role, member
@@ -29,7 +29,8 @@ Dashboards API (2.3.0): KPI and chart dashboards over the planning data.
   admin (403). 204.
 - ``POST /dashboards/query`` (``views.dashboards``) -- answer one metric query
   (the builder's preview). ``person`` needs ``views.staff``, ``archived:
-  include | only`` needs ``views.archived`` (422 in plain words).
+  include | only`` needs ``views.archived`` (422 in plain words); a
+  calculated widget's divisor (``divide_by``) is checked the same way.
 - ``POST /dashboards/{id}/data`` -- every widget's result. The facts are
   loaded **once**, for the union of the widgets' periods; each widget applies
   its own period and filters. A widget that cannot be answered (unreadable or
@@ -87,9 +88,10 @@ from app.services.metrics import (
     aggregate,
     load_extent,
     load_facts,
-    measure_families,
     missing_permission,
     permission_message,
+    query_archived_modes,
+    query_families,
     resolve_period,
 )
 from app.services.people_lists import shareable_users_statement
@@ -593,8 +595,8 @@ async def delete_dashboard(
 
 
 def _widest_archived(queries: list[MetricQuery]) -> str:
-    """The archived mode whose facts cover every query's own mode."""
-    modes = {query.filters.archived for query in queries}
+    """The archived mode whose facts cover every query's own mode (a divisor's too)."""
+    modes = {mode for query in queries for mode in query_archived_modes(query)}
     if "include" in modes or modes == {"exclude", "only"}:
         return "include"
     return "only" if modes == {"only"} else "exclude"
@@ -631,9 +633,7 @@ async def _load_for(
         today=today,
         extents=extents,
         # The capacity / equipment facts load only when a widget reads them.
-        families=frozenset(
-            family for query in queries for family in measure_families(query.measure)
-        ),
+        families=frozenset(family for query in queries for family in query_families(query)),
     )
 
 
