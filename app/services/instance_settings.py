@@ -41,7 +41,7 @@ MAX_FIELD_LABEL_LENGTH = 60
 # The online manual Help opens (help_url, 2.6.0): the public one by default.
 # The client's DEFAULT_HELP_URL (frontend/src/utils/helpLinks.ts) is the same.
 DEFAULT_HELP_URL = "https://docs-milestone.verdet.me/"
-MAX_HELP_URL_LENGTH = 500
+MAX_HELP_URL_LENGTH = 2000
 
 # The built-in project fields an admin may rename (project_field_labels), in
 # display order, and those that may be hidden (project_fields_hidden): Confirmed
@@ -231,12 +231,13 @@ def _tooltip_rows(value: str) -> str:
 
 def _help_url(value: str) -> str:
     """
-    The manual's address (``help_url``): an absolute ``http`` / ``https`` URL
-    with a host, no ``user:password@``, query or fragment, no whitespace or
-    control character, at most 500 characters, stored with its scheme and host
-    in lower case and exactly one trailing slash (``https://intranet.example/
-    milestone-docs/``). It ends up in an ``<a href>``: anything else --
-    ``javascript:``, ``data:``, a scheme-less value -- is refused.
+    The address Help opens (``help_url``), stored exactly as entered (trimmed)
+    and opened as is: the manual's home page, or its PDF on a file share
+    (a SharePoint link with ``?csf=1&web=1#page=4``). Only what keeps the
+    ``<a href>`` safe is checked: an absolute ``http`` / ``https`` URL with a
+    host, no ``user:password@``, no whitespace or control character, at most
+    2000 characters -- ``javascript:``, ``data:`` and scheme-less values are
+    refused.
     """
     text = value.strip()
     if not text or any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in text):
@@ -251,13 +252,9 @@ def _help_url(value: str) -> str:
         raise ValueError("expected an http or https address")
     if "@" in parts.netloc:
         raise ValueError("an address must not carry a user name or password")
-    if parts.query or parts.fragment or "?" in text or "#" in text:
-        raise ValueError("an address must not carry a query or fragment")
-    path = parts.path.rstrip("/") + "/"
-    canonical = f"{parts.scheme.lower()}://{parts.netloc.lower()}{path}"
-    if len(canonical) > MAX_HELP_URL_LENGTH:
+    if len(text) > MAX_HELP_URL_LENGTH:
         raise ValueError(f"an address has at most {MAX_HELP_URL_LENGTH} characters")
-    return canonical
+    return text
 
 
 KNOWN_SETTINGS: dict[str, SettingSpec] = {

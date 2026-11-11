@@ -215,7 +215,7 @@ async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_sess
         (
             "help_url",
             " https://Intranet.Example/milestone-docs ",
-            "https://intranet.example/milestone-docs/",
+            "https://Intranet.Example/milestone-docs",
         ),
     ],
 )
@@ -668,17 +668,39 @@ async def test_help_url_needs_settings_general(authed_client, mock_db_session):
 
 
 @pytest.mark.asyncio
-async def test_help_url_is_stored_canonically(authed_client, mock_db_session):
+@pytest.mark.parametrize(
+    "address",
+    [
+        "https://intranet.example/milestone-docs",
+        "https://contoso.sharepoint.com/:b:/r/sites/Lab/Shared%20Documents/Milestone-Manual.pdf"
+        "?csf=1&web=1&e=AbC123#page=4",
+    ],
+)
+async def test_help_url_is_stored_as_entered(authed_client, mock_db_session, address):
     client, set_user = authed_client
     set_user(FakeUser(4, "ops", {"settings.general"}))
     mock_db_session.execute.return_value = scalar_result(None)
 
-    response = await client.put(
-        "/api/settings/help_url", json={"value": "https://intranet.example/milestone-docs"}
-    )
+    response = await client.put("/api/settings/help_url", json={"value": f"  {address} "})
 
     assert response.status_code == 200
-    assert response.json()["value"] == "https://intranet.example/milestone-docs/"
+    assert response.json()["value"] == address
+
+
+@pytest.mark.asyncio
+async def test_help_url_refuses_an_unsafe_or_too_long_address(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(4, "ops", {"settings.general"}))
+    mock_db_session.execute.return_value = scalar_result(None)
+    base = "https://intranet.example/"
+    refused = ["https://user:pw@intranet.example/", "https://a b/", base + "d" * (2001 - len(base))]
+
+    for value in refused:
+        response = await client.put("/api/settings/help_url", json={"value": value})
+        assert response.status_code == 422, value
+    longest = base + "d" * (2000 - len(base))
+    response = await client.put("/api/settings/help_url", json={"value": longest})
+    assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------

@@ -623,7 +623,7 @@ export interface InstanceSettings {
    * custom project field ids
    */
   project_tooltip_rows?: string;
-  /** Where Help in the user menu opens: an http(s) address with one trailing slash (read it with `helpBaseUrl`) */
+  /** Where Help in the user menu opens: an http(s) address, stored and opened as entered (read it with `helpAddress`) */
   help_url?: string;
   /** Days the audit log keeps its rows, `"0"` – `"3650"` (`"0"` = indefinitely; 2.4.0) */
   audit_log_retention_days?: string;

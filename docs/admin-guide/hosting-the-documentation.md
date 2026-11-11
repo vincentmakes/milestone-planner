@@ -1,6 +1,6 @@
 # Hosting the Documentation
 
-**Help** in Milestone's user menu opens this manual — by default the public copy at `https://docs-milestone.verdet.me/`, at the chapter of the view the user is in. If your users cannot reach the internet, or you want the manual inside your own network, build it from Milestone's repository, host the result yourself, and point Milestone at it.
+**Help** in Milestone's user menu opens this manual — by default the home page of the public copy at `https://docs-milestone.verdet.me/`. If your users cannot reach the internet, or you want the manual inside your own network, build it from Milestone's repository, host the result yourself (or publish its PDF on a file share), and point Milestone at it.
 
 The manual is a static site: once built, it is a folder of plain HTML, CSS, JavaScript and image files, with no server-side code and no database. Any web server can serve it.
 
@@ -160,10 +160,10 @@ Publish the PDF next to your copy of the manual if your users want a download.
 
 ## 3. Point Milestone at your copy
 
-In Milestone, open **Settings → Features & defaults** and enter the address of your manual's home page in **Documentation URL** (an administrator, or any role with **Edit instance settings**), then **Save Changes**. See [Settings → Features & defaults](../user-guide/settings.md#features-defaults).
+In Milestone, open **Settings → Features & defaults** and enter the address Help should open in **Documentation URL** (an administrator, or any role with **Edit instance settings**), then **Save Changes**. See [Settings → Features & defaults](../user-guide/settings.md#features-defaults).
 
-- The address must start with `http://` or `https://`; it is stored with one trailing slash (`https://intranet.example.com/milestone-docs/`).
-- Help appends each chapter's path to it (`user-guide/gantt-charts/`, `user-guide/kanban-board/`, …), so the copy must be built from Milestone's `docs/` folder with its folder structure unchanged.
+- The address must start with `http://` or `https://`, without spaces or a user name and password, up to 2000 characters.
+- It is opened exactly as entered, with nothing appended: your copy's home page (`https://intranet.example.com/milestone-docs/`), or the PDF of the manual on a file share such as SharePoint, with the link's query string and a `#page=` fragment if you like.
 - The setting is per workspace: in multi-tenant mode, set it in each workspace that should use your copy.
 - Clear the field and save to go back to the public manual.
 

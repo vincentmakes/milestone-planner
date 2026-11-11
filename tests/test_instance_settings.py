@@ -521,18 +521,30 @@ def test_project_field_setting_keys_are_the_four_known_field_settings():
 # ---------------------------------------------------------------------------
 
 
+SHAREPOINT_PDF = (
+    "https://contoso.sharepoint.com/:b:/r/sites/Lab/Shared%20Documents/Milestone-Manual.pdf"
+    "?csf=1&web=1&e=AbC123#page=4"
+)
+
+
 @pytest.mark.parametrize(
-    ("raw", "canonical"),
+    ("raw", "stored"),
     [
         (DEFAULT_HELP_URL, DEFAULT_HELP_URL),
-        ("https://docs-milestone.verdet.me", DEFAULT_HELP_URL),
-        ("  HTTPS://Intranet.Example/Milestone-Docs  ", "https://intranet.example/Milestone-Docs/"),
-        ("http://docs.internal:8080/manual///", "http://docs.internal:8080/manual/"),
+        # Stored as entered: no slash added, no case changed, only trimmed.
+        ("https://docs-milestone.verdet.me", "https://docs-milestone.verdet.me"),
+        ("  HTTPS://Intranet.Example/Milestone-Docs  ", "HTTPS://Intranet.Example/Milestone-Docs"),
+        ("http://docs.internal:8080/manual///", "http://docs.internal:8080/manual///"),
         ("https://10.0.0.5/", "https://10.0.0.5/"),
+        # A PDF on a file share: its query and fragment stay.
+        (SHAREPOINT_PDF, SHAREPOINT_PDF),
+        ("https://intranet.example/docs?page=1", "https://intranet.example/docs?page=1"),
+        ("https://intranet.example/docs#top", "https://intranet.example/docs#top"),
+        ("https://intranet.example/docs?next=a@b", "https://intranet.example/docs?next=a@b"),
     ],
 )
-def test_help_url_is_an_http_address_with_one_trailing_slash(raw, canonical):
-    assert canonicalise("help_url", raw) == canonical
+def test_help_url_is_stored_as_entered(raw, stored):
+    assert canonicalise("help_url", raw) == stored
 
 
 @pytest.mark.parametrize(
@@ -554,10 +566,8 @@ def test_help_url_is_an_http_address_with_one_trailing_slash(raw, canonical):
         "https://intranet.example/my docs/",
         "https://intranet.example/\tdocs",
         "https://intranet.example/\x00",
-        "https://intranet.example/docs?page=1",
-        "https://intranet.example/docs#top",
         "https://intranet.example:99999/",
-        "https://intranet.example/" + "d" * 480,
+        "https://intranet.example/" + "d" * 1980,
     ],
 )
 def test_help_url_rejects_anything_else(raw):
@@ -565,9 +575,9 @@ def test_help_url_rejects_anything_else(raw):
         canonicalise("help_url", raw)
 
 
-def test_help_url_is_at_most_500_characters():
+def test_help_url_is_at_most_2000_characters():
     base = "https://intranet.example/"
-    longest = base + "d" * (500 - len(base) - 1) + "/"
+    longest = base + "d" * (2000 - len(base))
     assert canonicalise("help_url", longest) == longest
     with pytest.raises(ValueError):
-        canonicalise("help_url", base + "d" * (500 - len(base)) + "/")
+        canonicalise("help_url", longest + "d")

@@ -85,24 +85,25 @@ export function selectWeekendsWorking(state: { instanceSettings: InstanceSetting
   return state.instanceSettings?.weekend_working_days?.trim().toLowerCase() === 'true';
 }
 
-/** The longest manual address the server stores (`MAX_HELP_URL_LENGTH`). */
-export const MAX_HELP_URL_LENGTH = 500;
+/** The longest address Help may open (`MAX_HELP_URL_LENGTH` on the server). */
+export const MAX_HELP_URL_LENGTH = 2000;
 
 /**
- * A manual address in its stored form, or null when it is none: an absolute
- * `http` / `https` URL with a host, no user name or password, query or
- * fragment, no whitespace or control character, at most 500 characters, with
- * exactly one trailing slash -- the rule of the server's `_help_url`. The
- * value lands in an `<a href>`: `javascript:`, `data:` and scheme-less text
- * are never one.
+ * The address Help opens as stored -- `text` trimmed, nothing else changed --
+ * or null when it is not a safe one: an absolute `http` / `https` URL with a
+ * host, no user name or password, no whitespace or control character, at
+ * most 2000 characters (the rule of the server's `_help_url`). A query and a
+ * fragment are fine (a SharePoint link to the manual's PDF carries both).
+ * The value lands in an `<a href>`: `javascript:`, `data:` and scheme-less
+ * text are never one.
  */
-export function normaliseHelpUrl(text: string | null | undefined): string | null {
+export function safeHelpUrl(text: string | null | undefined): string | null {
   const trimmed = (text ?? '').trim();
   // eslint-disable-next-line no-control-regex
-  if (!trimmed || /[\s\u0000-\u001f\u007f]/.test(trimmed) || /[?#]/.test(trimmed)) return null;
-  if (!/^https?:\/\/[^/]/i.test(trimmed)) return null;
-  // No user name or password: no `@` before the path (the server's rule).
-  if (trimmed.replace(/^https?:\/\//i, '').split('/')[0].includes('@')) return null;
+  if (!trimmed || /[\s\u0000-\u001f\u007f]/.test(trimmed) || trimmed.length > MAX_HELP_URL_LENGTH) return null;
+  if (!/^https?:\/\/[^/?#]/i.test(trimmed)) return null;
+  // No user name or password: no `@` in the host part (the server's rule).
+  if (trimmed.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].includes('@')) return null;
   let url: URL;
   try {
     url = new URL(trimmed);
@@ -110,17 +111,23 @@ export function normaliseHelpUrl(text: string | null | undefined): string | null
     return null;
   }
   if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) return null;
-  const canonical = `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}/`;
-  return canonical.length <= MAX_HELP_URL_LENGTH ? canonical : null;
+  return trimmed;
 }
 
 /**
- * The manual's home page Help opens: the stored `help_url` when it is a safe
- * address (`normaliseHelpUrl`; a row written before validation or by hand
- * may not be), the public manual otherwise.
+ * The address an organisation set for Help (`help_url`), or null when it set
+ * none: unset, the public manual's own address, or a row that is not a safe
+ * address (`safeHelpUrl`; one written before validation or by hand may not
+ * be).
  */
-export function helpBaseUrl(settings: InstanceSettings | null | undefined): string {
-  return normaliseHelpUrl(settings?.help_url) ?? DEFAULT_HELP_URL;
+export function customHelpUrl(settings: InstanceSettings | null | undefined): string | null {
+  const address = safeHelpUrl(settings?.help_url);
+  return address === DEFAULT_HELP_URL ? null : address;
+}
+
+/** The address Help opens, as it is: the custom one (`customHelpUrl`), else the public manual's home page. */
+export function helpAddress(settings: InstanceSettings | null | undefined): string {
+  return customHelpUrl(settings) ?? DEFAULT_HELP_URL;
 }
 
 /** The overview panel the Gantt opens with; anything unknown is `none`. */

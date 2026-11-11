@@ -8,10 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [2.6.0] - 2026-11-11
 
 ### Added
-- Help in the user menu opens the online manual in a new tab, at the chapter of the view you are in.
+- Help in the user menu opens the online manual in a new tab.
 - The manual can be printed or saved as PDF from one page, with a cover and a table of contents.
 - A ready-made PDF of the manual is published with every update of the manual, laid out for paper: a clean cover with the version and month, chapters on new pages, nothing cut across pages, no near-empty pages inside a chapter, page numbers in the contents and bookmarks.
-- Settings → Features & defaults → Documentation URL: point Help at a copy of the manual you host yourself; the new admin guide page explains how to build it and host it, for example on Azure Static Web Apps.
+- Settings → Features & defaults → Documentation URL: point Help at any web address, such as a copy of the manual you host yourself or the manual's PDF on a file share; the new admin guide page explains how to build the manual and host it, for example on Azure Static Web Apps.
 - Dashboards: Utilisation takes the project filters (projects, project teams, project managers, tags, project fields, Confirmed, Has a customer), which narrow the booked time while the capacity stays that of the people in scope.
 - Dashboards: a Has a customer filter keeps the projects with a customer, or those without one, on every measure that reads projects.
 - Dashboards: a KPI or a gauge can show its value as a percentage of its target ("91 % of target"); a KPI now takes a target like the gauge.

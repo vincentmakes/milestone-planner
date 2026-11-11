@@ -1502,6 +1502,19 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     );
   });
 
+  it('opens a custom Help address as it is from "How calculations work"', () => {
+    const pdf = 'https://contoso.sharepoint.com/:b:/r/sites/Lab/Manual.pdf?csf=1&web=1#page=4';
+    useAppStore.setState({ instanceSettings: { help_url: pdf } });
+    renderEditor();
+    expect(screen.getByRole('link', { name: 'How calculations work' })).toHaveAttribute('href', pdf);
+    // The public manual's own address is no custom one: its chapter opens.
+    act(() => useAppStore.setState({ instanceSettings: { help_url: 'https://docs-milestone.verdet.me/' } }));
+    expect(screen.getByRole('link', { name: 'How calculations work' })).toHaveAttribute(
+      'href',
+      'https://docs-milestone.verdet.me/user-guide/dashboards/#calculated-widgets'
+    );
+  });
+
   it('starts from the measure alone, as a number, without Staff & Calendar', async () => {
     signIn([...BASE]);
     renderEditor();

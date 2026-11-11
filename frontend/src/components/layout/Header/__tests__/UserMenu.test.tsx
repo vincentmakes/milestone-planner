@@ -157,47 +157,38 @@ describe('UserMenu Log out', () => {
 });
 
 describe('UserMenu Help', () => {
-  it('opens the manual at the chapter of the current view, in a new tab', () => {
+  it('opens the public manual home page in a new tab, whatever the view', () => {
     useViewStore.setState({ currentView: 'kanban' });
     render(<UserMenu />);
     fireEvent.click(trigger());
     const help = screen.getByRole('link', { name: 'Help' });
-    expect(help).toHaveAttribute('href', 'https://docs-milestone.verdet.me/user-guide/kanban-board/');
+    expect(help).toHaveAttribute('href', 'https://docs-milestone.verdet.me/');
     expect(help).toHaveAttribute('target', '_blank');
     expect(help).toHaveAttribute('rel', 'noopener noreferrer');
-    fireEvent.click(help);
-    expect(screen.queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
-  });
-
-  it('opens the home page from a view without a chapter', () => {
-    useViewStore.setState({ currentView: 'archived' });
-    render(<UserMenu />);
-    fireEvent.click(trigger());
-    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('href', 'https://docs-milestone.verdet.me/');
     act(() => useViewStore.setState({ currentView: 'dashboards' }));
-    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute(
-      'href',
-      'https://docs-milestone.verdet.me/user-guide/dashboards/'
-    );
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('href', 'https://docs-milestone.verdet.me/');
+    fireEvent.click(screen.getByRole('link', { name: 'Help' }));
+    expect(screen.queryByRole('link', { name: 'Help' })).not.toBeInTheDocument();
   });
 });
 
 
-describe('UserMenu Help with a configured manual', () => {
-  it('opens the help_url setting, and follows it when it changes', () => {
+describe('UserMenu Help with a configured address', () => {
+  it('opens the help_url setting exactly as stored, and follows it when it changes', () => {
+    const pdf =
+      'https://contoso.sharepoint.com/:b:/r/sites/Lab/Shared%20Documents/Milestone-Manual.pdf?csf=1&web=1&e=AbC123#page=4';
     useViewStore.setState({ currentView: 'gantt' });
-    useAppStore.setState({ instanceSettings: { help_url: 'https://intranet.example/docs/' } });
+    useAppStore.setState({ instanceSettings: { help_url: pdf } });
     render(<UserMenu />);
     fireEvent.click(trigger());
-    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute(
-      'href',
-      'https://intranet.example/docs/user-guide/gantt-charts/'
-    );
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('href', pdf);
+    act(() => useViewStore.setState({ currentView: 'dashboards' }));
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('href', pdf);
+    // No slash added to an address without one.
+    act(() => useAppStore.setState({ instanceSettings: { help_url: 'https://intranet.example/docs' } }));
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('href', 'https://intranet.example/docs');
     // A row that is not a safe address falls back to the public manual.
     act(() => useAppStore.setState({ instanceSettings: { help_url: 'javascript:alert(1)' } }));
-    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute(
-      'href',
-      'https://docs-milestone.verdet.me/user-guide/gantt-charts/'
-    );
+    expect(screen.getByRole('link', { name: 'Help' })).toHaveAttribute('href', 'https://docs-milestone.verdet.me/');
   });
 });

@@ -2,11 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
-import { useViewStore } from '@/stores/viewStore';
 import { useAuth } from '@/hooks/useAuth';
 import { getAppVersion } from '@/api/endpoints/health';
-import { helpUrl } from '@/utils/helpLinks';
-import { helpBaseUrl } from '@/utils/instanceSettings';
+import { helpAddress } from '@/utils/instanceSettings';
 import styles from './UserMenu.module.css';
 import { Icon, LogoutIcon, CalendarIcon, ChevronDownIcon, HelpIcon } from '@/components/common/Icon';
 
@@ -17,9 +15,8 @@ export function UserMenu() {
   const currentUser = useAppStore((s) => s.currentUser);
   const { logout } = useAuth();
   const openModal = useUIStore((s) => s.openModal);
-  const currentView = useViewStore((s) => s.currentView);
-  // The configured manual (Settings → Features & defaults), the public one by default.
-  const helpBase = useAppStore((s) => helpBaseUrl(s.instanceSettings));
+  // The address set in Settings → Features & defaults, as it is; the public manual by default.
+  const helpHref = useAppStore((s) => helpAddress(s.instanceSettings));
   const [version, setVersion] = useState<string | null>(null);
 
   const { onBlur } = useDismissableOverlay({
@@ -88,10 +85,10 @@ export function UserMenu() {
             <Icon icon={CalendarIcon} size={16} />
             <span>My absences</span>
           </button>
-          {/* The manual (help_url), at the chapter of the current view, in a new tab. */}
+          {/* The manual (help_url), exactly the address set, in a new tab. */}
           <a
             className={styles.menuItem}
-            href={helpUrl(currentView, helpBase)}
+            href={helpHref}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setIsOpen(false)}

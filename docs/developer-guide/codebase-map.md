@@ -390,9 +390,9 @@ frontend/
                        #   projectFilters,
                        #   kanbanCards, mentions, equipmentOverlap, subphaseUtils, persistFailure,
                        #   reorder, localProjectTree, whatIf, uniqueById, touchEvents, teams,
-                       #   roles, pendingBookings (+ assignmentLock), myAssignments, auditLabels, metrics, helpLinks (the manual's chapter per view under the help_url
-                       #   base: DEFAULT_HELP_URL), viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
-                       #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel / helpBaseUrl / normaliseHelpUrl /
+                       #   roles, pendingBookings (+ assignmentLock), myAssignments, auditLabels, metrics, helpLinks (DEFAULT_HELP_URL, CALCULATIONS_HELP_PAGE,
+                       #   calculationsHelpUrl), viewLeaveGuard, relativeTime, themeColors, colorSwatches, projectLevels,
+                       #   instanceSettings (parseIdList / parseNameList / isSettingOn / ganttDefaultPanel / safeHelpUrl / customHelpUrl / helpAddress /
                        #   builtInFieldLabel / isBuiltInFieldHidden / volumeDecimals / tooltipRowGate /
                        #   selectShowWeekends / selectWeekendsWorking),
                        #   workingDays (isWorkingDay / countWorkingDays: the working-day rule, mirror of

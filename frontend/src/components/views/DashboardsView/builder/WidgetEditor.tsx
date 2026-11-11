@@ -48,8 +48,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { confirmAction } from '@/utils/confirmDialog';
 import { fieldFromFormula, formulaFromField, insertPill, measureOptions, readField } from '@/utils/formulaField';
 import type { FieldProblem, FieldState, TermFilters } from '@/utils/formulaField';
-import { CALCULATIONS_HELP_PAGE } from '@/utils/helpLinks';
-import { helpBaseUrl } from '@/utils/instanceSettings';
+import { calculationsHelpUrl } from '@/utils/helpLinks';
+import { customHelpUrl } from '@/utils/instanceSettings';
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
@@ -265,7 +265,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const fields = useAppStore((s) => s.projectFields);
   const settings = useAppStore((s) => s.instanceSettings);
   // The configured manual (Settings → Features & defaults), the public one by default.
-  const helpBase = useAppStore((s) => helpBaseUrl(s.instanceSettings));
+  const calculationsHelp = useAppStore((s) => calculationsHelpUrl(customHelpUrl(s.instanceSettings)));
 
   const dimensions = useMemo(() => query.dimensions ?? [], [query.dimensions]);
   const filters = useMemo<MetricFilters>(() => query.filters ?? {}, [query.filters]);
@@ -677,7 +677,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
             {offersFormula(kind) && (
               <p className={styles.hint} id={calculationHintId}>
                 {CALCULATION_HINT}.{' '}
-                <a href={`${helpBase}${CALCULATIONS_HELP_PAGE}`} target="_blank" rel="noopener noreferrer">
+                <a href={calculationsHelp} target="_blank" rel="noopener noreferrer">
                   How calculations work
                 </a>
               </p>

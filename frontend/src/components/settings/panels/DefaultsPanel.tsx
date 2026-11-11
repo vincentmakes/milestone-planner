@@ -9,9 +9,9 @@
  * - the Kanban board, the Nager bank-holiday import and the pre-selection of
  *   the predefined phases in a new project;
  * - where Help in the user menu opens (`help_url`, 2.6.0): prefilled with the
- *   effective address, checked before saving (`normaliseHelpUrl`), stored in
- *   the server's canonical form; an emptied field saves `null`, so the public
- *   manual applies again.
+ *   effective address, checked before saving (`safeHelpUrl`), stored and
+ *   opened exactly as entered (trimmed); an emptied field saves `null`, so the
+ *   public manual applies again.
  *
  * Only the keys that changed are saved, in the canonical form the backend
  * stores (compact JSON lists, `true` / `false`). Stored skills and types that
@@ -34,9 +34,10 @@ import { getEquipmentTypes } from '@/api/endpoints/equipment';
 import { checkAuth } from '@/api/endpoints/auth';
 import {
   ganttDefaultPanel,
-  helpBaseUrl,
+  helpAddress,
   isSettingOn,
-  normaliseHelpUrl,
+  MAX_HELP_URL_LENGTH,
+  safeHelpUrl,
   parseIdList,
   parseNameList,
 } from '@/utils/instanceSettings';
@@ -76,9 +77,10 @@ const SAVE_ORDER: DefaultsKey[] = [
   'help_url',
 ];
 
-export const HELP_URL_HINT = 'Where Help in the user menu opens. Change it if you host the manual yourself.';
+export const HELP_URL_HINT =
+  'Where Help in the user menu opens: any web address, for example your own copy of the manual or a PDF on SharePoint. Empty: the public manual.';
 export const HELP_URL_INVALID =
-  'Enter a web address starting with http:// or https://, without spaces, a user name, a query or a #fragment.';
+  'Enter a web address starting with http:// or https://, without spaces or a user name.';
 
 const PANEL_OPTIONS = [
   { value: 'none', label: 'Nothing' },
@@ -108,7 +110,7 @@ function valuesFrom(settings: InstanceSettings): Values {
     nager_enabled: switchValue(isSettingOn(settings, 'nager_enabled')),
     new_project_preselect_phases: switchValue(isSettingOn(settings, 'new_project_preselect_phases')),
     gantt_completion_badges: switchValue(isSettingOn(settings, 'gantt_completion_badges')),
-    help_url: helpBaseUrl(settings),
+    help_url: helpAddress(settings),
   };
 }
 
@@ -213,7 +215,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
   const handleSave = async () => {
     // A manual address the server would refuse is shown in place, nothing saved.
     const helpText = values.help_url.trim();
-    if (changedKeys.includes('help_url') && helpText && normaliseHelpUrl(helpText) === null) {
+    if (changedKeys.includes('help_url') && helpText && safeHelpUrl(helpText) === null) {
       setHelpUrlError(HELP_URL_INVALID);
       return;
     }
@@ -224,7 +226,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
     try {
       for (const key of changedKeys) {
         if (key === 'help_url') {
-          // Empty: back to the public manual (the row is deleted). Else the server's canonical form.
+          // Empty: back to the public manual (the row is deleted). Else the address as stored (trimmed).
           const res = await updateSetting(key, helpText || null);
           saved[key] = helpText ? res.value : DEFAULT_HELP_URL;
           continue;
@@ -332,8 +334,8 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
           fullWidth
           value={values.help_url}
           placeholder={DEFAULT_HELP_URL}
-          maxLength={500}
-          hint={`${HELP_URL_HINT} Empty: the public manual.`}
+          maxLength={MAX_HELP_URL_LENGTH}
+          hint={HELP_URL_HINT}
           onChange={(e) => change('help_url', e.target.value)}
           disabled={isSubmitting}
         />
