@@ -1032,7 +1032,10 @@ export type RelativePeriod =
   | 'next_12_months'
   | 'all';
 
-/** Units of a result: the measure's, or `percent` when the query asks a percentage. */
+/**
+ * Units of a result: the measure's, or `percent` when the query asks a
+ * percentage; `number` is a calculated widget's plain ratio (no unit word).
+ */
 export type MetricUnit =
   | 'days'
   | 'weeks'
@@ -1042,7 +1045,8 @@ export type MetricUnit =
   | 'phases'
   | 'volume'
   | 'equipment'
-  | 'percent';
+  | 'percent'
+  | 'number';
 
 export type MetricDimension =
   | { kind: Exclude<DimensionKind, 'field' | 'period'> }
@@ -1072,6 +1076,16 @@ export interface MetricFilters {
   equipment_types?: string[] | null;
   /** Phase measures: milestones counted too (`include`, the default, is never stored), only, or left out */
   milestones?: 'include' | 'only' | 'exclude';
+  /** Projects with a customer (`true`), without one (`false`), or any (absent) */
+  has_customer?: boolean | null;
+}
+
+/** The divisor of a calculated widget: a measure with its own filters, over the numerator's period. */
+export interface MetricDivisor {
+  measure: Measure;
+  filters?: Omit<MetricFilters, 'period'>;
+  /** A percentage (× 100, the default) or a plain number */
+  result?: 'percent' | 'number';
 }
 
 export interface MetricQuery {
@@ -1080,6 +1094,8 @@ export interface MetricQuery {
   filters?: MetricFilters;
   percent_of?: 'total' | 'first_dimension' | null;
   top_n?: number | null;
+  /** A calculated widget: the measure divided by this one */
+  divide_by?: MetricDivisor | null;
 }
 
 /** One dimension value of a row: `key` true/false (confirmed, toggles), an id, a text, a period key, `null` (empty bucket) or `"__other__"`. */
@@ -1124,8 +1140,10 @@ export interface WidgetOptions {
   show_legend?: boolean | null;
   /** The KPI's bucket when `percent_of` is set: a dimension value's key */
   kpi_bucket?: boolean | number | string | null;
-  /** The gauge's target, in the result's unit (≥ 0): green below it, then amber, then red */
+  /** The gauge's or KPI's target, in the result's unit (≥ 0): green below it, then amber, then red */
   target?: number | null;
+  /** Show the value as a percentage of `target` (kept only with a target above 0) */
+  percent_of_target?: boolean | null;
 }
 
 export interface GridPosition {

@@ -20,6 +20,7 @@ import {
   LABEL_WIDTH,
   NARROW_LABEL_WIDTH,
   niceCeil,
+  percentOfTargetScale,
   toOption,
 } from '../toOption';
 import type { ChartTheme } from '../echartsTheme';
@@ -1022,5 +1023,56 @@ describe('hasDrawableData', () => {
     }
     expect(hasDrawableData('kpi', rows([]))).toBe(true);
     expect(hasDrawableData('table', rows([]))).toBe(true);
+  });
+});
+
+describe('toOption — gauge as a percentage of its target (2.6.0)', () => {
+  const THIN = '\u2009';
+  const full: ChartTheme = {
+    palette: ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'],
+    textPrimary: 'primary',
+    textSecondary: 'secondary',
+    good: 'green',
+    warn: 'orange',
+    bad: 'red',
+  };
+  const utilisation = (total: number | null): MetricResult => ({ ...result([row([], total)], 0), unit: 'percent', total });
+
+  it('reads value / target × 100, the target at 100 % and the bands where the target puts them', () => {
+    const plain = (toOption('gauge', utilisation(63.7), { target: 70 }, full) as AnyOption).series[0];
+    const series = (toOption('gauge', utilisation(63.7), { target: 70, percent_of_target: true }, full) as AnyOption)
+      .series[0];
+    expect(series.data[0].value).toBeCloseTo(91);
+    expect(series.min).toBe(0);
+    expect(series.max).toBeCloseTo((plain.max * 100) / 70);
+    // The same track: its stops are fractions of it.
+    expect(series.axisLine.lineStyle.color).toEqual(plain.axisLine.lineStyle.color);
+    expect(series.progress.itemStyle.color).toBe('green');
+    expect(series.detail.formatter(series.data[0].value)).toBe(`91${THIN}% of target`);
+    // The title names the target in the measure's unit.
+    expect(series.data[0].name).toBe(`Target 70${THIN}%`);
+    const past = (toOption('gauge', utilisation(84), { target: 70, percent_of_target: true }, full) as AnyOption).series[0];
+    expect(past.progress.itemStyle.color).toBe('orange');
+  });
+
+  it('keeps a missing value as "–", and ignores the flag without a target above 0', () => {
+    const empty = (toOption('gauge', utilisation(null), { target: 70, percent_of_target: true }, full) as AnyOption)
+      .series[0];
+    expect(empty.detail.formatter(0)).toBe('–');
+    for (const options of [{ percent_of_target: true }, { target: 0, percent_of_target: true }]) {
+      const series = (toOption('gauge', utilisation(50), options, full) as AnyOption).series[0];
+      expect(series.data[0].value).toBe(50);
+      expect(series.detail.formatter(50)).toBe(`50${THIN}%`);
+    }
+  });
+
+  it('relabels a scale without moving its bands', () => {
+    const scale = gaugeScale(10, 20, 'days');
+    const relabelled = percentOfTargetScale(scale, 20);
+    expect(relabelled.min).toBe(0);
+    expect(relabelled.max).toBe((scale.max * 100) / 20);
+    expect(relabelled.stops).toBe(scale.stops);
+    expect(relabelled.band(50)).toBe(scale.band(10));
+    expect(relabelled.band(150)).toBe(scale.band(30));
   });
 });

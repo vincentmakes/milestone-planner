@@ -43,6 +43,7 @@
 import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } from '@/types';
 import { formatMetric, normaliseKey, OTHER_KEY, unitWord, widgetColor } from '@/utils/metrics';
 import type { ChartTheme } from './echartsTheme';
+import { gaugeTarget, OF_TARGET, percentOfTarget, targetBase } from './kpi';
 
 export type ChartKind = Extract<WidgetKind, 'bar' | 'line' | 'pie' | 'gauge' | 'heatmap' | 'treemap' | 'sankey'>;
 
@@ -169,12 +170,8 @@ export function niceCeil(value: number): number {
   }
 }
 
-/** The largest gauge target, the server's (`MAX_GAUGE_TARGET` in `app/schemas/dashboard.py`). */
-export const MAX_GAUGE_TARGET = 1_000_000_000;
-
-/** A stored target, when it is one (finite, from 0 to `MAX_GAUGE_TARGET`). */
-export const gaugeTarget = (target: number | null | undefined): number | null =>
-  typeof target === 'number' && Number.isFinite(target) && target >= 0 && target <= MAX_GAUGE_TARGET ? target : null;
+// The target rule lives beside the KPI's (a KPI takes a target too, 2.6.0).
+export { gaugeTarget, MAX_GAUGE_TARGET } from './kpi';
 
 /**
  * The scale of a gauge of `value` against `target`, in `unit`.
@@ -222,18 +219,46 @@ export function gaugeScale(
 /** The gauge's track (and progress) width in pixels. */
 export const GAUGE_TRACK_WIDTH = 20;
 
-/** A gauge of the result's total (its dimensions, which only the API can send, are ignored). */
+/**
+ * A gauge scale relabelled as a percentage of `target` (> 0): the same track
+ * and bands, its ends and values × 100 / target, so the target sits at 100 %.
+ */
+export function percentOfTargetScale(scale: GaugeScale, target: number): GaugeScale {
+  const factor = 100 / target;
+  return {
+    min: scale.min * factor,
+    max: scale.max * factor,
+    stops: scale.stops,
+    band: (v) => scale.band(v / factor),
+  };
+}
+
+/**
+ * A gauge of the result's total (its dimensions, which only the API can send,
+ * are ignored). With *Show as % of target* (`targetBase`) the value reads as a
+ * percentage of the target ("91 % of target"), the bands stay where the target
+ * puts them and the title names the target in the result's unit.
+ */
 function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartTheme): ChartOption {
   const palette = theme.palette;
   const unit = result.unit;
-  const value = result.total ?? 0;
+  const raw = result.total ?? 0;
   const target = gaugeTarget(opts.target);
-  const scale = gaugeScale(value, target, unit, {
+  const base = targetBase(opts);
+  const plain = gaugeScale(raw, target, unit, {
     good: theme.good ?? palette[1],
     warn: theme.warn ?? palette[2],
     bad: theme.bad ?? palette[7] ?? palette[0],
     plain: palette[0],
   });
+  const scale = base === null ? plain : percentOfTargetScale(plain, base);
+  const value = base === null ? raw : percentOfTarget(raw, base) ?? 0;
+  const detail = (v: number): string => {
+    if (base === null) return withUnit(v, unit, opts);
+    // A ratio over nothing stays "–", as on a KPI.
+    if (result.total === null) return formatMetric(null, 'percent');
+    return `${formatMetric(v, 'percent', opts)} ${OF_TARGET}`;
+  };
   return {
     aria: quietAria(),
     series: [
@@ -253,7 +278,7 @@ function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartThem
         detail: {
           valueAnimation: false,
           offsetCenter: [0, '20%'],
-          formatter: (v: number) => withUnit(v, unit, opts),
+          formatter: detail,
           color: theme.textPrimary,
         },
         data: [

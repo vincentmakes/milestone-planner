@@ -257,7 +257,8 @@ describe('WidgetEditor — form', () => {
     // Per person, a capacity shows the person's absence days: aggregates only.
     expect(dimensionLabels(1)).toEqual(['None', 'Site', 'Team', 'Period']);
     expect(dimension1()).toHaveTextContent('None');
-    expect(filterButtons()).toEqual(['Sites', 'Teams']);
+    // Utilisation's project filters stay (they narrow its booked side); People goes.
+    expect(filterButtons()).toEqual(['Sites', 'Teams', 'Project teams', 'Projects', 'Tags', 'Project type']);
     await flushPreview();
     expect(lastQuery()).toEqual({ measure: 'utilisation', filters: { period: { relative: 'this_year' } } });
     // A booking measure by person needs views.staff only.
@@ -1399,5 +1400,156 @@ describe('WidgetEditor — options and save', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.0)', () => {
+  const chooseKind = (name: string) => fireEvent.click(screen.getByRole('radio', { name }));
+  const setTitle = (value: string) => fireEvent.change(screen.getByLabelText('Title *'), { target: { value } });
+  const divideBy = () => screen.getByLabelText('Divide by') as HTMLSelectElement;
+  const setDivideBy = (value: string) => fireEvent.change(divideBy(), { target: { value } });
+  const target = () => screen.getByLabelText('Target') as HTMLInputElement;
+  const percentSwitch = () => screen.getByRole('switch', { name: 'Show as % of target' });
+  const divisorSection = () => screen.getByRole('region', { name: 'Calculated widget' });
+
+  it('offers Divide by on a KPI, a gauge, a bar and a line of a summed or counted measure only', () => {
+    renderEditor();
+    expect(divideBy()).toHaveValue('');
+    for (const kind of ['KPI', 'Gauge', 'Line']) {
+      chooseKind(kind);
+      expect(divideBy()).toBeInTheDocument();
+    }
+    for (const kind of ['Pie', 'Heatmap', 'Treemap', 'Sankey', 'Table']) {
+      chooseKind(kind);
+      expect(screen.queryByLabelText('Divide by')).not.toBeInTheDocument();
+    }
+    chooseKind('Bar');
+    setMeasure('utilisation');
+    expect(screen.queryByLabelText('Divide by')).not.toBeInTheDocument();
+  });
+
+  it('divides by another measure with its own filters, by period only, and saves the divisor', async () => {
+    const { onSave } = renderEditor();
+    setTitle('Customer share');
+    pickOption(/^Dimension 1/, 'Site');
+    setDivideBy('capacity_days');
+    // A calculated widget is broken down by period only: the site goes, no Percent of / Top N.
+    expect(dimension1()).toHaveTextContent('None');
+    expect(dimensionLabels(1)).toEqual(['None', 'Period']);
+    expect(screen.queryByLabelText('Top N')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
+    expect(divideBy()).toHaveAccessibleDescription(
+      'The measure above divided by this one, over the same period and buckets'
+    );
+    // The divisor lists only divisible measures.
+    const divisorOptions = Array.from(divideBy().querySelectorAll('option')).map((o) => o.value);
+    expect(divisorOptions).toContain('capacity_days');
+    expect(divisorOptions).not.toContain('utilisation');
+    // The measure list keeps only divisible measures while dividing.
+    expect(measureGroups().flatMap(([, labels]) => labels)).not.toContain('Utilisation');
+
+    pickOption(/^Dimension 1/, 'Period');
+    fireEvent.change(screen.getByLabelText('Result'), { target: { value: 'number' } });
+    const section = within(divisorSection());
+    fireEvent.click(section.getByRole('button', { name: 'Divisor filters' }));
+    pickOption(/^Teams/, 'Analytics');
+    expect(section.getByRole('button', { name: 'Divisor filters (1)' })).toBeInTheDocument();
+    await flushPreview();
+    expect(lastQuery()).toEqual({
+      measure: 'booked_weeks',
+      dimensions: [{ kind: 'period', grain: 'month' }],
+      filters: { period: { relative: 'this_year' } },
+      divide_by: { measure: 'capacity_days', filters: { team_ids: [5] }, result: 'number' },
+    });
+    fireEvent.click(saveButton());
+    expect(onSave.mock.calls[0][0].query.divide_by).toEqual({
+      measure: 'capacity_days',
+      filters: { team_ids: [5] },
+      result: 'number',
+    });
+
+    // Back to a percentage, then nothing: the plain widget again.
+    fireEvent.change(screen.getByLabelText('Result'), { target: { value: 'percent' } });
+    await flushPreview();
+    expect(lastQuery().divide_by).toEqual({ measure: 'capacity_days', filters: { team_ids: [5] } });
+    setDivideBy('');
+    await flushPreview();
+    expect(lastQuery().divide_by).toBeUndefined();
+    expect(screen.queryByLabelText('Result')).not.toBeInTheDocument();
+  });
+
+  it('drops a divisor on a kind that does not divide, and gives a calculated KPI no dimension', async () => {
+    renderEditor();
+    setDivideBy('booked_days');
+    chooseKind('KPI');
+    expect(screen.queryByRole('button', { name: /^Dimension 1/ })).not.toBeInTheDocument();
+    chooseKind('Table');
+    await flushPreview();
+    expect(lastQuery().divide_by).toBeUndefined();
+  });
+
+  it('keeps a target on a KPI and shows it as a percentage of the target only with one above 0', async () => {
+    const { onSave } = renderEditor();
+    setTitle('Absorption');
+    chooseKind('KPI');
+    expect(target()).toHaveValue('');
+    expect(percentSwitch()).toBeDisabled();
+    fireEvent.change(target(), { target: { value: '70' } });
+    expect(percentSwitch()).not.toBeDisabled();
+    fireEvent.click(percentSwitch());
+    expect(percentSwitch()).toBeChecked();
+    // The value then reads in %: the Percent number format is offered.
+    fireEvent.change(screen.getByLabelText('Number format'), { target: { value: 'percent' } });
+    await flushPreview();
+    fireEvent.click(saveButton());
+    expect(onSave.mock.calls[0][0].options).toEqual({ target: 70, percent_of_target: true, number_format: 'percent' });
+    // A target of 0 drops the flag.
+    fireEvent.change(target(), { target: { value: '0' } });
+    expect(percentSwitch()).toBeDisabled();
+    expect(percentSwitch()).not.toBeChecked();
+    fireEvent.click(saveButton());
+    expect(onSave.mock.calls[1][0].options).toEqual({ target: 0 });
+  });
+
+  it('offers Has a customer on project-backed measures and Utilisation, with its hint', async () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const hasCustomer = () => screen.getByLabelText('Has a customer');
+    fireEvent.change(hasCustomer(), { target: { value: 'true' } });
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ has_customer: true, period: { relative: 'this_year' } });
+    expect(screen.getByRole('button', { name: 'Filters (1)' })).toBeInTheDocument();
+    setMeasure('utilisation');
+    expect(
+      screen.getByText('Project filters narrow the booked time only; the capacity stays that of the people in scope.')
+    ).toBeInTheDocument();
+    fireEvent.change(hasCustomer(), { target: { value: 'false' } });
+    await flushPreview();
+    expect(lastQuery()).toEqual({ measure: 'utilisation', filters: { has_customer: false, period: { relative: 'this_year' } } });
+    fireEvent.change(hasCustomer(), { target: { value: 'any' } });
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ period: { relative: 'this_year' } });
+    setMeasure('capacity_days');
+    expect(screen.queryByLabelText('Has a customer')).not.toBeInTheDocument();
+  });
+
+  it('hides Has a customer with a hidden Customer field, unless a stored widget sets it', () => {
+    useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
+    renderEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.queryByLabelText('Has a customer')).not.toBeInTheDocument();
+    cleanup();
+    renderEditor({
+      widget: {
+        clientId: 'w9',
+        id: 9,
+        kind: 'bar',
+        title: 'Stored',
+        query: { measure: 'booked_days', filters: { has_customer: true, period: { relative: 'this_year' } } },
+        options: {},
+        layout: { lg: { x: 0, y: 0, w: 6, h: 5 }, md: { x: 0, y: 0, w: 4, h: 5 }, sm: { x: 0, y: 0, w: 4, h: 5 } },
+      },
+    });
+    expect(screen.getByLabelText('Has a customer')).toHaveValue('true');
   });
 });

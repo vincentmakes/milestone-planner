@@ -112,6 +112,13 @@
   gap: 0.75rem;
 }
 
+/* A sentence under a section's heading (Utilisation's filters) */
+.hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
 .options {
   display: flex;
   flex-direction: column;

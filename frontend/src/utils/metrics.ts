@@ -27,6 +27,7 @@ import type {
   MetricFilters,
   MetricKey,
   MetricPeriod,
+  MetricQuery,
   MetricUnit,
   ProjectField,
   RelativePeriod,
@@ -195,6 +196,7 @@ export const FILTER_KEYS: readonly FilterKey[] = [
   'equipment_ids',
   'equipment_types',
   'milestones',
+  'has_customer',
 ];
 
 /** A filter's name (`FILTER_LABELS` on the server; the builder's filter fields). */
@@ -213,6 +215,7 @@ export const FILTER_LABELS: Readonly<Record<FilterKey, string>> = {
   equipment_ids: 'Equipment',
   equipment_types: 'Equipment types',
   milestones: 'Milestones',
+  has_customer: 'Has a customer',
 };
 
 const filterSet = (...keys: FilterKey[]): readonly FilterKey[] => FILTER_KEYS.filter((key) => keys.includes(key));
@@ -227,18 +230,25 @@ const PROJECT_FILTERS: FilterKey[] = [
   'field_options',
   'archived',
   'period',
+  'has_customer',
 ];
 const BOOKING_FILTERS = filterSet(...PROJECT_FILTERS, 'team_ids', 'person_ids');
 const PROJECT_ONLY_FILTERS = filterSet(...PROJECT_FILTERS);
 const PHASE_FILTERS = filterSet(...PROJECT_FILTERS, 'milestones');
 const CAPACITY_FILTERS = filterSet('site_ids', 'team_ids', 'person_ids', 'archived', 'period');
+/** Utilisation also takes the project filters but the site, on its booked side only. */
+const UTILISATION_FILTERS = filterSet(
+  ...CAPACITY_FILTERS,
+  ...PROJECT_FILTERS.filter((key) => key !== 'site_ids')
+);
 const EQUIPMENT_FILTERS = filterSet(...PROJECT_FILTERS, 'equipment_ids', 'equipment_types');
 
 /**
  * Measure → the filters it takes (the server refuses any other one set to a
  * non-default value): a booking knows the person's teams and the person, a
  * phase its milestone flag, capacity only the person, an equipment booking
- * its equipment; equipment utilisation filters the equipment itself.
+ * its equipment; equipment utilisation filters the equipment itself, and
+ * utilisation's project filters narrow its booked time only.
  */
 export const MEASURE_FILTERS: Readonly<Record<Measure, readonly FilterKey[]>> = {
   booked_days: BOOKING_FILTERS,
@@ -254,7 +264,7 @@ export const MEASURE_FILTERS: Readonly<Record<Measure, readonly FilterKey[]>> = 
   phases_overdue: PHASE_FILTERS,
   capacity_days: CAPACITY_FILTERS,
   available_days: CAPACITY_FILTERS,
-  utilisation: CAPACITY_FILTERS,
+  utilisation: UTILISATION_FILTERS,
   people_over_capacity: CAPACITY_FILTERS,
   equipment_booked_days: EQUIPMENT_FILTERS,
   equipment_booking_count: EQUIPMENT_FILTERS,
@@ -359,6 +369,20 @@ export const NO_PERCENT_MEASURES: ReadonlySet<Measure> = new Set<Measure>([
   'equipment_utilisation',
 ]);
 
+/**
+ * The measures a calculated widget may divide, or divide by: the summed and
+ * counted ones (`DIVISIBLE_MEASURES`, `divisible` in the JSON), never a
+ * ratio, a difference or a per-bucket count.
+ */
+export const DIVISIBLE_MEASURES: ReadonlySet<Measure> = new Set<Measure>(
+  MEASURES.map((m) => m.key).filter((key) => !NO_PERCENT_MEASURES.has(key))
+);
+
+/** Whether `measure` can be divided, or divide another one. */
+export function isDivisible(measure: Measure): boolean {
+  return DIVISIBLE_MEASURES.has(measure);
+}
+
 export const RELATIVE_PERIODS: readonly { key: RelativePeriod; label: string }[] = [
   { key: 'this_year', label: 'This year' },
   { key: 'last_year', label: 'Last year' },
@@ -392,6 +416,7 @@ export const UNIT_LABELS: Readonly<Record<MetricUnit, string>> = {
   volume: 'volume',
   equipment: 'equipment',
   percent: '',
+  number: '',
 };
 
 /** The unit word after a value displayed as exactly 1 ("1 person", "1 day"). */
@@ -405,6 +430,7 @@ const SINGULAR_UNIT_LABELS: Readonly<Record<MetricUnit, string>> = {
   volume: 'volume',
   equipment: 'equipment',
   percent: '',
+  number: '',
 };
 
 /**
@@ -423,8 +449,12 @@ export function unitWord(
   return formatMetric(value, unit, options) === one ? SINGULAR_UNIT_LABELS[unit] : UNIT_LABELS[unit];
 }
 
-/** The unit a query's result comes in: the measure's, or `percent` with a percentage. */
-export function queryUnit(query: { measure: Measure; percent_of?: string | null }): MetricUnit {
+/**
+ * The unit a query's result comes in: the measure's, or `percent` with a
+ * percentage; a calculated widget's `percent` or `number`.
+ */
+export function queryUnit(query: Pick<MetricQuery, 'measure' | 'percent_of' | 'divide_by'>): MetricUnit {
+  if (query.divide_by) return query.divide_by.result === 'number' ? 'number' : 'percent';
   if (query.percent_of) return 'percent';
   return MEASURE_BY_KEY.get(query.measure)?.unit ?? 'count';
 }
@@ -445,6 +475,8 @@ const fractionDigits = (unit: MetricUnit, format: WidgetOptions['number_format']
       return [0, 1];
     case 'volume':
       return [0, 2];
+    case 'number':
+      return [2, 2];
     default:
       // count, people, projects, phases, equipment: whole numbers
       return [0, 0];

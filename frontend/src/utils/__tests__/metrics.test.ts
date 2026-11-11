@@ -13,6 +13,7 @@ import {
   DIMENSION_KINDS,
   dimensionLabel,
   dimensionNeeds,
+  DIVISIBLE_MEASURES,
   FALLBACK_PALETTE,
   FAMILIES,
   FAMILY_DIMENSION_NEEDS,
@@ -24,6 +25,7 @@ import {
   formatMetric,
   GRAINS,
   isDimensionHidden,
+  isDivisible,
   isValidDimension,
   MATRIX,
   MEASURE_FILTERS,
@@ -178,6 +180,12 @@ describe('metric matrix mirror', () => {
     expect(sorted(NO_PERCENT_MEASURES)).toEqual(matrix.no_percent);
   });
 
+  it('divides the same measures in a calculated widget', () => {
+    expect(sorted(DIVISIBLE_MEASURES)).toEqual(matrix.divisible);
+    expect(isDivisible('booked_days')).toBe(true);
+    expect(isDivisible('utilisation')).toBe(false);
+  });
+
   it('offers the same relative periods and grains, in order', () => {
     expect(RELATIVE_PERIODS.map((p) => p.key)).toEqual(matrix.relative_periods);
     expect(GRAINS.map((g) => g.key)).toEqual(matrix.grains);
@@ -201,7 +209,13 @@ describe('matrix helpers', () => {
 
   it('tells the filters a measure takes', () => {
     expect(takesFilter('booked_days', 'person_ids')).toBe(true);
-    expect(takesFilter('utilisation', 'project_ids')).toBe(false);
+    // Utilisation's booked side takes the project filters, not the other capacity measures.
+    expect(takesFilter('utilisation', 'project_ids')).toBe(true);
+    expect(takesFilter('utilisation', 'has_customer')).toBe(true);
+    expect(takesFilter('available_days', 'project_ids')).toBe(false);
+    expect(takesFilter('people_over_capacity', 'has_customer')).toBe(false);
+    expect(takesFilter('project_count', 'has_customer')).toBe(true);
+    expect(takesFilter('equipment_utilisation', 'has_customer')).toBe(false);
     expect(takesFilter('phase_count', 'milestones')).toBe(true);
     expect(takesFilter('equipment_utilisation', 'equipment_types')).toBe(true);
     expect(takesFilter('unknown' as Measure, 'site_ids')).toBe(false);
@@ -259,6 +273,8 @@ describe('matrix helpers', () => {
     expect(queryUnit({ measure: 'utilisation' })).toBe('percent');
     expect(queryUnit({ measure: 'equipment_booked' })).toBe('equipment');
     expect(queryUnit({ measure: 'unknown' as Measure })).toBe('count');
+    expect(queryUnit({ measure: 'booked_days', divide_by: { measure: 'capacity_days' } })).toBe('percent');
+    expect(queryUnit({ measure: 'booked_days', divide_by: { measure: 'capacity_days', result: 'number' } })).toBe('number');
   });
 });
 
@@ -298,6 +314,12 @@ describe('formatMetric', () => {
     expect(formatMetric(12.5, 'weeks', { number_format: 'percent' })).toBe('12.5 %');
     expect(formatMetric(12.5, 'percent', { number_format: 'integer' })).toBe('13 %');
     expect(formatMetric(12.5, 'weeks', null)).toBe('12.5');
+  });
+
+  it('shows a calculated plain number with two decimals and no unit word', () => {
+    expect(formatMetric(0.4545, 'number')).toBe('0.45');
+    expect(formatMetric(2, 'number')).toBe('2.00');
+    expect(unitWord(1, 'number')).toBe('');
   });
 
   it('shows a dash for no value', () => {

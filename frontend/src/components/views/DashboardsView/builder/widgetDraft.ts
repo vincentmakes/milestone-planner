@@ -20,6 +20,14 @@
  * it) nor of a ratio measure (`NO_PERCENT_MEASURES`: its values cannot be
  * added up into boxes or flows — `RATIO_HIERARCHY_PROBLEM`). The server
  * enforces none of the dimension counts; the builder refuses them.
+ *
+ * A calculated widget (2.6.0, `query.divide_by`) divides a summed or counted
+ * measure by another (`isDivisible`), each with its own filters, over the
+ * numerator's period: only a KPI, a gauge (no dimension), a bar or a line
+ * (no dimension, or one period dimension both measures accept) offer it
+ * (`RATIO_KINDS`), never with *Percent of*, *Top N* or a stack. A KPI and a
+ * gauge keep a target, and may show their value as a percentage of it
+ * (`percent_of_target`, only with a target above 0).
  */
 
 import type {
@@ -28,6 +36,7 @@ import type {
   DimensionKind,
   Measure,
   MetricDimension,
+  MetricDivisor,
   MetricFilters,
   MetricQuery,
   WidgetKind,
@@ -37,6 +46,7 @@ import type {
 import {
   dimensionNeeds,
   filterNeeds,
+  isDivisible,
   isValidDimension,
   NO_PERCENT_MEASURES,
   queryUnit,
@@ -132,6 +142,17 @@ export const MIN_DIMENSIONS: Readonly<Record<WidgetKind, number>> = {
  */
 export const SUMMED_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(['treemap', 'sankey']);
 
+/** The kinds that may show a calculated widget (`divide_by`): one number, or one per period. */
+export const RATIO_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(['kpi', 'gauge', 'bar', 'line']);
+
+/** The kinds that show one number against an optional target (and may show it as % of the target). */
+export const TARGET_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(['gauge', 'kpi']);
+
+/** Whether a widget of `kind` may divide `measure` by another one. */
+export function offersDivide(kind: WidgetKind, measure: Measure): boolean {
+  return RATIO_KINDS.has(kind) && isDivisible(measure);
+}
+
 let lastClientId = 0;
 
 /** A client id for a new widget. */
@@ -163,7 +184,7 @@ export function defaultQuery(): MetricQuery {
 }
 
 /** The filters a measure takes (`MEASURE_FILTERS`): the others are dropped. */
-function filtersFor(measure: Measure, filters: MetricFilters | undefined): MetricFilters | undefined {
+function filtersFor<F extends MetricFilters>(measure: Measure, filters: F | undefined): F | undefined {
   if (!filters) return filters;
   const refused = (Object.keys(filters) as FilterKey[]).filter((key) => !takesFilter(measure, key));
   if (refused.length === 0) return filters;
@@ -174,10 +195,44 @@ function filtersFor(measure: Measure, filters: MetricFilters | undefined): Metri
 
 /**
  * Whether a widget of `kind` on `measure` has no dimension: a gauge never
- * has one, and a KPI of a measure that takes no percentage shows its total.
+ * has one, and a KPI of a measure that takes no percentage — or of a
+ * calculated widget (`divided`) — shows its total.
  */
-export function noDimensionKind(kind: WidgetKind, measure: Measure): boolean {
-  return MAX_DIMENSIONS[kind] === 0 || (kind === 'kpi' && NO_PERCENT_MEASURES.has(measure));
+export function noDimensionKind(kind: WidgetKind, measure: Measure, divided = false): boolean {
+  return MAX_DIMENSIONS[kind] === 0 || (kind === 'kpi' && (divided || NO_PERCENT_MEASURES.has(measure)));
+}
+
+/** The divisor's own filters made valid for its measure (it never has a period: the numerator's applies). */
+function divisorFilters(divisor: MetricDivisor): MetricDivisor['filters'] {
+  const filters = filtersFor(divisor.measure, { ...(divisor.filters ?? {}) } as MetricFilters);
+  if (!filters) return {};
+  const rest = { ...filters };
+  delete rest.period;
+  return rest;
+}
+
+/**
+ * A calculated query made consistent: kept only on a kind that offers it and
+ * two divisible measures; then no dimension but one period both measures
+ * accept (none on a KPI or a gauge), no percentage, no top N, and the
+ * divisor's filters those its measure takes.
+ */
+function normaliseDivided(kind: WidgetKind, query: MetricQuery): MetricQuery | null {
+  const divisor = query.divide_by;
+  if (!divisor) return null;
+  if (!offersDivide(kind, query.measure) || !isDivisible(divisor.measure)) return null;
+  const dimensions = (query.dimensions ?? [])
+    .filter((d) => d.kind === 'period' && isValidDimension(query.measure, 'period') && isValidDimension(divisor.measure, 'period'))
+    .slice(0, noDimensionKind(kind, query.measure, true) ? 0 : 1);
+  const filters = filtersFor(query.measure, query.filters);
+  return {
+    ...query,
+    ...(filters ? { filters } : {}),
+    dimensions,
+    percent_of: null,
+    top_n: null,
+    divide_by: { ...divisor, filters: divisorFilters(divisor) },
+  };
 }
 
 /** The former name of `noDimensionKind` (a KPI was the only kind without a dimension). */
@@ -194,6 +249,14 @@ export const kpiWithoutDimension = noDimensionKind;
  * needs a first dimension that is not a period.
  */
 export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuery {
+  const divided = normaliseDivided(kind, query);
+  if (divided) return divided;
+  if (query.divide_by) {
+    // A kind or a measure that does not divide: the plain widget of the numerator.
+    const plain = { ...query };
+    delete plain.divide_by;
+    return normaliseQuery(kind, plain);
+  }
   const noPercent = NO_PERCENT_MEASURES.has(query.measure);
   const dimensions = (query.dimensions ?? [])
     .filter((d) => isValidDimension(query.measure, d.kind))
@@ -225,10 +288,23 @@ export function dropUnheld(query: MetricQuery, holds: (key: PermissionKey | null
   const dimensions = (query.dimensions ?? []).filter((d) => holds(dimensionNeeds(d.kind, query.measure)));
   const source = query.filters ?? {};
   const refused = (Object.keys(source) as FilterKey[]).filter((key) => !holds(filterNeeds(key, query.measure)));
-  if (refused.length === 0 && dimensions.length === (query.dimensions ?? []).length) return query;
+  const divisor = query.divide_by;
+  const divisorSource = divisor?.filters ?? {};
+  const divisorRefused = divisor
+    ? (Object.keys(divisorSource) as FilterKey[]).filter((key) => !holds(filterNeeds(key, divisor.measure)))
+    : [];
+  if (refused.length === 0 && divisorRefused.length === 0 && dimensions.length === (query.dimensions ?? []).length) {
+    return query;
+  }
   const filters = { ...source };
   for (const key of refused) delete filters[key];
-  return { ...query, dimensions, filters };
+  const next: MetricQuery = { ...query, dimensions, filters };
+  if (divisor && divisorRefused.length > 0) {
+    const kept = { ...divisorSource };
+    for (const key of divisorRefused) delete kept[key as keyof typeof kept];
+    next.divide_by = { ...divisor, filters: kept };
+  }
+  return next;
 }
 
 /** A decimal number as typed: digits, with a decimal point or comma ("85", "12,5", ".5"). */
@@ -251,30 +327,33 @@ export function parseTarget(text: string): number | null {
  * stacked —, horizontal; line: legend off; pie: legend on; KPI share: the
  * bucket), plus the number format (*Percent* only on a percentage). A bar
  * of a measure that takes no percentage (`NO_PERCENT_MEASURES`: a ratio, a
- * signed number, a per-bucket count) is never stacked nor 100 %: adding
- * percentages up, or sharing out negative days, means nothing. A gauge keeps
- * its target when it is one (finite, from 0 to `MAX_GAUGE_TARGET`: `gaugeTarget`,
- * the renderer's rule).
+ * signed number, a per-bucket count), or of a calculated widget, is never
+ * stacked nor 100 %: adding ratios up, or sharing out negative days, means
+ * nothing. A gauge and a KPI keep their target when it is one (finite, from
+ * 0 to `MAX_GAUGE_TARGET`: `gaugeTarget`, the renderer's rule), and *Show as
+ * % of target* only with a target above 0.
  */
 export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
   const clean: WidgetOptions = {};
   if (kind === 'bar') {
-    const stackable = !NO_PERCENT_MEASURES.has(query.measure);
+    const stackable = !NO_PERCENT_MEASURES.has(query.measure) && !query.divide_by;
     if (stackable && options.percent) clean.percent = true;
     if (stackable && (options.stacked || options.percent)) clean.stacked = true;
     if (options.orientation === 'horizontal') clean.orientation = 'horizontal';
   }
-  if (kind === 'gauge') {
+  if (TARGET_KINDS.has(kind)) {
     const target = gaugeTarget(options.target);
     if (target !== null) clean.target = target;
+    if (options.percent_of_target && target !== null && target > 0) clean.percent_of_target = true;
   }
   if (kind === 'line' && options.show_legend === false) clean.show_legend = false;
   if (kind === 'pie' && options.show_legend === true) clean.show_legend = true;
   if (kind === 'kpi' && query.percent_of && options.kpi_bucket !== undefined && options.kpi_bucket !== null) {
     clean.kpi_bucket = options.kpi_bucket;
   }
-  // "Percent" only formats a percentage: on weeks it would read "12.5 %".
-  if (options.number_format && (options.number_format !== 'percent' || queryUnit(query) === 'percent')) {
+  // "Percent" only formats a percentage (a value shown as % of its target is one): on weeks it would read "12.5 %".
+  const percentShown = queryUnit(query) === 'percent' || clean.percent_of_target === true;
+  if (options.number_format && (options.number_format !== 'percent' || percentShown)) {
     clean.number_format = options.number_format;
   }
   return clean;
@@ -319,9 +398,8 @@ const LIST_FILTERS = [
   'equipment_ids',
 ] as const;
 
-/** The query a widget stores and sends: empty filters, defaults (archived `exclude`, milestones `include`) and unset fields left out. */
-export function cleanQuery(query: MetricQuery): MetricQuery {
-  const source = query.filters ?? {};
+/** Filters as stored: empty ones and defaults (archived `exclude`, milestones `include`) left out, without the period. */
+function cleanFilters(source: MetricFilters): MetricFilters {
   const filters: MetricFilters = {};
   for (const key of LIST_FILTERS) {
     const ids = source[key];
@@ -333,11 +411,25 @@ export function cleanQuery(query: MetricQuery): MetricQuery {
   if (source.archived && source.archived !== 'exclude') filters.archived = source.archived;
   if (source.equipment_types && source.equipment_types.length > 0) filters.equipment_types = [...source.equipment_types];
   if (source.milestones && source.milestones !== 'include') filters.milestones = source.milestones;
-  filters.period = source.period ?? { relative: 'this_year' };
+  if (typeof source.has_customer === 'boolean') filters.has_customer = source.has_customer;
+  return filters;
+}
+
+/** The query a widget stores and sends: empty filters, defaults and unset fields left out (a divisor's too). */
+export function cleanQuery(query: MetricQuery): MetricQuery {
+  const source = query.filters ?? {};
+  const filters: MetricFilters = { ...cleanFilters(source), period: source.period ?? { relative: 'this_year' } };
   const clean: MetricQuery = { measure: query.measure, filters };
   if (query.dimensions && query.dimensions.length > 0) clean.dimensions = query.dimensions.map((d) => ({ ...d }));
   if (query.percent_of) clean.percent_of = query.percent_of;
   if (query.top_n) clean.top_n = query.top_n;
+  if (query.divide_by) {
+    const divisor: MetricDivisor = { measure: query.divide_by.measure };
+    const divisorClean = cleanFilters(query.divide_by.filters ?? {});
+    if (Object.keys(divisorClean).length > 0) divisor.filters = divisorClean;
+    if (query.divide_by.result === 'number') divisor.result = 'number';
+    clean.divide_by = divisor;
+  }
   return clean;
 }
 
@@ -350,6 +442,7 @@ export function activeFilterCount(filters: MetricFilters | undefined): number {
   if (filters.archived && filters.archived !== 'exclude') count += 1;
   if ((filters.equipment_types?.length ?? 0) > 0) count += 1;
   if (filters.milestones && filters.milestones !== 'include') count += 1;
+  if (typeof filters.has_customer === 'boolean') count += 1;
   return count;
 }
 

@@ -26,15 +26,18 @@ import {
   newClientId,
   noDimensionKind,
   normaliseQuery,
+  offersDivide,
   parseTarget,
   placeNewWidget,
   queryProblem,
   RATIO_HIERARCHY_PROBLEM,
+  RATIO_KINDS,
   SUMMED_KINDS,
   sameLayout,
   savedTargets,
   stableKey,
   TARGET_KEYS,
+  TARGET_KINDS,
   toDraftWidget,
 } from '../widgetDraft';
 
@@ -115,10 +118,21 @@ describe('kind rules', () => {
     };
     const q = query({ measure: 'phase_count', filters });
     // Capacity: Sites, Teams, People, archived and the period only.
+    expect(changeMeasure('bar', q, 'capacity_days').filters).toEqual({
+      site_ids: [1],
+      team_ids: [5],
+      person_ids: [8],
+      archived: 'include',
+      period: { relative: 'next_quarter' },
+    });
+    // Utilisation also keeps the project filters (its booked side).
     expect(changeMeasure('bar', q, 'utilisation').filters).toEqual({
       site_ids: [1],
       team_ids: [5],
       person_ids: [8],
+      project_ids: [30],
+      tag_ids: [40],
+      confirmed: true,
       archived: 'include',
       period: { relative: 'next_quarter' },
     });
@@ -350,7 +364,9 @@ describe('gauge, heatmap, treemap and sankey rules', () => {
       expect(cleanOptions('gauge', query(), { target })).toEqual({});
     }
     expect(cleanOptions('gauge', query(), { target: '85' as unknown as number })).toEqual({});
-    for (const kind of ['kpi', 'bar', 'line', 'pie', 'table', 'heatmap', 'treemap', 'sankey'] as const) {
+    // A KPI keeps a target too (2.6.0); the other kinds drop it.
+    expect(cleanOptions('kpi', query(), { target: 85 })).toEqual({ target: 85 });
+    for (const kind of ['bar', 'line', 'pie', 'table', 'heatmap', 'treemap', 'sankey'] as const) {
       expect(cleanOptions(kind, query(), { target: 85 })).not.toHaveProperty('target');
     }
     // A gauge takes no bar, line or pie option.
@@ -566,5 +582,92 @@ describe('placement and ids', () => {
     expect(dimensionKey({ kind: 'field', field_id: 4 })).toBe('field:4');
     expect(dimensionKey({ kind: 'period', grain: 'week' })).toBe('period');
     expect(dimensionKey({ kind: 'site' })).toBe('site');
+  });
+});
+
+
+describe('calculated widgets and % of target (2.6.0)', () => {
+  const MONTH = { kind: 'period' as const, grain: 'month' as const };
+  const divided = (extra: Partial<MetricQuery> = {}): MetricQuery =>
+    query({ measure: 'booked_days', divide_by: { measure: 'capacity_days' }, ...extra });
+
+  it('offers a divisor on a KPI, a gauge, a bar and a line of a divisible measure', () => {
+    expect([...RATIO_KINDS].sort()).toEqual(['bar', 'gauge', 'kpi', 'line']);
+    expect([...TARGET_KINDS].sort()).toEqual(['gauge', 'kpi']);
+    expect(offersDivide('bar', 'booked_days')).toBe(true);
+    expect(offersDivide('bar', 'utilisation')).toBe(false);
+    expect(offersDivide('pie', 'booked_days')).toBe(false);
+  });
+
+  it('keeps one period dimension on a bar or a line, none on a KPI or a gauge, no percentage nor top N', () => {
+    const q = divided({ dimensions: [{ kind: 'site' }, MONTH], percent_of: 'total', top_n: 3 });
+    expect(normaliseQuery('bar', q)).toMatchObject({ dimensions: [MONTH], percent_of: null, top_n: null });
+    expect(normaliseQuery('line', divided({ dimensions: [MONTH] })).dimensions).toEqual([MONTH]);
+    expect(normaliseQuery('kpi', divided({ dimensions: [MONTH] })).dimensions).toEqual([]);
+    expect(normaliseQuery('gauge', divided({ dimensions: [MONTH] })).dimensions).toEqual([]);
+    expect(noDimensionKind('kpi', 'booked_days', true)).toBe(true);
+    expect(noDimensionKind('bar', 'booked_days', true)).toBe(false);
+    // A period the divisor refuses goes too.
+    const volume = divided({ dimensions: [MONTH], divide_by: { measure: 'project_volume' } });
+    expect(normaliseQuery('bar', volume).dimensions).toEqual([]);
+  });
+
+  it('drops the divisor on another kind or a measure that does not divide', () => {
+    expect(normaliseQuery('pie', divided({ dimensions: [{ kind: 'site' }] }))).not.toHaveProperty('divide_by');
+    expect(normaliseQuery('bar', divided({ measure: 'utilisation' }))).not.toHaveProperty('divide_by');
+    expect(normaliseQuery('bar', divided({ divide_by: { measure: 'available_days' } }))).not.toHaveProperty('divide_by');
+  });
+
+  it("keeps the divisor's filters its measure takes, never a period", () => {
+    const q = divided({
+      divide_by: {
+        measure: 'capacity_days',
+        filters: { team_ids: [5], project_ids: [30], period: { relative: 'all' } } as never,
+      },
+    });
+    expect(normaliseQuery('kpi', q).divide_by).toEqual({ measure: 'capacity_days', filters: { team_ids: [5] } });
+  });
+
+  it('stores the divisor cleaned: empty filters and the default result left out', () => {
+    expect(cleanQuery(divided()).divide_by).toEqual({ measure: 'capacity_days' });
+    const q = divided({
+      divide_by: { measure: 'booked_days', filters: { tag_ids: [], has_customer: true, archived: 'exclude' }, result: 'number' },
+    });
+    expect(cleanQuery(q).divide_by).toEqual({ measure: 'booked_days', filters: { has_customer: true }, result: 'number' });
+    expect(cleanQuery(query({ filters: { has_customer: false } })).filters).toEqual({
+      has_customer: false,
+      period: { relative: 'this_year' },
+    });
+    expect(activeFilterCount({ has_customer: false })).toBe(1);
+    expect(activeFilterCount({ has_customer: null })).toBe(0);
+  });
+
+  it('drops the divisor filters the user may not use', () => {
+    const q = divided({ divide_by: { measure: 'capacity_days', filters: { person_ids: [8], team_ids: [5] } } });
+    const staffOnly = (key: string | null) => key === null || key === 'views.staff';
+    expect(dropUnheld(q, staffOnly).divide_by).toEqual({ measure: 'capacity_days', filters: { team_ids: [5] } });
+    const all = () => true;
+    expect(dropUnheld(q, all)).toBe(q);
+  });
+
+  it('never stacks a calculated bar', () => {
+    expect(cleanOptions('bar', divided(), { stacked: true, percent: true })).toEqual({});
+  });
+
+  it('keeps % of target on a gauge or a KPI with a target above 0 only', () => {
+    expect(cleanOptions('gauge', query(), { target: 70, percent_of_target: true })).toEqual({
+      target: 70,
+      percent_of_target: true,
+    });
+    expect(cleanOptions('kpi', query(), { target: 0, percent_of_target: true })).toEqual({ target: 0 });
+    expect(cleanOptions('kpi', query(), { percent_of_target: true })).toEqual({});
+    expect(cleanOptions('bar', query(), { target: 70, percent_of_target: true })).toEqual({});
+    // Shown as a percentage, the Percent number format is kept.
+    expect(cleanOptions('kpi', query(), { target: 70, percent_of_target: true, number_format: 'percent' })).toEqual({
+      target: 70,
+      percent_of_target: true,
+      number_format: 'percent',
+    });
+    expect(cleanOptions('kpi', query(), { target: 70, number_format: 'percent' })).toEqual({ target: 70 });
   });
 });
