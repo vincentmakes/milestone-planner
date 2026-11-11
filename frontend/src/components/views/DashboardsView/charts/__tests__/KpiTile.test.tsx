@@ -152,6 +152,16 @@ describe('KpiTile — % of target (2.6.0)', () => {
     expect(screen.getByText('Target 20.0 weeks')).toBeInTheDocument();
   });
 
+  it('keeps a share bucket\'s name, or says it is missing, under a percentage of the target', () => {
+    const options = { kpi_bucket: true, target: 50, percent_of_target: true };
+    const { unmount } = render(<KpiTile result={share} query={shareQuery} options={options} />);
+    expect(screen.getByText(/^125\s%$/)).toBeInTheDocument();
+    expect(screen.getByText('Confirmed')).toBeInTheDocument();
+    unmount();
+    render(<KpiTile result={share} query={shareQuery} options={{ ...options, kpi_bucket: 'nope' }} />);
+    expect(screen.getByText(BUCKET_NOT_FOUND)).toBeInTheDocument();
+  });
+
   it('ignores the flag without a target above 0', () => {
     render(<KpiTile result={plain} query={{ measure: 'booked_weeks' }} options={{ target: 0, percent_of_target: true }} />);
     expect(screen.getByText('123.4')).toBeInTheDocument();

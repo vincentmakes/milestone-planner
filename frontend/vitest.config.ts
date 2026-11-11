@@ -88,12 +88,14 @@ export default defineConfig({
       // audit log on its own, without the approval history (lines 94.26,
       // statements 93.32, functions 94.63, branches 86.49); set 0.1 under
       // the 2.5.0 totals of the pilot adjustments (lines 94.43, statements
-      // 93.5, functions 94.74, branches 86.86).
+      // 93.5, functions 94.74, branches 86.86); set 0.1 under the 2.6.0
+      // totals of calculated widgets and Help (lines 94.5, statements 93.56,
+      // functions 94.77, branches 87.01 — the lower of two runs).
       thresholds: {
-        lines: 94.33,
-        statements: 93.4,
-        functions: 94.64,
-        branches: 86.76,
+        lines: 94.4,
+        statements: 93.46,
+        functions: 94.67,
+        branches: 86.91,
       },
     },
   },
