@@ -21,6 +21,7 @@ import {
   deleteSubphase,
   fetchAllProjects,
   getProject,
+  getProjectDetails,
   transformFieldValues,
   getProjects,
   restoreProject,
@@ -258,11 +259,12 @@ describe('transformFieldValues', () => {
   });
 
   it('is applied by fetchAllProjects (absent = {})', async () => {
-    get.mockImplementation(async (url: string) => {
-      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }, { id: 2 }], total: 2 };
-      return url.endsWith('/1')
-        ? { id: 1, name: 'A', site_id: 1, field_values: { '3': [7] } }
-        : { id: 2, name: 'B', site_id: 1 };
+    get.mockResolvedValueOnce({
+      items: [
+        { id: 1, name: 'A', site_id: 1, field_values: { '3': [7] } },
+        { id: 2, name: 'B', site_id: 1 },
+      ],
+      total: 2,
     });
     const projects = await fetchAllProjects();
     expect(projects.map((p) => p.field_values)).toEqual([{ 3: [7] }, {}]);
@@ -270,18 +272,53 @@ describe('transformFieldValues', () => {
 });
 
 describe('fetchAllProjects transform layer', () => {
-  it('returns [] without fetching details when there are no projects', async () => {
+  it('returns [] after one request when there are no projects', async () => {
     get.mockResolvedValueOnce({ items: [], total: 0 });
     await expect(fetchAllProjects()).resolves.toEqual([]);
     expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith('/api/projects/details?archived=all&limit=200&offset=0');
+  });
+
+  it('loads every project in one request per page, never one per project', async () => {
+    const page = (n: number, from: number) =>
+      Array.from({ length: n }, (_, i) => ({ id: from + i, name: `P${from + i}`, site_id: 1, phases: [] }));
+    get
+      .mockResolvedValueOnce({ items: page(200, 1), total: 230, offset: 0, limit: 200 })
+      .mockResolvedValueOnce({ items: page(30, 201), total: 230, offset: 200, limit: 200 });
+    const projects = await fetchAllProjects();
+    expect(projects).toHaveLength(230);
+    expect(projects[229]).toMatchObject({ id: 230, name: 'P230', phases: [] });
+    expect(get.mock.calls.map((c) => c[0])).toEqual([
+      '/api/projects/details?archived=all&limit=200&offset=0',
+      '/api/projects/details?archived=all&limit=200&offset=200',
+    ]);
+  });
+
+  it('stops at the total even on a full page', async () => {
+    const full = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, name: 'P', site_id: 1 }));
+    get.mockResolvedValueOnce({ items: full, total: 200 });
+    await expect(fetchAllProjects()).resolves.toHaveLength(200);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects when a page fails (the caller recovers; no client-side retry)', async () => {
+    get.mockRejectedValueOnce(new Error('Internal server error'));
+    await expect(fetchAllProjects()).rejects.toThrow('Internal server error');
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('getProjectDetails passes the archived filter', async () => {
+    get.mockResolvedValueOnce({ items: [], total: 0 });
+    await expect(getProjectDetails()).resolves.toEqual([]);
+    expect(get).toHaveBeenCalledWith('/api/projects/details?archived=false&limit=200&offset=0');
   });
 
   it('maps the backend tree to the frontend model', async () => {
     document.documentElement.style.setProperty('--level-phase', '#aa0000');
     document.documentElement.style.setProperty('--level-2', '#00bb00');
     get.mockImplementation(async (url: string) => {
-      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }], total: 1 };
-      return {
+      expect(url).toBe('/api/projects/details?archived=all&limit=200&offset=0');
+      return { total: 1, items: [{
         id: 1,
         name: 'P',
         site_id: 1,
@@ -349,11 +386,11 @@ describe('fetchAllProjects transform layer', () => {
           { id: 11, project_id: 1, name: 'Fallback name', start_date: 'a', end_date: 'b' },
           { id: 12, project_id: 1, start_date: 'a', end_date: 'b' },
         ],
-      };
+      }] };
     });
 
     const [project] = await fetchAllProjects();
-    expect(get).toHaveBeenCalledWith('/api/projects/1');
+    expect(get).toHaveBeenCalledTimes(1);
 
     expect(project.staffAssignments).toEqual([
       expect.objectContaining({ id: 1, staff_id: 4, allocation: 40, approval_status: 'approved', approval: null }),
@@ -416,8 +453,8 @@ describe('fetchAllProjects transform layer', () => {
 
   it('maps the booking dates and linked flag of card rows (older servers: linked, the card dates)', async () => {
     get.mockImplementation(async (url: string) => {
-      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }], total: 1 };
-      return {
+      expect(url).toBe('/api/projects/details?archived=all&limit=200&offset=0');
+      return { total: 1, items: [{
         id: 1,
         staff_assignments: [{ id: 1, staff_id: 4, allocation: 40, start_date: '2026-03-01', end_date: '2026-03-31', linked: false }],
         phases: [
@@ -444,7 +481,7 @@ describe('fetchAllProjects transform layer', () => {
             ],
           },
         ],
-      };
+      }] };
     });
     const [project] = await fetchAllProjects();
     expect(project.staffAssignments[0].linked).toBe(false);
@@ -457,8 +494,8 @@ describe('fetchAllProjects transform layer', () => {
 
   it('uses an explicit subphase depth for its colour', async () => {
     get.mockImplementation(async (url: string) => {
-      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }], total: 1 };
-      return {
+      expect(url).toBe('/api/projects/details?archived=all&limit=200&offset=0');
+      return { total: 1, items: [{
         id: 1,
         phases: [
           {
@@ -466,7 +503,7 @@ describe('fetchAllProjects transform layer', () => {
             children: [{ id: 2, parent_type: 'phase', parent_id: 1, name: 'D', depth: 3 }],
           },
         ],
-      };
+      }] };
     });
     const [project] = await fetchAllProjects();
     expect(project.phases[0].children[0].color).toBe('#3B82F6');
