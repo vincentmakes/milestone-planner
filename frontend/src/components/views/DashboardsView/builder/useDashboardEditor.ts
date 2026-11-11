@@ -128,8 +128,16 @@ const SAVE_ERROR = 'The dashboard could not be saved.';
  */
 export function plainError(err: unknown, fallback: string): string {
   const message = err instanceof Error && err.message ? err.message : fallback;
+  // The server names a calculation's terms by their stored letters, which the editor never shows.
+  if (TERM_MESSAGES.some((pattern) => pattern.test(message))) return FORMULA_TERMS_ERROR;
   return message.replace(/(^|, )(?:[\w.]+: )+/g, '$1');
 }
+
+/** The server's messages that name a calculation's terms (`a`, `b`, …). */
+const TERM_MESSAGES: readonly RegExp[] = [/Two terms are named "/, /" is not one of your terms/, /\bTerm \S+ is not used in the formula/];
+
+/** Said instead of a server message that names a calculation's terms. */
+export const FORMULA_TERMS_ERROR = 'The formula and its measures do not match: edit the formula and try again.';
 
 function draftOf(dashboard: Dashboard): EditorDraft {
   return {

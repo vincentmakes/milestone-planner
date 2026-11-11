@@ -54,6 +54,9 @@ import {
   filterNeeds,
   isTermMeasure,
   isValidDimension,
+  measureFamily,
+  measureNeeds,
+  MEASURES,
   NO_PERCENT_MEASURES,
   queryUnit,
   takesFilter,
@@ -572,7 +575,7 @@ export function isDefaultFormula(query: MetricQuery, canCapacity: boolean): bool
   return stableKey(strip(formula)) === stableKey(strip(fresh));
 }
 
-/** The examples a calculation may start from (the editor's *Examples* menu). */
+/** The examples a calculation may start from (the editor's *Examples* menu), each a different formula. */
 export const FORMULA_EXAMPLES = [
   { key: 'ratio', label: 'Ratio of two measures', expression: 'a / b' },
   { key: 'capacity_share', label: 'Share of capacity', expression: 'a / b' },
@@ -582,39 +585,100 @@ export const FORMULA_EXAMPLES = [
 ] as const;
 export type FormulaExampleKey = (typeof FORMULA_EXAMPLES)[number]['key'];
 
-/** The examples that need the capacity measures (`views.staff`). */
-export const CAPACITY_EXAMPLES: ReadonlySet<FormulaExampleKey> = new Set<FormulaExampleKey>(['capacity_share', 'goal']);
+/**
+ * The measure *Ratio of two measures* divides a measure by when the
+ * calculation has no second measure of its own: a related measure that is
+ * not a capacity (*Share of capacity* is the capacity one) — booked weeks
+ * per project week, days per booking, weeks per project, ….
+ */
+const RATIO_PARTNER: Partial<Record<Measure, Measure>> = {
+  booked_weeks: 'project_weeks',
+  booked_days: 'booking_count',
+  booking_count: 'people_booked',
+  people_booked: 'project_count',
+  project_count: 'people_booked',
+  project_weeks: 'project_count',
+  project_volume: 'project_count',
+  phase_count: 'project_count',
+  phase_weeks: 'phase_count',
+  phases_due: 'phase_count',
+  phases_overdue: 'phase_count',
+  capacity_days: 'people_booked',
+  capacity_weeks: 'people_booked',
+  available_days: 'capacity_days',
+  people_over_capacity: 'people_booked',
+  equipment_booked_days: 'equipment_booking_count',
+  equipment_booking_count: 'equipment_booked',
+  equipment_booked: 'equipment_booking_count',
+};
+
+const unitOf = (measure: Measure) => MEASURES.find((m) => m.key === measure)?.unit;
 
 /**
- * The calculation of an example, built on the current one: *Ratio*,
- * *Difference* and *Sum* keep the first two terms (a second one is added
- * when missing); *Share of capacity* is booked weeks (term `a`'s filters)
- * over capacity weeks, *Against a goal* the same with *Has a customer* over
- * 70 % of the capacity — the absorption of the built-in dashboard. A
- * difference and a sum are numbers, the others percentages.
+ * The calculation of an example, built on the current one (term `a`'s
+ * measure and filters):
+ *
+ * - *Ratio of two measures*: the measure over the calculation's second one
+ *   when that is not a capacity, else over `RATIO_PARTNER` (a percentage
+ *   when both have one unit, a number otherwise);
+ * - *Share of capacity*: booked person time over the capacity in its unit;
+ * - *Against a goal*: booked weeks with *Has a customer* over 70 % of the
+ *   capacity in weeks — the absorption of the built-in dashboard;
+ * - *Difference*: the capacity minus the booked person time (what is free);
+ * - *Sum*: phases due plus phases overdue (what needs attention).
+ *
+ * Only *Ratio* follows the current measure; the others are fixed, so no two
+ * examples insert the same formula. `CAPACITY_PARTNER` keeps days with days.
  */
-export function exampleFormula(kind: WidgetKind, query: MetricQuery, key: FormulaExampleKey, canCapacity: boolean): MetricQuery {
+export function exampleFormula(kind: WidgetKind, query: MetricQuery, key: FormulaExampleKey): MetricQuery {
   const example = FORMULA_EXAMPLES.find((e) => e.key === key) ?? FORMULA_EXAMPLES[0];
   const current = query.formula?.terms ?? [];
   const first: MetricTerm = { ...(current[0] ?? firstTermOf(query)), name: 'a' };
+  const filters = first.filters ?? {};
+  const booked: Measure = first.measure === 'booked_days' ? 'booked_days' : 'booked_weeks';
+  const withFilters = (name: string, measure: Measure, extra: MetricTerm['filters'] = {}): MetricTerm => {
+    const term: MetricTerm = { name, measure, filters: { ...filters } };
+    return { ...term, filters: { ...(termFilters(term) ?? {}), ...extra } };
+  };
   let terms: MetricTerm[];
-  if (CAPACITY_EXAMPLES.has(key)) {
-    const booked: MetricTerm = { name: 'a', measure: 'booked_weeks', filters: { ...(first.filters ?? {}) } };
-    const filters = termFilters(booked) ?? {};
-    terms = [
-      { ...booked, filters: key === 'goal' ? { ...filters, has_customer: true } : filters },
-      { name: 'b', measure: 'capacity_weeks', filters: {} },
-    ];
-  } else {
-    const second: MetricTerm = current[1] ? { ...current[1], name: 'b' } : partnerOf(first, canCapacity);
-    terms = [first, second];
+  let result: MetricFormula['result'] = 'percent';
+  switch (example.key) {
+    case 'capacity_share':
+      terms = [withFilters('a', booked), { name: 'b', measure: CAPACITY_PARTNER[booked] ?? 'capacity_weeks', filters: {} }];
+      break;
+    case 'goal':
+      terms = [withFilters('a', 'booked_weeks', { has_customer: true }), { name: 'b', measure: 'capacity_weeks', filters: {} }];
+      break;
+    case 'difference':
+      terms = [{ name: 'a', measure: CAPACITY_PARTNER[booked] ?? 'capacity_weeks', filters: {} }, withFilters('b', booked)];
+      result = 'number';
+      break;
+    case 'sum':
+      terms = [withFilters('a', 'phases_due'), withFilters('b', 'phases_overdue')];
+      result = 'number';
+      break;
+    default: {
+      const own = current[1];
+      const second: MetricTerm =
+        own && measureFamily(own.measure) !== 'capacity' && own.measure !== first.measure
+          ? { ...own, name: 'b' }
+          : { name: 'b', measure: RATIO_PARTNER[first.measure] ?? 'project_count', filters: {} };
+      terms = [first, second];
+      if (unitOf(first.measure) !== unitOf(second.measure)) result = 'number';
+    }
   }
-  const result: MetricFormula['result'] = key === 'difference' || key === 'sum' ? 'number' : 'percent';
   return normaliseQuery(kind, {
     ...query,
     measure: terms[0].measure,
     formula: { expression: example.expression, terms, result },
   });
+}
+
+/** The permission keys an example's measures need (`views.staff` for the capacity, …). */
+export function exampleNeeds(kind: WidgetKind, query: MetricQuery, key: FormulaExampleKey): PermissionKey[] {
+  const terms = exampleFormula(kind, query, key).formula?.terms ?? [];
+  const keys = terms.map((t) => measureNeeds(t.measure)).filter((k): k is PermissionKey => k !== null);
+  return [...new Set(keys)];
 }
 
 /** How many filters (besides the period) a query sets. */

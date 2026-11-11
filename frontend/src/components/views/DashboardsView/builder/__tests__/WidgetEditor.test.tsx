@@ -1738,6 +1738,14 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     expect(dimensionLabels(1)).not.toContain('Period');
   });
 
+  it('never shows a term letter in the numbers line, even for a term the result lacks', async () => {
+    api.query.mockResolvedValue(calcResult({ total: 0.5, terms: [{ name: 'a', value: 5, unit: 'weeks' }] }));
+    renderEditor();
+    fireEvent.click(calculation());
+    await flushPreview();
+    expect(section().getByRole('status').textContent).toMatch(/^5\.0 ÷ – = /);
+  });
+
   it('shows "–" with the reason when the result has no value', async () => {
     api.query.mockResolvedValue(
       calcResult({
@@ -1769,6 +1777,48 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     rects.mockRestore();
   });
 
+  /** A menu row's name and formula, as two separate elements. */
+  const exampleRow = (name: RegExp) => {
+    const item = screen.getByRole('menuitem', { name });
+    const [label, formula] = Array.from(item.children).map((child) => child.textContent);
+    return { item, label, formula };
+  };
+  /** The field's text with the operators a reader writes. */
+  const read = (value: string) => value.replace(/\//g, '÷').replace(/\*/g, '×').replace(/-/g, '−').replace(/(\d)%/g, '$1 %');
+
+  it('lists each example with its name and the formula it inserts, in measure names', () => {
+    renderEditor();
+    fireEvent.click(calculation());
+    fireEvent.click(section().getByRole('button', { name: 'Examples' }));
+    const menu = within(screen.getByRole('menu', { name: 'Formula examples' }));
+    const rows = menu.getAllByRole('menuitem').map((item) => Array.from(item.children).map((child) => child.textContent));
+    expect(rows).toEqual([
+      ['Ratio of two measures', 'Booked weeks ÷ Project weeks'],
+      ['Share of capacity', 'Booked weeks ÷ Capacity (weeks)'],
+      ['Against a goal', 'Booked weeks · Has a customer ÷ (Capacity (weeks) × 70 %)'],
+      ['Difference', 'Capacity (weeks) − Booked weeks'],
+      ['Sum', 'Phases due + Phases overdue'],
+    ]);
+    // No row lets a stored term letter through.
+    for (const [, formula] of rows) expect(formula).not.toMatch(/(^|[÷×−+(]\s*)[a-z]\d*(\s*[÷×−+)]|$)/);
+    expect(new Set(rows.map(([, formula]) => formula)).size).toBe(rows.length);
+  });
+
+  it('inserts exactly the formula each row shows', async () => {
+    stubConfirm(true);
+    renderEditor();
+    fireEvent.click(calculation());
+    const trigger = section().getByRole('button', { name: 'Examples' });
+    for (const name of [/^Ratio/, /^Share of capacity/, /^Against a goal/, /^Difference/, /^Sum/]) {
+      fireEvent.click(trigger);
+      const { item, formula } = exampleRow(name);
+      await act(async () => {
+        fireEvent.click(item);
+      });
+      expect(read((field() as HTMLTextAreaElement).value)).toBe(formula);
+    }
+  });
+
   it('replaces the formula by an example, asking first only when it was changed', async () => {
     const confirm = stubConfirm(false);
     renderEditor();
@@ -1777,13 +1827,6 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const menu = within(screen.getByRole('menu', { name: 'Formula examples' }));
-    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
-      'Ratio of two measuresa / b',
-      'Share of capacitya / b',
-      'Against a goala / (b * 70%)',
-      'Differencea - b',
-      'Suma + b',
-    ]);
     await act(async () => {
       fireEvent.click(menu.getByRole('menuitem', { name: /Against a goal/ }));
     });
@@ -1802,7 +1845,8 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^Difference/ }));
     });
-    expect(field()).toHaveValue('Booked weeks · Has a customer - Capacity (weeks)');
+    // The booked term keeps the first measure's filters.
+    expect(field()).toHaveValue('Capacity (weeks) - Booked weeks · Has a customer');
     expect(resultSelect()).toHaveValue('number');
     fireEvent.click(trigger);
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -1830,9 +1874,19 @@ describe('WidgetEditor — calculated widgets, % of target, Has a customer (2.6.
     renderEditor();
     fireEvent.click(calculation());
     fireEvent.click(section().getByRole('button', { name: 'Examples' }));
-    expect(screen.getByRole('menuitem', { name: /Share of capacity/ })).toBeDisabled();
-    expect(screen.getByRole('menuitem', { name: /Against a goal/ })).toHaveAttribute('title', CAPACITY_EXAMPLE_HINT);
-    expect(screen.getByRole('menuitem', { name: /^Sum/ })).toBeEnabled();
+    for (const name of [/^Share of capacity/, /^Against a goal/, /^Difference/]) {
+      const row = exampleRow(name);
+      expect(row.item).toBeDisabled();
+      // The reason in place of the formula, read with the row.
+      expect(row.formula).toBe(CAPACITY_EXAMPLE_HINT);
+      expect(row.item).toHaveAccessibleDescription(CAPACITY_EXAMPLE_HINT);
+    }
+    expect(exampleRow(/^Sum/).item).toBeEnabled();
+    expect(exampleRow(/^Ratio/).formula).toBe('Booked weeks ÷ Project weeks');
+    // A disabled row cannot be chosen.
+    fireEvent.click(exampleRow(/^Difference/).item);
+    expect(screen.getByRole('menu', { name: 'Formula examples' })).toBeInTheDocument();
+    expect(field()).toHaveValue('Booked weeks');
   });
 
   it('turns off back to the first measure, asking first only when the formula was changed', async () => {

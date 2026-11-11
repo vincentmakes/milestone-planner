@@ -92,14 +92,17 @@ export function pillLabel(
   return `${name} · ${parts.map(capitalise).join(', ')}`;
 }
 
+/** A term the labels do not name: never its stored letter. */
+const A_MEASURE = 'A measure';
+
 /**
  * Why a calculation's result has no value: a term that is 0 (a division by
  * it), one without a value, or a number too large to show.
  */
 export function noResultReason(terms: NonNullable<MetricResult['terms']>, labels: Readonly<Record<string, string>>): string {
   const zero = terms.find((t) => t.value === 0);
-  if (zero) return `${labels[zero.name] ?? zero.name} is 0 in this period`;
+  if (zero) return `${labels[zero.name] ?? A_MEASURE} is 0 in this period`;
   const empty = terms.find((t) => t.value === null);
-  if (empty) return `${labels[empty.name] ?? empty.name} has no value in this period`;
+  if (empty) return `${labels[empty.name] ?? A_MEASURE} has no value in this period`;
   return 'The result is too large to show';
 }

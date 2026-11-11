@@ -34,13 +34,23 @@ import type { PermissionKey } from '@/types/permissions';
 import { FilterSection } from './FilterSection';
 import { FormulaField } from './FormulaField';
 import type { FormulaFieldHandle } from './FormulaField';
-import { CAPACITY_EXAMPLES, FORMULA_EXAMPLES } from './widgetDraft';
 import type { FormulaExampleKey } from './widgetDraft';
 import { measureLabelOf, noResultReason } from './termSummary';
 import styles from './WidgetEditor.module.css';
 
 export const TOTAL_HINT = 'The same whole value in every row, not split by the breakdown';
 export const CAPACITY_EXAMPLE_HINT = 'Needs the Staff & Calendar permission';
+export const OTHER_EXAMPLE_HINT = 'Needs a permission you do not have';
+
+/** A row of the *Examples* menu: its name, and the formula it puts in the field in words (or why it cannot). */
+export interface FormulaExampleRow {
+  key: FormulaExampleKey;
+  label: string;
+  /** The formula as the field will read it: measure names and ÷ × − + */
+  formula: string;
+  /** Why the viewer cannot use it (null: they can) */
+  blocked: string | null;
+}
 export const CALCULATING = 'Calculating…';
 export const TYPING_HINT = 'Pick the measure from the list, or finish typing its name';
 export const FILTER_HINT = 'Click a measure to filter it';
@@ -57,8 +67,6 @@ export interface CalculationSectionProps {
   /** A pill's text for a measure and its filters */
   label: (measure: Measure, filters: TermFilters | undefined) => string;
   holds: (key: PermissionKey | null) => boolean;
-  /** The viewer may use the capacity measures (`views.staff`) */
-  canCapacity: boolean;
   /** The widget's dimensions: beyond the period, *Use its total* is offered (forced on a measure that refuses one) */
   dimensions: readonly MetricDimension[];
   /** Why the field cannot be computed (null: it can, or the user is still typing a measure's name) */
@@ -69,6 +77,8 @@ export interface CalculationSectionProps {
   onAcceptSuggestion: (problem: FieldProblem) => void;
   /** The preview's result for this very formula (null while it is asked) */
   result: MetricResult | null;
+  /** The *Examples* menu's rows, built on the current formula (`exampleRows` in the editor) */
+  examples: readonly FormulaExampleRow[];
   /** An example was chosen (the editor confirms before replacing a customised formula) */
   onExample: (key: FormulaExampleKey) => void;
 }
@@ -81,12 +91,12 @@ export function CalculationSection({
   options,
   label,
   holds,
-  canCapacity,
   dimensions,
   problem,
   typing = false,
   onAcceptSuggestion,
   result,
+  examples,
   onExample,
 }: CalculationSectionProps) {
   const idBase = useId();
@@ -136,7 +146,9 @@ export function CalculationSection({
       </p>
     );
   } else {
-    const values = Object.fromEntries((result.terms ?? []).map((t) => [t.name, formatMetric(t.value, t.unit)]));
+    // Every term reads a number (or –): a term the result lacks never shows its stored letter.
+    const values: Record<string, string> = Object.fromEntries(formula.terms.map((t) => [t.name, '–']));
+    for (const t of result.terms ?? []) values[t.name] = formatMetric(t.value, t.unit);
     const termLabels = Object.fromEntries(formula.terms.map((t) => [t.name, measureLabelOf(t.measure)]));
     const shown =
       total === null || total === undefined
@@ -212,7 +224,7 @@ export function CalculationSection({
             >
               Insert measure
             </Button>
-            <ExamplesMenu canCapacity={canCapacity} onPick={onExample} />
+            <ExamplesMenu examples={examples} onPick={onExample} />
           </div>
         </div>
         <FormulaField
@@ -245,12 +257,16 @@ export function CalculationSection({
 }
 
 interface ExamplesMenuProps {
-  canCapacity: boolean;
+  examples: readonly FormulaExampleRow[];
   onPick: (key: FormulaExampleKey) => void;
 }
 
-/** The *Examples* menu: a ready-made formula. */
-function ExamplesMenu({ canCapacity, onPick }: ExamplesMenuProps) {
+/**
+ * The *Examples* menu: a ready-made formula. Each row reads the example's
+ * name and, under it, the formula it puts in the field (or why the viewer
+ * cannot use it: the row is then disabled).
+ */
+function ExamplesMenu({ examples, onPick }: ExamplesMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -274,27 +290,25 @@ function ExamplesMenu({ canCapacity, onPick }: ExamplesMenuProps) {
       </Button>
       {open && (
         <div id={menuId} className={styles.examplesMenu} role="menu" aria-label="Formula examples">
-          {FORMULA_EXAMPLES.map((example) => {
-            const blocked = CAPACITY_EXAMPLES.has(example.key) && !canCapacity;
-            return (
-              <Button
-                key={example.key}
-                type="button"
-                variant="ghost"
-                role="menuitem"
-                className={styles.examplesItem}
-                disabled={blocked}
-                title={blocked ? CAPACITY_EXAMPLE_HINT : undefined}
-                onClick={() => {
-                  setOpen(false);
-                  onPick(example.key);
-                }}
-              >
-                <span>{example.label}</span>
-                <code className={styles.examplesCode}>{example.expression}</code>
-              </Button>
-            );
-          })}
+          {examples.map((example) => (
+            <button
+              key={example.key}
+              type="button"
+              role="menuitem"
+              className={styles.examplesItem}
+              disabled={example.blocked !== null}
+              aria-describedby={`${menuId}-${example.key}`}
+              onClick={() => {
+                setOpen(false);
+                onPick(example.key);
+              }}
+            >
+              <span className={styles.examplesName}>{example.label}</span>
+              <span id={`${menuId}-${example.key}`} className={styles.examplesFormula}>
+                {example.blocked ?? example.formula}
+              </span>
+            </button>
+          ))}
         </div>
       )}
     </div>

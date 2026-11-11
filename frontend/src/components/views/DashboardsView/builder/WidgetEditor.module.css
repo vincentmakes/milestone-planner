@@ -242,8 +242,11 @@
   z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
-  min-width: 15rem;
-  max-width: min(20rem, 80vw);
+  gap: 0.125rem;
+  /* Wide enough for "Booked weeks ÷ (Capacity (weeks) × 70 %)" on one line */
+  width: max-content;
+  min-width: 16rem;
+  max-width: min(24rem, 80vw);
   padding: 0.25rem;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -252,12 +255,44 @@
 }
 
 .examplesItem {
-  justify-content: space-between;
-  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
   width: 100%;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
-.examplesCode {
+.examplesItem:hover:not(:disabled),
+.examplesItem:focus-visible {
+  background: var(--bg-hover);
+}
+
+.examplesItem:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
+.examplesItem:disabled {
+  cursor: not-allowed;
+}
+
+.examplesItem:disabled .examplesName {
+  color: var(--text-muted);
+}
+
+.examplesName {
+  font-size: var(--font-size-sm);
+}
+
+.examplesFormula {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }

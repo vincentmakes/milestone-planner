@@ -32,6 +32,7 @@ import {
   endFormula,
   isDefaultFormula,
   exampleFormula,
+  exampleNeeds,
   cleanFormula,
   FORMULA_EXAMPLES,
   parseTarget,
@@ -751,13 +752,15 @@ describe('calculated widgets and % of target (2.6.0)', () => {
       'Difference',
       'Sum',
     ]);
-    const ratio = exampleFormula('bar', current, 'ratio', true).formula!;
+    const ratio = exampleFormula('bar', current, 'ratio').formula!;
     expect(ratio.expression).toBe('a / b');
+    // The calculation's own second measure (not a capacity): days over projects, a number.
     expect(ratio.terms.map((t) => [t.name, t.measure])).toEqual([
       ['a', 'booked_days'],
       ['b', 'project_count'],
     ]);
-    const goal = exampleFormula('gauge', current, 'goal', true);
+    expect(ratio.result).toBe('number');
+    const goal = exampleFormula('gauge', current, 'goal');
     expect(goal.measure).toBe('booked_weeks');
     expect(goal.formula).toEqual({
       expression: 'a / (b * 70%)',
@@ -767,13 +770,45 @@ describe('calculated widgets and % of target (2.6.0)', () => {
         { name: 'b', measure: 'capacity_weeks', filters: {} },
       ],
     });
-    expect(exampleFormula('bar', current, 'capacity_share', true).formula?.terms[0].filters).toEqual({ team_ids: [5] });
-    expect(exampleFormula('bar', current, 'difference', true).formula).toMatchObject({ expression: 'a - b', result: 'number' });
-    expect(exampleFormula('bar', current, 'sum', true).formula).toMatchObject({ expression: 'a + b', result: 'number' });
-    // From a plain query: term a is its measure, b its partner.
-    const fromPlain = exampleFormula('bar', query({ measure: 'booked_days' }), 'sum', true).formula!;
-    expect(fromPlain.terms.map((t) => t.measure)).toEqual(['booked_days', 'capacity_days']);
-    expect(exampleFormula('bar', current, 'nope' as never, true).formula?.expression).toBe('a / b');
+    // Days stay with days.
+    const share = exampleFormula('bar', current, 'capacity_share').formula!;
+    expect(share.terms.map((t) => [t.measure, t.filters])).toEqual([
+      ['booked_days', { team_ids: [5] }],
+      ['capacity_days', {}],
+    ]);
+    const difference = exampleFormula('bar', current, 'difference').formula!;
+    expect(difference).toMatchObject({ expression: 'a - b', result: 'number' });
+    expect(difference.terms.map((t) => t.measure)).toEqual(['capacity_days', 'booked_days']);
+    const sum = exampleFormula('bar', current, 'sum').formula!;
+    expect(sum).toMatchObject({ expression: 'a + b', result: 'number' });
+    expect(sum.terms.map((t) => t.measure)).toEqual(['phases_due', 'phases_overdue']);
+    expect(exampleFormula('bar', current, 'nope' as never).formula?.expression).toBe('a / b');
+  });
+
+  it('never makes two examples the same formula, from the starting one or a plain query', () => {
+    const started = startFormula('bar', query({ measure: 'booked_weeks' }), true);
+    for (const from of [started, query({ measure: 'booked_weeks' }), query({ measure: 'booked_days' })]) {
+      const formulas = FORMULA_EXAMPLES.map((e) => stableKey(exampleFormula('bar', from, e.key).formula));
+      expect(new Set(formulas).size).toBe(FORMULA_EXAMPLES.length);
+    }
+    // Booked weeks over the capacity to start: the ratio takes project weeks instead, a percentage.
+    const ratio = exampleFormula('bar', started, 'ratio').formula!;
+    expect(ratio.terms.map((t) => t.measure)).toEqual(['booked_weeks', 'project_weeks']);
+    expect(ratio.result).toBe('percent');
+    // Equipment days per equipment booking.
+    expect(exampleFormula('bar', query({ measure: 'equipment_booked_days' }), 'ratio').formula?.terms[1].measure).toBe(
+      'equipment_booking_count'
+    );
+  });
+
+  it('names the permissions an example needs', () => {
+    const plain = query({ measure: 'booked_weeks' });
+    expect(exampleNeeds('bar', plain, 'ratio')).toEqual([]);
+    expect(exampleNeeds('bar', plain, 'sum')).toEqual([]);
+    expect(exampleNeeds('bar', plain, 'capacity_share')).toEqual(['views.staff']);
+    expect(exampleNeeds('bar', plain, 'goal')).toEqual(['views.staff']);
+    expect(exampleNeeds('bar', plain, 'difference')).toEqual(['views.staff']);
+    expect(exampleNeeds('bar', query({ measure: 'equipment_booked_days' }), 'ratio')).toEqual(['views.equipment']);
   });
 
   it('stores the formula cleaned: empty filters, unset totals and the default result left out', () => {

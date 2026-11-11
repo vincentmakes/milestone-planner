@@ -110,6 +110,21 @@ export function segmentField(state: FieldState): FieldSegment[] {
   return out;
 }
 
+/**
+ * The field as a reader writes it: the pills' text as they show, the typed
+ * operators as ÷ × − and a percentage as "70 %" ("Booked weeks ÷
+ * (Capacity (weeks) × 70 %)"). The *Examples* menu shows each example so.
+ */
+export function readField(state: FieldState): string {
+  return segmentField(state)
+    .map((segment) =>
+      segment.kind === 'pill'
+        ? segment.text
+        : segment.text.replace(/[/*-]/g, (sign) => OPERATOR_SIGNS[sign as '/' | '*' | '-']).replace(/(\d)%/g, '$1 %')
+    )
+    .join('');
+}
+
 /** The pill the caret sits inside (`edges`: or at either end of it). */
 export function pillAt(state: FieldState, caret: number, edges = false): FieldPill | null {
   return (

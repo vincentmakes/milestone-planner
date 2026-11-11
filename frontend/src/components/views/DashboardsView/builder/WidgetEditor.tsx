@@ -46,7 +46,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { confirmAction } from '@/utils/confirmDialog';
-import { fieldFromFormula, formulaFromField, insertPill, measureOptions } from '@/utils/formulaField';
+import { fieldFromFormula, formulaFromField, insertPill, measureOptions, readField } from '@/utils/formulaField';
 import type { FieldProblem, FieldState, TermFilters } from '@/utils/formulaField';
 import { CALCULATIONS_HELP_PAGE } from '@/utils/helpLinks';
 import { helpBaseUrl } from '@/utils/instanceSettings';
@@ -109,7 +109,8 @@ import { WidgetCard } from '../WidgetCard';
 import { gaugeTarget } from '../charts/toOption';
 import { plainError } from './useDashboardEditor';
 import { FilterSection } from './FilterSection';
-import { CalculationSection } from './CalculationSection';
+import { CalculationSection, CAPACITY_EXAMPLE_HINT, OTHER_EXAMPLE_HINT } from './CalculationSection';
+import type { FormulaExampleRow } from './CalculationSection';
 import { pillLabel } from './termSummary';
 import { useNameLookups } from './useNameLookups';
 import {
@@ -121,6 +122,7 @@ import {
   dropUnheld,
   endFormula,
   exampleFormula,
+  exampleNeeds,
   isDefaultFormula,
   MAX_DIMENSIONS,
   MIN_DIMENSIONS,
@@ -416,12 +418,27 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     changeField(inserted.state);
   };
 
+  /** The *Examples* menu's rows: each formula as the field will read it, on the current one. */
+  const exampleRows: FormulaExampleRow[] = formula
+    ? FORMULA_EXAMPLES.map((example) => {
+        const missing = exampleNeeds(kind, query, example.key).filter((key) => !holds(key));
+        // The very field the example shows (`showFormula`), read with real operator signs.
+        const built = normaliseQuery(kind, dropUnheld(exampleFormula(kind, query, example.key), holds)).formula;
+        return {
+          key: example.key,
+          label: example.label,
+          formula: built ? readField(fieldFromFormula(built, (t) => labelOf(t.measure, t.filters))) : '',
+          blocked: missing.length === 0 ? null : missing.includes('views.staff') ? CAPACITY_EXAMPLE_HINT : OTHER_EXAMPLE_HINT,
+        };
+      })
+    : [];
+
   const pickExample = async (key: FormulaExampleKey) => {
     const label = FORMULA_EXAMPLES_BY_KEY.get(key) ?? key;
     if (customised && !(await confirmAction({ message: replaceWithExample(label), confirmLabel: 'Replace' }))) {
       return;
     }
-    showFormula(dropUnheld(exampleFormula(kind, query, key, canStaff), holds));
+    showFormula(dropUnheld(exampleFormula(kind, query, key), holds));
     // On a gauge, the goal example draws its goal band like the built-in absorption gauge.
     if (kind === 'gauge' && key === 'goal') {
       setTargetText('100');
@@ -675,7 +692,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
                 options={fieldOptions}
                 label={labelOf}
                 holds={holds}
-                canCapacity={canStaff}
+                examples={exampleRows}
                 dimensions={dimensions}
                 problem={shownProblem}
                 typing={typing}

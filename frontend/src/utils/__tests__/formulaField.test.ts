@@ -28,6 +28,7 @@ import {
   reconcilePills,
   relabelPill,
   segmentField,
+  readField,
   STRAY_CLOSE,
   TOO_LONG_FIELD,
   TOO_MANY_MEASURES,
@@ -85,6 +86,15 @@ describe('pills through edits', () => {
     expect(pillAt(state, 0)).toBeNull();
     expect(pillAt(state, 0, true)?.measure).toBe('booked_weeks');
     expect(pillAt(state, 13)).toBeNull();
+  });
+
+  it('reads the field with real operator signs, the pills as they show', () => {
+    const goal = { text: 'Booked weeks / (Capacity (weeks) * 70%) - 2', pills: [pill(0, 'Booked weeks', 'booked_weeks'), pill(16, 'Capacity (weeks)', 'capacity_weeks')] };
+    expect(readField(goal)).toBe('Booked weeks ÷ (Capacity (weeks) × 70 %) − 2');
+    // A pill's own text is never rewritten: a hyphen in a name stays one.
+    expect(readField({ text: 'Booked weeks · R-and-D + 1', pills: [pill(0, 'Booked weeks · R-and-D', 'booked_weeks')] })).toBe(
+      'Booked weeks · R-and-D + 1'
+    );
   });
 
   it('inserts a pill with the spaces it needs and puts the caret after it', () => {

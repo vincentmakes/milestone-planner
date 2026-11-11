@@ -91,7 +91,9 @@ describe('noResultReason', () => {
         labels
       )
     ).toBe('Capacity (weeks) is 0 in this period');
-    expect(noResultReason([{ name: 'c', value: null, unit: 'weeks' }], labels)).toBe('c has no value in this period');
+    // A term the labels do not name never shows its stored letter.
+    expect(noResultReason([{ name: 'c', value: null, unit: 'weeks' }], labels)).toBe('A measure has no value in this period');
+    expect(noResultReason([{ name: 'c', value: 0, unit: 'weeks' }], labels)).toBe('A measure is 0 in this period');
     expect(noResultReason([{ name: 'a', value: 3, unit: 'weeks' }], labels)).toBe('The result is too large to show');
   });
 });

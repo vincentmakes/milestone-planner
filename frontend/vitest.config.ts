@@ -95,10 +95,10 @@ export default defineConfig({
       // editor (lines 94.72, statements 93.76, functions 94.96, branches
       // 87.32 — two runs, equal).
       thresholds: {
-        lines: 94.62,
-        statements: 93.66,
-        functions: 94.86,
-        branches: 87.22,
+        lines: 94.7,
+        statements: 93.75,
+        functions: 94.95,
+        branches: 87.3,
       },
     },
   },

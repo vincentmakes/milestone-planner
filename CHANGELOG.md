@@ -10,13 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Help in the user menu opens the online manual in a new tab, at the chapter of the view you are in.
 - The manual can be printed or saved as PDF from one page, with a cover and a table of contents.
-- A ready-made PDF of the manual is published with every update of the manual, laid out for paper: chapters on new pages, nothing cut across pages, page numbers in the contents and bookmarks.
+- A ready-made PDF of the manual is published with every update of the manual, laid out for paper: a clean cover with the version and month, chapters on new pages, nothing cut across pages, no near-empty pages inside a chapter, page numbers in the contents and bookmarks.
 - Settings → Features & defaults → Documentation URL: point Help at a copy of the manual you host yourself; the new admin guide page explains how to build it and host it, for example on Azure Static Web Apps.
 - Dashboards: Utilisation takes the project filters (projects, project teams, project managers, tags, project fields, Confirmed, Has a customer), which narrow the booked time while the capacity stays that of the people in scope.
 - Dashboards: a Has a customer filter keeps the projects with a customer, or those without one, on every measure that reads projects.
 - Dashboards: a KPI or a gauge can show its value as a percentage of its target ("91 % of target"); a KPI now takes a target like the gauge.
 - Dashboards: a gauge's target can be a goal to reach — red well below it, amber just below it, green from the target up.
-- Dashboards: calculated widgets combine measures in a formula typed in one field — measures are suggested as you type and can each be filtered with a click, with numbers, + − × ÷, brackets and % — shown as a percentage or a number on a KPI, gauge, bar, line, table or heatmap, broken down by any dimension the measures allow; the line under the field shows the formula with its numbers and its result.
+- Dashboards: calculated widgets combine measures in a formula typed in one field — measures are suggested as you type and can each be filtered with a click, with numbers, + − × ÷, brackets and % — shown as a percentage or a number on a KPI, gauge, bar, line, table or heatmap, broken down by any dimension the measures allow; the line under the field shows the formula with its numbers and its result. An Examples menu starts from five different ready-made formulas, each shown in measure names before you pick it.
 - Dashboards: a Capacity (weeks) measure, so booked weeks can be compared with capacity in the same unit.
 - Dashboards: the built-in Capacity and flows dashboard shows the customer absorption — weeks booked on customer projects over 70 % of the capacity — as a goal gauge; existing instances get it once.
 
