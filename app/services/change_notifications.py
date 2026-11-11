@@ -62,7 +62,11 @@ from fastapi import Request
 from sqlalchemy import select, text, union
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.database import get_session_factory, resolve_tenant_session_factory
+from app.database import (
+    get_session_factory,
+    release_request_connection,
+    resolve_tenant_session_factory,
+)
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
@@ -833,6 +837,10 @@ async def deliver(
     its committed rows to build the response -- on an ``AsyncSession`` that
     lazy load raises ``MissingGreenlet`` and would turn the committed change
     into a 500. The parameter stays so every call site reads the same.
+    Before opening its own session it commits the request's session if a
+    post-commit read left it in a transaction (``release_request_connection``:
+    a commit keeps the objects loaded), so one request never holds two pooled
+    connections at once.
     """
     del db  # never touched, see above
     # The actor is never notified: intents addressed to them need no session.
@@ -840,6 +848,9 @@ async def deliver(
     if not intents:
         return
     payloads: list[tuple[int, dict]] = []
+    # A route that re-read after its commit holds a connection again: hand it
+    # back before drawing a second one from the same pool.
+    await release_request_connection(request)
     try:
         async with _session_factory(request)() as session:
             try:

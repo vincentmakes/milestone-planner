@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import get_settings
+from app.database import pool_arguments
 from app.models.tenant import Tenant, TenantCredentials
 from app.services.encryption import decrypt
 from app.services.tenant_provisioner import (
@@ -1079,9 +1080,8 @@ class TenantConnectionManager:
         engine = create_async_engine(
             url,
             echo=False,  # Disable SQL logging
-            pool_size=20,
-            max_overflow=10,
-            pool_timeout=30,
+            # DB_POOL_* like the default engine, with pre-ping and recycling.
+            **pool_arguments(settings),
             # Like the default engine: TIMESTAMP columns hold UTC, so
             # CURRENT_TIMESTAMP defaults must be UTC too (app/schemas/base.py).
             connect_args={"server_settings": {"timezone": "UTC"}},

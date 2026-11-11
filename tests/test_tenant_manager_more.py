@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config import Settings
 from app.services import tenant_manager as tm
 from app.services import tenant_provisioner as tp
 
@@ -56,7 +57,14 @@ def fake_engine(*, select_error: Exception | None = None):
 @pytest.mark.asyncio
 async def test_create_pool_builds_url_tests_connection_and_migrates(mgr):
     engine = fake_engine()
-    settings = SimpleNamespace(db_host="pg.internal", db_port=6432)
+    settings = SimpleNamespace(
+        db_host="pg.internal",
+        db_port=6432,
+        db_pool_size=7,
+        db_pool_max_overflow=3,
+        db_pool_timeout=12,
+        db_pool_recycle=900,
+    )
     with (
         patch.object(tm, "decrypt", return_value="s3cret") as decrypt,
         patch.object(tm, "get_settings", return_value=settings),
@@ -69,8 +77,12 @@ async def test_create_pool_builds_url_tests_connection_and_migrates(mgr):
     assert create.call_args.args[0] == (
         "postgresql+asyncpg://acme_user:s3cret@pg.internal:6432/milestone_acme"
     )
-    assert create.call_args.kwargs["pool_size"] == 20
-    assert create.call_args.kwargs["max_overflow"] == 10
+    # The DB_POOL_* settings, like the default engine (no hard-coded 20/10/30).
+    assert create.call_args.kwargs["pool_size"] == 7
+    assert create.call_args.kwargs["max_overflow"] == 3
+    assert create.call_args.kwargs["pool_timeout"] == 12
+    assert create.call_args.kwargs["pool_recycle"] == 900
+    assert create.call_args.kwargs["pool_pre_ping"] is True
     # Sessions run in UTC, so CURRENT_TIMESTAMP defaults match utcnow_naive().
     assert create.call_args.kwargs["connect_args"] == {"server_settings": {"timezone": "UTC"}}
     assert "SELECT 1" in str(engine.conn.execute.await_args.args[0])
@@ -94,7 +106,7 @@ async def test_create_pool_disposes_the_engine_when_the_db_is_unreachable(mgr):
     engine = fake_engine(select_error=OSError("refused"))
     with (
         patch.object(tm, "decrypt", return_value="pw"),
-        patch.object(tm, "get_settings", return_value=SimpleNamespace(db_host="h", db_port=1)),
+        patch.object(tm, "get_settings", return_value=Settings(db_host="h", db_port=1)),
         patch.object(tm, "create_async_engine", return_value=engine),
         pytest.raises(ConnectionError, match=r"tenant database acme \(milestone_acme\)"),
     ):

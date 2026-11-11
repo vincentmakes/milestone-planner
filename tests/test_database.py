@@ -69,7 +69,23 @@ def test_get_engine_is_created_once_from_settings(no_engine):
     assert kwargs["pool_size"] == 7
     assert kwargs["max_overflow"] == 3
     assert kwargs["pool_timeout"] == 12
+    assert kwargs["pool_pre_ping"] is True
+    assert kwargs["pool_recycle"] == 1800
     assert kwargs["connect_args"] == {"server_settings": {"timezone": "UTC"}}
+
+
+def test_pool_arguments_map_settings_and_never_recycle():
+    settings = Settings(db_pool_size=4, db_pool_max_overflow=0, db_pool_timeout=5)
+    assert database.pool_arguments(settings) == {
+        "pool_size": 4,
+        "max_overflow": 0,
+        "pool_timeout": 5,
+        "pool_recycle": 1800,
+        "pool_pre_ping": True,
+    }
+    assert database.pool_arguments(Settings(db_pool_recycle=0))["pool_recycle"] == -1
+    assert database.pool_arguments(Settings(db_pool_recycle=-5))["pool_recycle"] == -1
+    assert database.pool_arguments(Settings(db_pool_recycle=600))["pool_recycle"] == 600
 
 
 def test_get_session_factory_is_bound_to_the_engine_and_cached(no_engine):
@@ -171,17 +187,80 @@ async def test_get_db_prefers_the_tenant_factory(mock_db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_db_readonly_never_commits_or_rolls_back(mock_db_session):
+async def test_get_db_keeps_the_session_on_the_request(mock_db_session):
+    request = plain_request()
     with patch.object(
         database, "get_session_factory", return_value=factory_yielding(mock_db_session)
     ):
-        gen = database.get_db_readonly(plain_request())
+        gen = database.get_db(request)
         assert await gen.__anext__() is mock_db_session
-        with pytest.raises(StopAsyncIteration):
-            await gen.__anext__()
+        assert getattr(request.state, database.REQUEST_SESSION_STATE_KEY) is mock_db_session
+        await gen.aclose()
 
+
+@pytest.mark.asyncio
+async def test_get_db_readonly_is_the_request_session_of_get_db(mock_db_session):
+    """One session per request: the read-only dependency opens none of its own."""
+    import inspect
+
+    from fastapi.params import Depends as DependsParam
+
+    default = inspect.signature(database.get_db_readonly).parameters["db"].default
+    assert isinstance(default, DependsParam) and default.dependency is database.get_db
+    with patch.object(database, "get_session_factory", side_effect=AssertionError("2nd session")):
+        assert await database.get_db_readonly(mock_db_session) is mock_db_session
     mock_db_session.commit.assert_not_awaited()
-    mock_db_session.rollback.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# release_request_connection
+# ---------------------------------------------------------------------------
+
+
+def stashed(session):
+    request = plain_request()
+    setattr(request.state, database.REQUEST_SESSION_STATE_KEY, session)
+    return request
+
+
+def fake_async_session(in_transaction: bool, commit_error: Exception | None = None):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    session = MagicMock(spec=AsyncSession)
+    session.in_transaction.return_value = in_transaction
+    session.commit = AsyncMock(side_effect=commit_error)
+    return session
+
+
+@pytest.mark.asyncio
+async def test_release_commits_a_session_left_in_a_transaction():
+    session = fake_async_session(in_transaction=True)
+    await database.release_request_connection(stashed(session))
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_release_leaves_a_session_without_a_transaction_alone():
+    session = fake_async_session(in_transaction=False)
+    await database.release_request_connection(stashed(session))
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_release_without_a_request_session_is_a_no_op():
+    await database.release_request_connection(plain_request())
+    await database.release_request_connection(SimpleNamespace())
+    # A test double that is no AsyncSession is never touched.
+    other = MagicMock()
+    await database.release_request_connection(stashed(other))
+    other.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_release_never_raises(caplog):
+    session = fake_async_session(in_transaction=True, commit_error=OSError("gone"))
+    await database.release_request_connection(stashed(session))
+    assert "Could not release" in caplog.text
 
 
 # ---------------------------------------------------------------------------

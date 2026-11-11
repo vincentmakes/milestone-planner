@@ -5,8 +5,9 @@ Uses async SQLAlchemy for PostgreSQL connections.
 
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -52,6 +53,26 @@ def resolve_tenant_session_factory(request: Request) -> async_sessionmaker[Async
     return session_factory
 
 
+def pool_arguments(settings: Any) -> dict[str, Any]:
+    """
+    The pool arguments shared by the default engine and every tenant engine.
+
+    ``DB_POOL_SIZE`` / ``DB_POOL_MAX_OVERFLOW`` / ``DB_POOL_TIMEOUT`` size the
+    pool; ``pool_pre_ping`` replaces a connection the server or a proxy closed
+    while it sat idle (instead of failing the request that drew it), and
+    ``pool_recycle`` (``DB_POOL_RECYCLE`` seconds) retires connections before
+    such idle timeouts hit them.
+    """
+    return {
+        "pool_size": settings.db_pool_size,
+        "max_overflow": settings.db_pool_max_overflow,
+        "pool_timeout": settings.db_pool_timeout,
+        # SQLAlchemy's "never" is -1 (0 would recycle on every checkout).
+        "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle > 0 else -1,
+        "pool_pre_ping": True,
+    }
+
+
 # Global engine and session factory (initialized on startup)
 _engine: AsyncEngine | None = None
 _async_session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -64,10 +85,7 @@ def get_engine() -> AsyncEngine:
         settings = get_settings()
         _engine = create_async_engine(
             settings.async_database_url,
-            pool_size=settings.db_pool_size,
-            max_overflow=settings.db_pool_max_overflow,
-            pool_timeout=settings.db_pool_timeout,
-            pool_pre_ping=False,  # Disable connection testing for performance
+            **pool_arguments(settings),
             echo=False,  # Disable SQL logging (too verbose)
             connect_args={
                 # Tell asyncpg to not apply timezone conversion
@@ -92,19 +110,32 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _async_session_factory
 
 
+# Where get_db keeps the request's session (request.state), so the derived
+# tiers that open a session of their own can release the request's
+# connection first (release_request_connection).
+REQUEST_SESSION_STATE_KEY = "db_session"
+
+
 async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency that provides a database session.
+    Dependency that provides **the** database session of a request.
 
     In multi-tenant mode with /t/{slug}/ URLs the tenant's own database is
     used; a tenant request without a pool is a 503 (see
     ``resolve_tenant_session_factory``). Requests without tenant context use the
     default database.
 
-    Used with FastAPI's Depends() for request-scoped sessions.
+    FastAPI caches a dependency per request, so the auth dependencies, the
+    handler and ``get_db_readonly`` all share this one session -- one pooled
+    connection per request. A second session opened while this one holds a
+    connection would draw a second connection from the same pool; under load
+    every request then holds one and waits for another, a pool deadlock only
+    ``pool_timeout`` breaks (the 2.5.1 fix). The session is also kept on
+    ``request.state`` for ``release_request_connection``.
     """
     session_factory = resolve_tenant_session_factory(request) or get_session_factory()
     async with session_factory() as session:
+        setattr(request.state, REQUEST_SESSION_STATE_KEY, session)
         try:
             yield session
             await session.commit()
@@ -113,14 +144,43 @@ async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-async def get_db_readonly(request: Request) -> AsyncGenerator[AsyncSession, None]:
+async def get_db_readonly(db: AsyncSession = Depends(get_db)) -> AsyncSession:
     """
-    Read-only database session - doesn't commit or rollback.
-    Use this for GET endpoints that only read data.
+    The request's session, for routes that only read.
+
+    The same session as ``get_db`` (one connection per request, see there);
+    the name marks read-only routes. It used to open a session of its own,
+    which made every authenticated read hold two connections at once. The
+    commit ``get_db`` runs at the end of a read-only transaction costs one
+    round trip and changes nothing.
     """
-    session_factory = resolve_tenant_session_factory(request) or get_session_factory()
-    async with session_factory() as session:
-        yield session
+    return db
+
+
+async def release_request_connection(request: Any) -> None:
+    """
+    Hand the request session's connection back to the pool before opening
+    another session (the derived tiers: ``audit_log.record_detached``,
+    ``change_notifications.deliver``).
+
+    Those run after the route's commit, but a route that re-reads after its
+    commit (``db.refresh``, a reload ``select``) has begun a new transaction
+    that holds a connection again: a second session would need a second
+    connection from the same pool. Committing ends that transaction --
+    ``expire_on_commit=False`` keeps the loaded objects usable, which a
+    rollback would not (it expires them: lazy loads on an ``AsyncSession``
+    raise ``MissingGreenlet``). The route's changes are already committed, so
+    this only commits what it read since; anything it writes later begins a
+    new transaction that ``get_db`` commits as before. Never raises.
+    """
+    state = getattr(request, "state", None)
+    session = getattr(state, REQUEST_SESSION_STATE_KEY, None) if state is not None else None
+    if not isinstance(session, AsyncSession) or not session.in_transaction():
+        return
+    try:
+        await session.commit()
+    except Exception as e:  # the caller's own work must still run
+        logger.warning("Could not release the request's connection: %s", e)
 
 
 async def init_db() -> None:
