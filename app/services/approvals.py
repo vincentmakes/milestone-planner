@@ -59,7 +59,7 @@ pushes ``approval:changed`` to the requester and the eligible approvers
 
 import json
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from types import SimpleNamespace
@@ -2175,31 +2175,48 @@ async def project_approval_index(
     ``{(level, assignment_id): approval}`` for a project's pending requests:
     one query, plus the policies when there is any pending request.
     """
+    return (await project_approval_indexes(db, user, {project_id: pm_id}))[project_id]
+
+
+async def project_approval_indexes(
+    db: AsyncSession, user: Any, pm_ids: Mapping[int, int | None]
+) -> dict[int, dict[tuple[str, int], dict[str, Any]]]:
+    """
+    ``project_approval_index`` for several projects at once (``pm_ids``:
+    ``{project_id: pm_id}``): one query for all of them, plus the policies
+    once when any request is pending. Every given project has an entry.
+    """
+    indexes: dict[int, dict[tuple[str, int], dict[str, Any]]] = {pid: {} for pid in pm_ids}
+    if not pm_ids:
+        return indexes
     requests = list(
         (
             await db.execute(
-                select(ApprovalRequest).where(
-                    ApprovalRequest.project_id == project_id,
+                select(ApprovalRequest)
+                .where(
+                    ApprovalRequest.project_id.in_(list(pm_ids)),
                     ApprovalRequest.status == "pending",
                     ApprovalRequest.assignment_id.is_not(None),
                 )
+                .order_by(ApprovalRequest.id)
             )
         )
         .scalars()
         .all()
     )
     if not requests:
-        return {}
+        return indexes
     policies = await load_policies(db)
-    index: dict[tuple[str, int], dict[str, Any]] = {}
     for request in requests:
-        if request.assignment_id is None:
+        if request.assignment_id is None or request.project_id not in indexes:
             continue
-        decide = can_decide(user, request, policies.get(request.action, Policy()), pm_id)
-        index[(request.level, request.assignment_id)] = assignment_approval(
+        decide = can_decide(
+            user, request, policies.get(request.action, Policy()), pm_ids[request.project_id]
+        )
+        indexes[request.project_id][(request.level, request.assignment_id)] = assignment_approval(
             request, can_decide_flag=decide
         )
-    return index
+    return indexes
 
 
 def pending_change_text(request: ApprovalRequest | None) -> str:

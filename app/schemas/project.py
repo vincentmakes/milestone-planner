@@ -258,6 +258,15 @@ class ProjectDetailResponse(BaseModel):
         from_attributes = True
 
 
+class ProjectDetailsPage(BaseModel):
+    """GET /projects/details: a page of the listing, each item a full project."""
+
+    items: list[ProjectDetailResponse]
+    total: int
+    offset: int
+    limit: int
+
+
 class ProjectCreate(DateRangeOrdered):
     """Request model for creating a project."""
 

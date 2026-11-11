@@ -17,6 +17,25 @@ In single-tenant mode, only the tenant database is used.
 !!! note "Master database name"
     The master database name is whatever `MASTER_DB_NAME` is set to. The application's built-in default is `milestone_master`, but `docker-compose.fresh.yml` and the devcontainer set it to `milestone_admin`. Check your environment's `MASTER_DB_NAME` to know which name your installation uses; the examples in this guide use `milestone_admin`.
 
+## Connection Pools
+
+Each worker process keeps one connection pool per database it serves: the default
+database and, in multi-tenant mode, one per workspace. All of them are sized by
+the same settings (workspace pools follow them since 2.5.1; before, they were fixed at
+20 / 10 / 30):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `DB_POOL_SIZE` | `20` | Connections kept open per pool |
+| `DB_POOL_MAX_OVERFLOW` | `10` | Extra connections a pool may open under load |
+| `DB_POOL_TIMEOUT` | `30` | Seconds a request waits for a connection before it fails |
+| `DB_POOL_RECYCLE` | `1800` | Seconds after which a connection is replaced (`0` = never) |
+
+A request uses one connection at a time. Size `max_connections` in PostgreSQL for
+*workers × pools × (`DB_POOL_SIZE` + `DB_POOL_MAX_OVERFLOW`)* plus the admin tools.
+A `QueuePool limit ... connection timed out` line in the log means a request waited
+the full `DB_POOL_TIMEOUT`: see [Monitoring](monitoring.md#queuepool-limit-connection-timed-out-in-the-log).
+
 ## Schema Management
 
 The canonical schema is defined in `setup_databases.sql`. This file must stay in sync with SQLAlchemy models.

@@ -542,21 +542,32 @@ export async function loadAllProjects(): Promise<Project[]> {
 }
 
 /**
+ * Every project with its full nested data, page by page from
+ * `GET /api/projects/details` (2.5.1): one request per 200 projects, each item
+ * exactly the `GET /api/projects/{id}` body. Before 2.5.1 the app sent the list
+ * and then one request per project, all at once -- with many browsers open
+ * that exhausted the server's connection pool.
+ */
+export async function getProjectDetails(archived: 'all' | 'true' | 'false' = 'false'): Promise<Project[]> {
+  const PAGE_SIZE = 200;
+  const all: Project[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const response = await apiGet<{ items: Project[]; total: number; offset: number; limit: number }>(
+      `/api/projects/details?archived=${archived}&limit=${PAGE_SIZE}&offset=${offset}`
+    );
+    all.push(...response.items);
+    if (response.items.length < PAGE_SIZE || all.length >= response.total) {
+      return all;
+    }
+  }
+}
+
+/**
  * Fetch all projects with full nested data from the server, unconditionally
  * (ignores What-If mode — see loadAllProjects).
  */
 export async function fetchAllProjects(): Promise<Project[]> {
-  const projects = await getProjects('all');
-  
-  if (!projects || projects.length === 0) {
-    return [];
-  }
-  
-  // Load full details for each project in parallel
-  const fullProjects = await Promise.all(
-    projects.map(p => getProject(p.id))
-  );
-  
+  const fullProjects = await getProjectDetails('all');
   // Transform to ensure correct property names
   return fullProjects.map(p => transformProject(p as unknown as Record<string, unknown>));
 }

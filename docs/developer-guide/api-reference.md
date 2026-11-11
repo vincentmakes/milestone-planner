@@ -94,6 +94,7 @@ The per-project levels are checked inside the handler (`app/services/project_acc
 |--------|----------|------|-------------|
 | `GET` | `/t/{slug}/api/projects` | user | List all projects (with phases, subphases, assignments) |
 | `POST` | `/t/{slug}/api/projects` | superuser (`projects.create`) | Create a project at a visible site |
+| `GET` | `/t/{slug}/api/projects/details` | user | A page of projects with their full hierarchy: the parameters, visibility rules and pagination of the list (`archived`, `siteId`, `includeOtherSites`, `offset`, `limit` ≤ 200), each item exactly what `GET /projects/{id}` returns; answers `{items, total, offset, limit}`. Load every project with one request per 200 projects instead of one per project |
 | `GET` | `/t/{slug}/api/projects/{id}` | user | Get project details with full hierarchy |
 | `PUT` | `/t/{slug}/api/projects/{id}` | user (PM) (`projects.edit_any`) | Update a project — every field, including `pm_id` (so a manager can hand the project over; an explicit `null` clears it), `archived` (needs `projects.archive`), `tag_ids`, `team_ids` and `field_values` |
 | `DELETE` | `/t/{slug}/api/projects/{id}` | superuser (`projects.delete`) | Delete a project (not in the PM bundle: a project manager cannot) |

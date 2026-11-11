@@ -269,11 +269,11 @@ async def test_predefined_phase_save_error_body_is_generic(authed_client, mock_d
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dependency", ["get_db", "get_db_readonly"])
-async def test_tenant_request_without_a_pool_is_503(dependency):
+async def test_tenant_request_without_a_pool_is_503():
+    # get_db_readonly is get_db's session (Depends(get_db)): the same 503.
     from app import database
 
-    gen = getattr(database, dependency)(fake_request(slug="acme"))
+    gen = database.get_db(fake_request(slug="acme"))
     with (
         patch(
             "app.services.tenant_manager.tenant_connection_manager.get_session_factory",

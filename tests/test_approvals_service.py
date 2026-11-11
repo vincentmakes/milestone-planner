@@ -991,6 +991,19 @@ async def test_project_approval_index_keys_by_level_and_row():
     )
 
 
+@pytest.mark.asyncio
+async def test_project_approval_indexes_cover_several_projects_in_one_query():
+    pending = approval_request(previous=None)
+    db = ApprovalFakeDB(request=[pending], policy=[])
+
+    indexes = await approvals.project_approval_indexes(db, FakeUser(PM, "user"), {1: PM, 2: None})
+
+    assert set(indexes) == {1, 2}
+    assert indexes[2] == {}
+    assert indexes[1][("phase", 70)]["can_decide"] is True
+    assert await approvals.project_approval_indexes(db, approval_admin(), {}) == {}
+
+
 def test_texts():
     assert approvals.pending_change_text(None) == ""
     assert approvals.pending_change_text(approval_request()) == "awaiting approval"

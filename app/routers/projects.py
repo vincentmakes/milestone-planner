@@ -36,6 +36,7 @@ from app.schemas.project import (
     PhaseUpdate,
     ProjectCreate,
     ProjectDetailResponse,
+    ProjectDetailsPage,
     ProjectUpdate,
     SubphaseCreate,
     SubphaseReorderRequest,
@@ -360,6 +361,331 @@ async def _require_site_exists(db: AsyncSession, site_id: int) -> None:
 # ---------------------------------------------------------
 
 
+async def _project_list_filters(
+    request: Request,
+    db: AsyncSession,
+    user: User,
+    site_id: int | None,
+    include_other_sites: str | None,
+    archived: str | None,
+) -> list[Any]:
+    """
+    The WHERE clauses of a project listing (``GET /projects`` and
+    ``GET /projects/details``), after its permission checks: 403 for
+    ``includeOtherSites=true`` without ``views.crosssite``, ``archived=true``
+    without ``views.archived`` and a ``siteId`` outside the visible sites.
+    """
+    permissions = user.permissions
+    cross_site = include_other_sites == "true"
+    if cross_site and not permissions.has("views.crosssite"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.crosssite"))
+    if archived == "true" and not permissions.has("views.archived"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
+    # 'all' without views.archived quietly leaves the archived projects out.
+    with_archived = archived == "all" and permissions.has("views.archived")
+
+    visible = await visible_site_ids(request, db, user)
+    if site_id and not site_is_visible(visible, site_id):
+        raise HTTPException(status_code=403, detail=SITE_NOT_VISIBLE_DETAIL)
+
+    filters: list[Any] = []
+    if archived == "true":
+        filters.append(Project.archived == 1)
+    elif not with_archived:
+        filters.append(or_(Project.archived == 0, Project.archived.is_(None)))
+    if site_id and not cross_site:
+        filters.append(Project.site_id == int(site_id))
+    else:
+        in_visible = visible_sites_clause(Project.site_id, visible)
+        if in_visible is not None:
+            filters.append(in_visible)
+    return filters
+
+
+def _project_rows_query() -> Any:
+    """``(project, site_name, pm_name)`` rows, tags loaded for the response."""
+    return (
+        select(
+            Project,
+            Site.name.label("site_name"),
+            (User.first_name + " " + User.last_name).label("pm_name"),
+        )
+        .outerjoin(Site, Project.site_id == Site.id)
+        .outerjoin(User, Project.pm_id == User.id)
+        .options(_PROJECT_TAGS_FOR_RESPONSE, *_FIELD_VALUES_NOT_LOADED)
+    )
+
+
+async def _project_page(
+    db: AsyncSession, filters: list[Any], pagination: PaginationParams
+) -> tuple[int, list[Any]]:
+    """``(total, rows)`` of one page of the listing, ordered like the list."""
+    base_filter = select(Project.id).where(*filters)
+    total = (
+        await db.execute(select(func.count()).select_from(base_filter.subquery()))
+    ).scalar() or 0
+    # id breaks start_date ties so the order (and page boundaries) is deterministic.
+    query = (
+        _project_rows_query()
+        .where(*filters)
+        .order_by(Project.start_date, Project.id)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
+    )
+    return total, list((await db.execute(query)).all())
+
+
+def _project_fields(project: Project, site_name: str | None, pm_name: str | None) -> dict:
+    """The project's own fields, as both the list and the detail bodies carry them."""
+    return {
+        "id": project.id,
+        "name": project.name,
+        "site_id": project.site_id,
+        "site_name": site_name,
+        "customer": project.customer,
+        "pm_id": project.pm_id,
+        "pm_name": pm_name,
+        "sales_pm": project.sales_pm,
+        "confirmed": project.confirmed,
+        "volume": project.volume,
+        "start_date": project.start_date,
+        "end_date": project.end_date,
+        "notes": project.notes,
+        "archived": project.archived,
+        "created_at": project.created_at,
+        "updated_at": project.updated_at,
+    }
+
+
+class _StaffAssignmentWithName:
+    """A phase / subphase booking with its person's name and open request."""
+
+    def __init__(self, assignment: Any, staff_name: Any, staff_role: Any, approval: Any):
+        self.id = assignment.id
+        self.phase_id = getattr(assignment, "phase_id", None)
+        self.subphase_id = getattr(assignment, "subphase_id", None)
+        self.project_id = assignment.project_id
+        self.staff_id = assignment.staff_id
+        self.allocation = assignment.allocation
+        # Own dates of an unlinked segment (None = linked, follows the card).
+        self.start_date = assignment.start_date
+        self.end_date = assignment.end_date
+        self.staff_name = staff_name
+        self.staff_role = staff_role
+        # 'pending' = a self-booking awaiting approval; `approval` = the
+        # open request on the row (pending create, change or removal).
+        self.approval_status = assignment.approval_status
+        self.approval = approval
+
+
+def _parse_dependencies(raw: str | None) -> list:
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+
+def _group_by_project(items: Any, project_id_of: Any = None) -> dict[int, list]:
+    """Group rows by project, keeping the query's order within each project."""
+    grouped: dict[int, list] = {}
+    for item in items:
+        pid = project_id_of(item) if project_id_of else item.project_id
+        grouped.setdefault(pid, []).append(item)
+    return grouped
+
+
+async def build_project_details(db: AsyncSession, user: User, rows: list[Any]) -> list[dict]:
+    """
+    The ``GET /projects/{id}`` body of each ``(project, site_name, pm_name)``
+    row, in the rows' order -- the one builder of the single read and of
+    ``GET /projects/details``, so the two cannot drift apart.
+
+    A constant number of queries whatever the number of projects: phases,
+    subphases, phase / subphase / project bookings and equipment bookings
+    with ``project_id IN (...)`` (six), the open approval requests (one, plus
+    the policies when any is pending) and the field values (two). None for
+    no rows.
+    """
+    if not rows:
+        return []
+    ids = [row[0].id for row in rows]
+
+    phases_by_project = _group_by_project(
+        (
+            await db.execute(
+                select(ProjectPhase)
+                .where(ProjectPhase.project_id.in_(ids))
+                .order_by(ProjectPhase.sort_order, ProjectPhase.start_date, ProjectPhase.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    subphases_by_project = _group_by_project(
+        (
+            await db.execute(
+                select(ProjectSubphase)
+                .where(ProjectSubphase.project_id.in_(ids))
+                .order_by(
+                    ProjectSubphase.depth,
+                    ProjectSubphase.sort_order,
+                    ProjectSubphase.start_date,
+                    ProjectSubphase.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    staff_name = (User.first_name + " " + User.last_name).label("staff_name")
+    staff_role = User.job_title.label("staff_role")
+    phase_staff_rows = _group_by_project(
+        (
+            await db.execute(
+                select(PhaseStaffAssignment, staff_name, staff_role)
+                .join(User, PhaseStaffAssignment.staff_id == User.id)
+                .where(PhaseStaffAssignment.project_id.in_(ids))
+                .order_by(PhaseStaffAssignment.id)
+            )
+        ).all(),
+        lambda r: r[0].project_id,
+    )
+    subphase_staff_rows = _group_by_project(
+        (
+            await db.execute(
+                select(SubphaseStaffAssignment, staff_name, staff_role)
+                .join(User, SubphaseStaffAssignment.staff_id == User.id)
+                .where(SubphaseStaffAssignment.project_id.in_(ids))
+                .order_by(SubphaseStaffAssignment.id)
+            )
+        ).all(),
+        lambda r: r[0].project_id,
+    )
+    project_staff_rows = _group_by_project(
+        (
+            await db.execute(
+                select(ProjectAssignment, staff_name, staff_role)
+                .join(User, ProjectAssignment.staff_id == User.id)
+                .where(ProjectAssignment.project_id.in_(ids))
+                .order_by(ProjectAssignment.id)  # stable - dragging must not reorder rows
+            )
+        ).all(),
+        lambda r: r[0].project_id,
+    )
+    equipment_rows = _group_by_project(
+        (
+            await db.execute(
+                select(
+                    EquipmentAssignment,
+                    Equipment.name.label("equipment_name"),
+                    Equipment.type.label("equipment_type"),
+                )
+                .join(Equipment, EquipmentAssignment.equipment_id == Equipment.id)
+                .where(EquipmentAssignment.project_id.in_(ids))
+                .order_by(EquipmentAssignment.id)  # stable - dragging must not reorder rows
+            )
+        ).all(),
+        lambda r: r[0].project_id,
+    )
+    # Open approval requests, keyed (level, assignment id), per project.
+    approval_indexes = await approvals.project_approval_indexes(
+        db, user, {row[0].id: row[0].pm_id for row in rows}
+    )
+    field_values = await load_project_field_values(db, ids)
+
+    bodies = []
+    for project, site_name, pm_name in rows:
+        approval_index = approval_indexes[project.id]
+        phase_staff = [
+            _StaffAssignmentWithName(r[0], r[1], r[2], approval_index.get(("phase", r[0].id)))
+            for r in phase_staff_rows.get(project.id, [])
+        ]
+        subphase_staff = [
+            _StaffAssignmentWithName(r[0], r[1], r[2], approval_index.get(("subphase", r[0].id)))
+            for r in subphase_staff_rows.get(project.id, [])
+        ]
+        subphases_raw = subphases_by_project.get(project.id, [])
+        phases = []
+        for p in phases_by_project.get(project.id, []):
+            staff = [
+                {
+                    "id": psa.id,
+                    "phase_id": psa.phase_id,
+                    "project_id": psa.project_id,
+                    "staff_id": psa.staff_id,
+                    "allocation": psa.allocation,
+                    **_segment_fields(psa, p.start_date, p.end_date),
+                    "staff_name": psa.staff_name,
+                    "staff_role": psa.staff_role,
+                    "approval_status": psa.approval_status,
+                    "approval": psa.approval,
+                }
+                for psa in phase_staff
+                if psa.phase_id == p.id
+            ]
+            phases.append(
+                {
+                    "id": p.id,
+                    "project_id": p.project_id,
+                    "type": p.type,
+                    "start_date": p.start_date,
+                    "end_date": p.end_date,
+                    "is_milestone": p.is_milestone == 1,
+                    "sort_order": p.sort_order,
+                    "completion": p.completion,
+                    "status": p.status,
+                    "dependencies": _parse_dependencies(p.dependencies),
+                    "created_at": p.created_at,
+                    "staffAssignments": staff,
+                    "children": build_subphase_tree(subphases_raw, subphase_staff, p.id, "phase"),
+                }
+            )
+        staff_assignments = [
+            {
+                "id": r[0].id,
+                "project_id": r[0].project_id,
+                "staff_id": r[0].staff_id,
+                "allocation": r[0].allocation,
+                "start_date": r[0].start_date,
+                "end_date": r[0].end_date,
+                "linked": False,
+                "staff_name": r[1],
+                "staff_role": r[2],
+                "approval_status": r[0].approval_status,
+                "approval": approval_index.get(("project", r[0].id)),
+            }
+            for r in project_staff_rows.get(project.id, [])
+        ]
+        equipment_assignments = [
+            {
+                "created_at": r[0].created_at,
+                "end_date": r[0].end_date,
+                "equipment_id": r[0].equipment_id,
+                "equipment_name": r[1],
+                "equipment_type": r[2],
+                "id": r[0].id,
+                "note": r[0].note,
+                "project_id": r[0].project_id,
+                "start_date": r[0].start_date,
+            }
+            for r in equipment_rows.get(project.id, [])
+        ]
+        bodies.append(
+            {
+                **_project_fields(project, site_name, pm_name),
+                "phases": phases,
+                "staffAssignments": staff_assignments,
+                "equipmentAssignments": equipment_assignments,
+                "tags": [_tag_dict(t) for t in project.tags],
+                "team_ids": project.team_ids,
+                "field_values": field_values[project.id],
+            }
+        )
+    return bodies
+
+
 @router.get("/projects")
 async def get_projects(
     request: Request,
@@ -386,95 +712,56 @@ async def get_projects(
 
     Matches: GET /api/projects
     """
-    permissions = user.permissions
-    cross_site = includeOtherSites == "true"
-    if cross_site and not permissions.has("views.crosssite"):
-        raise HTTPException(status_code=403, detail=permission_required_detail("views.crosssite"))
-    if archived == "true" and not permissions.has("views.archived"):
-        raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
-    # 'all' without views.archived quietly leaves the archived projects out.
-    with_archived = archived == "all" and permissions.has("views.archived")
-
-    visible = await visible_site_ids(request, db, user)
-    if siteId and not site_is_visible(visible, siteId):
-        raise HTTPException(status_code=403, detail=SITE_NOT_VISIBLE_DETAIL)
-
-    filters = []
-    if archived == "true":
-        filters.append(Project.archived == 1)
-    elif not with_archived:
-        filters.append(or_(Project.archived == 0, Project.archived.is_(None)))
-    if siteId and not cross_site:
-        filters.append(Project.site_id == int(siteId))
-    else:
-        in_visible = visible_sites_clause(Project.site_id, visible)
-        if in_visible is not None:
-            filters.append(in_visible)
-
-    base_filter = select(Project.id).where(*filters)
-
-    # Get total count
-    count_result = await db.execute(select(func.count()).select_from(base_filter.subquery()))
-    total = count_result.scalar() or 0
-
-    # Build paginated query with joins
-    query = (
-        select(
-            Project,
-            Site.name.label("site_name"),
-            (User.first_name + " " + User.last_name).label("pm_name"),
-        )
-        .outerjoin(Site, Project.site_id == Site.id)
-        .outerjoin(User, Project.pm_id == User.id)
-        .options(_PROJECT_TAGS_FOR_RESPONSE, *_FIELD_VALUES_NOT_LOADED)
-    )
-
-    query = query.where(*filters)
-
-    # id breaks start_date ties so the order (and page boundaries) is deterministic.
-    query = (
-        query.order_by(Project.start_date, Project.id)
-        .offset(pagination.offset)
-        .limit(pagination.limit)
-    )
-
-    result = await db.execute(query)
-    rows = result.all()
+    filters = await _project_list_filters(request, db, user, siteId, includeOtherSites, archived)
+    total, rows = await _project_page(db, filters, pagination)
 
     # Field values of the shown projects: two queries for the whole page.
     field_values = await load_project_field_values(db, [row[0].id for row in rows])
 
-    projects = []
-    for row in rows:
-        project = row[0]
-        site_name = row[1]
-        pm_name = row[2]
-        projects.append(
-            {
-                "id": project.id,
-                "name": project.name,
-                "site_id": project.site_id,
-                "site_name": site_name,
-                "customer": project.customer,
-                "pm_id": project.pm_id,
-                "pm_name": pm_name,
-                "sales_pm": project.sales_pm,
-                "confirmed": project.confirmed,
-                "volume": project.volume,
-                "start_date": project.start_date,
-                "end_date": project.end_date,
-                "notes": project.notes,
-                "archived": project.archived,
-                "created_at": project.created_at,
-                "updated_at": project.updated_at,
-                "tags": [_tag_dict(t) for t in project.tags],
-                "team_ids": project.team_ids,
-                "field_values": field_values[project.id],
-            }
-        )
+    projects = [
+        {
+            **_project_fields(project, site_name, pm_name),
+            "tags": [_tag_dict(t) for t in project.tags],
+            "team_ids": project.team_ids,
+            "field_values": field_values[project.id],
+        }
+        for project, site_name, pm_name in rows
+    ]
 
     return {
         "items": projects,
+        "total": total,
+        "offset": pagination.offset,
+        "limit": pagination.limit,
+    }
+
+
+# Declared before /projects/{project_id}: "details" is no project id.
+@router.get("/projects/details", response_model=ProjectDetailsPage)
+async def get_project_details(
+    request: Request,
+    siteId: int | None = Query(None),
+    includeOtherSites: str | None = Query(None),
+    archived: str | None = Query(None),
+    pagination: PaginationParams = Depends(),
+    db: AsyncSession = Depends(get_db_readonly),
+    user: User = Depends(get_current_user),
+):
+    """
+    A page of the project listing with every project's full body: the
+    projects ``GET /projects`` lists for the same parameters (same visible
+    sites, same ``archived`` / ``siteId`` / ``includeOtherSites`` rules and
+    403s, same order and pagination, max 200 per page), each exactly as
+    ``GET /projects/{id}`` returns it (``build_project_details``). A constant
+    number of queries per page: the frontend loads every project with one
+    request per page instead of one per project.
+
+    Matches: GET /api/projects/details
+    """
+    filters = await _project_list_filters(request, db, user, siteId, includeOtherSites, archived)
+    total, rows = await _project_page(db, filters, pagination)
+    return {
+        "items": await build_project_details(db, user, rows),
         "total": total,
         "offset": pagination.offset,
         "limit": pagination.limit,
@@ -496,290 +783,17 @@ async def get_project(
 
     Matches: GET /api/projects/:id
     """
-    import time
-
-    t0 = time.perf_counter()
-
-    # Run all queries concurrently using asyncio.gather
-    # This should be faster than running them sequentially
-
-    async def query_project():
-        return await db.execute(
-            select(
-                Project,
-                Site.name.label("site_name"),
-                (User.first_name + " " + User.last_name).label("pm_name"),
-            )
-            .outerjoin(Site, Project.site_id == Site.id)
-            .outerjoin(User, Project.pm_id == User.id)
-            .options(_PROJECT_TAGS_FOR_RESPONSE, *_FIELD_VALUES_NOT_LOADED)
-            .where(Project.id == project_id)
-        )
-
-    async def query_phases():
-        return await db.execute(
-            select(ProjectPhase)
-            .where(ProjectPhase.project_id == project_id)
-            .order_by(ProjectPhase.sort_order, ProjectPhase.start_date)
-        )
-
-    async def query_subphases():
-        return await db.execute(
-            select(ProjectSubphase)
-            .where(ProjectSubphase.project_id == project_id)
-            .order_by(ProjectSubphase.depth, ProjectSubphase.sort_order, ProjectSubphase.start_date)
-        )
-
-    async def query_phase_staff():
-        return await db.execute(
-            select(
-                PhaseStaffAssignment,
-                (User.first_name + " " + User.last_name).label("staff_name"),
-                User.job_title.label("staff_role"),
-            )
-            .join(User, PhaseStaffAssignment.staff_id == User.id)
-            .where(PhaseStaffAssignment.project_id == project_id)
-        )
-
-    async def query_subphase_staff():
-        return await db.execute(
-            select(
-                SubphaseStaffAssignment,
-                (User.first_name + " " + User.last_name).label("staff_name"),
-                User.job_title.label("staff_role"),
-            )
-            .join(User, SubphaseStaffAssignment.staff_id == User.id)
-            .where(SubphaseStaffAssignment.project_id == project_id)
-        )
-
-    async def query_project_staff():
-        return await db.execute(
-            select(
-                ProjectAssignment,
-                (User.first_name + " " + User.last_name).label("staff_name"),
-                User.job_title.label("staff_role"),
-            )
-            .join(User, ProjectAssignment.staff_id == User.id)
-            .where(ProjectAssignment.project_id == project_id)
-            .order_by(ProjectAssignment.id)  # stable - dragging an item must not reorder rows
-        )
-
-    async def query_equipment():
-        return await db.execute(
-            select(
-                EquipmentAssignment,
-                Equipment.name.label("equipment_name"),
-                Equipment.type.label("equipment_type"),
-            )
-            .join(Equipment, EquipmentAssignment.equipment_id == Equipment.id)
-            .where(EquipmentAssignment.project_id == project_id)
-            .order_by(EquipmentAssignment.id)  # stable - dragging an item must not reorder rows
-        )
-
-    # Execute all queries - note: SQLAlchemy async sessions are NOT thread-safe
-    # and queries on the same session must run sequentially
-    # So we run them one by one but track timing
-    result = await query_project()
-    t1 = time.perf_counter()
-
-    row = result.first()
+    row = (await db.execute(_project_rows_query().where(Project.id == project_id))).first()
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
-
     project = row[0]
-    site_name = row[1]
-    pm_name = row[2]
 
     if not site_is_visible(await visible_site_ids(request, db, user), project.site_id):
         raise HTTPException(status_code=403, detail=PROJECT_NOT_VISIBLE_DETAIL)
     if project.archived and not user.permissions.has("views.archived"):
         raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
 
-    phases_result = await query_phases()
-    t2 = time.perf_counter()
-    phases_raw = phases_result.scalars().all()
-
-    subphases_result = await query_subphases()
-    t3 = time.perf_counter()
-    subphases_raw = subphases_result.scalars().all()
-
-    phase_staff_result = await query_phase_staff()
-    t4 = time.perf_counter()
-    phase_staff_rows = phase_staff_result.all()
-
-    subphase_staff_result = await query_subphase_staff()
-    t5 = time.perf_counter()
-    subphase_staff_rows = subphase_staff_result.all()
-
-    project_staff_result = await query_project_staff()
-    t6 = time.perf_counter()
-    project_staff_rows = project_staff_result.all()
-
-    equipment_result = await query_equipment()
-    t7 = time.perf_counter()
-    equipment_rows = equipment_result.all()
-
-    # Log all query times
-    logger.debug(
-        "PROJECT %s: q1=%dms q2=%dms q3=%dms q4=%dms q5=%dms q6=%dms q7=%dms TOTAL=%dms",
-        project_id,
-        int((t1 - t0) * 1000),
-        int((t2 - t1) * 1000),
-        int((t3 - t2) * 1000),
-        int((t4 - t3) * 1000),
-        int((t5 - t4) * 1000),
-        int((t6 - t5) * 1000),
-        int((t7 - t6) * 1000),
-        int((t7 - t0) * 1000),
-    )
-
-    # Open approval requests, keyed (level, assignment id): one more query
-    # (plus the policies when any is pending).
-    approval_index = await approvals.project_approval_index(
-        db, user, project_id=project_id, pm_id=project.pm_id
-    )
-    # Its project-field values: two more queries.
-    field_values = (await load_project_field_values(db, [project_id]))[project_id]
-
-    # Convert to list with attributes
-    class StaffAssignmentWithName:
-        def __init__(self, assignment, staff_name, staff_role, level):
-            self.id = assignment.id
-            self.phase_id = getattr(assignment, "phase_id", None)
-            self.subphase_id = getattr(assignment, "subphase_id", None)
-            self.project_id = assignment.project_id
-            self.staff_id = assignment.staff_id
-            self.allocation = assignment.allocation
-            # Own dates of an unlinked segment (None = linked, follows the card).
-            self.start_date = assignment.start_date
-            self.end_date = assignment.end_date
-            self.staff_name = staff_name
-            self.staff_role = staff_role
-            # 'pending' = a self-booking awaiting approval; `approval` = the
-            # open request on the row (pending create, change or removal).
-            self.approval_status = assignment.approval_status
-            self.approval = approval_index.get((level, assignment.id))
-
-    phase_staff = [StaffAssignmentWithName(r[0], r[1], r[2], "phase") for r in phase_staff_rows]
-    subphase_staff = [
-        StaffAssignmentWithName(r[0], r[1], r[2], "subphase") for r in subphase_staff_rows
-    ]
-
-    # Build phases with nested data
-    phases = []
-    for p in phases_raw:
-        # Get staff assignments for this phase
-        staff = [
-            {
-                "id": psa.id,
-                "phase_id": psa.phase_id,
-                "project_id": psa.project_id,
-                "staff_id": psa.staff_id,
-                "allocation": psa.allocation,
-                **_segment_fields(psa, p.start_date, p.end_date),
-                "staff_name": psa.staff_name,
-                "staff_role": psa.staff_role,
-                "approval_status": psa.approval_status,
-                "approval": psa.approval,
-            }
-            for psa in phase_staff
-            if psa.phase_id == p.id
-        ]
-
-        # Parse dependencies
-        deps = []
-        if p.dependencies:
-            try:
-                deps = json.loads(p.dependencies)
-            except json.JSONDecodeError:
-                deps = []
-
-        phases.append(
-            {
-                "id": p.id,
-                "project_id": p.project_id,
-                "type": p.type,
-                "start_date": p.start_date,
-                "end_date": p.end_date,
-                "is_milestone": p.is_milestone == 1,
-                "sort_order": p.sort_order,
-                "completion": p.completion,
-                "status": p.status,
-                "dependencies": deps,
-                "created_at": p.created_at,
-                "staffAssignments": staff,
-                "children": build_subphase_tree(subphases_raw, subphase_staff, p.id, "phase"),
-            }
-        )
-
-    # Build project staff assignments from already-fetched data
-    staff_assignments = [
-        {
-            "id": r[0].id,
-            "project_id": r[0].project_id,
-            "staff_id": r[0].staff_id,
-            "allocation": r[0].allocation,
-            "start_date": r[0].start_date,
-            "end_date": r[0].end_date,
-            "linked": False,
-            "staff_name": r[1],
-            "staff_role": r[2],
-            "approval_status": r[0].approval_status,
-            "approval": approval_index.get(("project", r[0].id)),
-        }
-        for r in project_staff_rows
-    ]
-
-    # Build equipment assignments from already-fetched data
-    equipment_assignments = [
-        {
-            "created_at": r[0].created_at,
-            "end_date": r[0].end_date,
-            "equipment_id": r[0].equipment_id,
-            "equipment_name": r[1],
-            "equipment_type": r[2],
-            "id": r[0].id,
-            "note": r[0].note,
-            "project_id": r[0].project_id,
-            "start_date": r[0].start_date,
-        }
-        for r in equipment_rows
-    ]
-    t8 = time.perf_counter()
-
-    logger.debug(
-        "PROJECT %s TIMING: q6=%dms q7=%dms proc=%dms TOTAL=%dms",
-        project_id,
-        int((t6 - t5) * 1000),
-        int((t7 - t6) * 1000),
-        int((t8 - t7) * 1000),
-        int((t8 - t0) * 1000),
-    )
-
-    return {
-        "id": project.id,
-        "name": project.name,
-        "site_id": project.site_id,
-        "site_name": site_name,
-        "customer": project.customer,
-        "pm_id": project.pm_id,
-        "pm_name": pm_name,
-        "sales_pm": project.sales_pm,
-        "confirmed": project.confirmed,
-        "volume": project.volume,
-        "start_date": project.start_date,
-        "end_date": project.end_date,
-        "notes": project.notes,
-        "archived": project.archived,
-        "created_at": project.created_at,
-        "updated_at": project.updated_at,
-        "phases": phases,
-        "staffAssignments": staff_assignments,
-        "equipmentAssignments": equipment_assignments,
-        "tags": [_tag_dict(t) for t in project.tags],
-        "team_ids": project.team_ids,
-        "field_values": field_values,
-    }
+    return (await build_project_details(db, user, [row]))[0]
 
 
 @router.post("/projects")

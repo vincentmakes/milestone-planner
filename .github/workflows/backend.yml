@@ -45,6 +45,8 @@ jobs:
     # consumers below compare against 'true' for the same reason.
     outputs:
       backend: ${{ steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
+      # The load test also runs when only its scripts changed.
+      loadtest: ${{ steps.filter.outputs.backend == 'true' || steps.filter.outputs.loadtest == 'true' || steps.filter.outputs.ci == 'true' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -78,6 +80,8 @@ jobs:
               - 'migrations/**'
               - 'shared/**'
               - 'VERSION'
+            loadtest:
+              - 'scripts/loadtest/**'
             ci:
               - '.github/workflows/backend.yml'
 
@@ -401,3 +405,65 @@ jobs:
 
       - name: Run mypy
         run: mypy app/
+
+  # Catches the class of bug fixed in 2.5.1 before a release: a request that
+  # needs two pooled connections at once (a pool deadlock under load, broken
+  # only by the 30 s pool timeout as 500s), and loading that multiplies
+  # requests per item. Real PostgreSQL, a real uvicorn, real HTTP:
+  # scripts/loadtest/ci.sh runs the pool-of-one journey (one connection, so
+  # any second connection fails deterministically), the pilot workspace with
+  # 28 browsers and the stress workspace with 10 x 6 + 1 unlimited, and fails
+  # on any non-2xx, a request over its ceiling, or a pool timeout / lost
+  # derived write in a server log. The ceilings are generous on purpose (the
+  # point is zero 5xx and no 30 s stalls on a shared runner, not a latency
+  # budget). How to run it locally: scripts/loadtest/README.md.
+  loadtest:
+    name: Load test
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.loadtest == 'true'
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      PG_ADMIN_USER: postgres
+      PG_ADMIN_PASSWORD: postgres
+      # Throwaway values for a database that lives as long as the job.
+      SESSION_SECRET: loadtest-session-secret-0123456789abcdef0123456789abcdef
+      INIT_ADMIN_EMAIL: admin@milestone.local
+      INIT_ADMIN_PASSWORD: loadtest-admin-1234
+      LOADTEST_LOG_DIR: loadtest-logs
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pool-of-one journey, pilot and stress scenarios
+        run: bash scripts/loadtest/ci.sh
+
+      - name: Upload the server logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: loadtest-logs
+          path: loadtest-logs/

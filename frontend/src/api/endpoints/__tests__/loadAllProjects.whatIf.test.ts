@@ -33,8 +33,10 @@ describe('loadAllProjects What-If guard', () => {
     configureApiClient({ isWhatIfMode: () => whatIf });
     useAppStore.getState().setProjects([SANDBOX]);
     fetchMock.mockReset().mockImplementation(async (url: string) => {
-      if (url.includes('/api/projects?archived=all')) return jsonResponse({ items: [{ id: 2 }], total: 1, offset: 0, limit: 200 });
-      return jsonResponse({ id: 2, name: 'Server', site_id: 1, phases: [] });
+      if (url.includes('/api/projects/details?archived=all')) {
+        return jsonResponse({ items: [{ id: 2, name: 'Server', site_id: 1, phases: [] }], total: 1, offset: 0, limit: 200 });
+      }
+      throw new Error(`unexpected request ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(console, 'warn').mockImplementation(() => {});

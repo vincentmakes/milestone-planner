@@ -91,6 +91,37 @@ docker exec milestone env | grep DB
 psql -U milestone -h localhost -d milestone -c "SELECT 1;"
 ```
 
+### "QueuePool limit ... connection timed out" in the log
+
+```
+sqlalchemy.exc.TimeoutError: QueuePool limit of size 20 overflow 10 reached,
+connection timed out, timeout 30.00
+```
+
+A request waited `DB_POOL_TIMEOUT` seconds for a database connection and failed
+(users see *Internal server error*, projects missing on first load, saves that take
+about 30 seconds). Each worker process keeps a pool of `DB_POOL_SIZE` connections
+plus up to `DB_POOL_MAX_OVERFLOW` extra ones, per database: the default one and, in
+multi-tenant mode, each workspace's (the same settings apply to every workspace pool
+since 2.5.1).
+
+- **Before 2.5.1** this came from a defect, not from the pool size: every signed-in
+  read held two connections at once, and the app loaded each project with a request
+  of its own, so a few browsers reloading together deadlocked the pool. Upgrade to
+  2.5.1 or later (one connection per request, all projects in one request) — raising
+  the pool size only moves the threshold.
+- **From 2.5.1 on** it means more simultaneous work than the pool holds. Raise
+  `DB_POOL_SIZE` / `DB_POOL_MAX_OVERFLOW` (each worker × each pool counts against
+  PostgreSQL's `max_connections`), or add workers / CPU when the requests themselves
+  are slow. `DB_POOL_TIMEOUT` only sets how long a request waits before failing.
+- *"Audit row ... could not be written"* or *"Change notifications failed"* next to it
+  means the change was saved but its audit row or notification was lost.
+
+`DB_POOL_RECYCLE` (default `1800` seconds) replaces connections before a firewall or
+proxy drops them while idle; every pool also tests a connection before handing it
+out, so a connection closed on the server side no longer fails the request that
+drew it.
+
 ### Tenant not accessible
 
 1. Verify the tenant exists and is active in the admin portal (status changes apply at

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     db_pool_size: int = 20
     db_pool_max_overflow: int = 10
     db_pool_timeout: int = 30
+    # Seconds after which a pooled connection is replaced (0 or less: never).
+    db_pool_recycle: int = 1800
 
     # Session & Security
     session_secret: str = DEFAULT_SESSION_SECRET

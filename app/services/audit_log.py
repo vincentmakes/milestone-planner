@@ -569,10 +569,21 @@ async def record_detached(
     the ``change_notifications.deliver`` precedent). **Never raises**: a
     tenant without a pool (the 503), a refused connection or a rejected row
     is logged at warning level and dropped -- a failed audit row never fails
-    the change it describes, which is already committed.
+    the change it describes, which is already committed. The request's own
+    session is committed first if a post-commit read left it in a
+    transaction (``release_request_connection``), so the request never holds
+    two pooled connections at once.
     """
-    from app.database import get_session_factory, resolve_tenant_session_factory
+    from app.database import (
+        get_session_factory,
+        release_request_connection,
+        resolve_tenant_session_factory,
+    )
 
+    # A route that re-read after its commit holds a connection again: hand it
+    # back before drawing a second one from the same pool.
+    if request is not None:
+        await release_request_connection(request)
     try:
         factory = (
             resolve_tenant_session_factory(request) if request is not None else None

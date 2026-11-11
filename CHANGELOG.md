@@ -5,6 +5,16 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.1] - 2026-11-11
+
+### Fixed
+- Projects appear on the first load again when many people are signed in: the server no longer runs out of database connections and answers "Internal server error" after a long wait.
+- Saving no longer takes about 30 seconds or fails with "Internal server error" while other people load or refresh their workspace.
+- Staff, equipment and the other lists no longer fail at startup when many browsers load at once.
+- The app loads every project in one request instead of one request per project, so the first load and the live refresh after a change are much faster in every open browser.
+- A change's history entry and its notification are no longer lost when the server is busy.
+- In multi-tenant mode each workspace's database now follows the connection-pool settings (`DB_POOL_SIZE`, `DB_POOL_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`, new `DB_POOL_RECYCLE`), and a connection closed by the database server or a firewall no longer fails the request that uses it.
+
 ## [2.5.0] - 2026-11-06
 
 ### Added
