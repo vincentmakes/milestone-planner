@@ -77,6 +77,9 @@ FIT_MARGIN = 28.0
 FIT_STEP = 12.0
 # A group kept with its screenshot (a heading, an introduction) is at most this tall, pt.
 MAX_GROUP_ABOVE = 150.0
+# Two lines further apart than this belong to different blocks (paragraph or
+# list-item spacing; lines of one paragraph are about 16 pt apart), pt.
+BLOCK_GAP = 18.5
 # CSS pixels per point.
 PX_PER_PT = 96 / 72
 
@@ -327,6 +330,52 @@ SET_BREAKS = """
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, h5, h6')]
     .filter((h) => h.getClientRects().length > 0);
   for (const index of indices) headings[index]?.classList.add('milestone-break-before');
+}
+"""
+
+# A screenshot that cannot be shrunk enough to stay with its heading goes
+# after the text that follows it in its section, as a typesetter places a
+# figure: the text flows up to fill the page, the picture opens the next one.
+# `[index, texts]`: the image (as in COUNT_IMAGES) and the last lines of the
+# blocks it may follow, best first. Only a block that ends with one of those
+# lines, comes later in the same container, before the next heading or
+# picture, and does not itself introduce what follows (a trailing colon).
+MOVE_FIGURE = """
+([index, texts]) => {
+  const norm = (t) => (t || '').normalize('NFKC').toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, '');
+  const images = [...document.querySelectorAll('#print-site-page img, #print-site-cover-page img')]
+    .filter((img) => img.getClientRects().length > 0 && !/\\.svg(\\?|#|$)/i.test(img.currentSrc || img.src));
+  const img = images[index];
+  if (!img) return false;
+  const figure = img.closest('figure') || img.closest('p') || img;
+  const after = [];
+  for (let next = figure.nextElementSibling; next; next = next.nextElementSibling) {
+    if (/^H[1-6]$/.test(next.tagName) || next.querySelector('img') || next.tagName === 'IMG') break;
+    after.push(next);
+  }
+  for (const text of texts) {
+    const wanted = norm(text);
+    if (wanted.length < 4) continue;
+    const block = after.find((b) => norm(b.textContent).endsWith(wanted));
+    if (!block || /:\\s*$/.test(block.textContent)) continue;
+    block.after(figure);
+    figure.classList.add('milestone-moved-figure');
+    return true;
+  }
+  return false;
+}
+"""
+
+# A perturbed rendering for the robustness family: the root font size scaled
+# (every rem-sized text with it) and letter spacing added to the manual's text.
+PERTURB = """
+([scale, spacing]) => {
+  const root = document.documentElement;
+  const size = parseFloat(getComputedStyle(root).fontSize);
+  const style = document.createElement('style');
+  style.textContent = `html { font-size: ${size * scale}px !important; }`
+    + (spacing ? ` #print-site-page { letter-spacing: ${spacing}em; }` : '');
+  document.head.appendChild(style);
 }
 """
 
@@ -646,10 +695,20 @@ def mid_chapter_gaps(headings: list[Heading], pages: list[Page], area: Area) -> 
                     (b for b in body(nxt, area) if b.kind == "line"), key=lambda b: b.top
                 )
                 moved = f'"{lines[0].text[:50]}"' if lines else "an image"
+        remedy = (
+            "mark a block {.print-keep-with-next} or {.print-page-break} so that the page "
+            "ends at a better place"
+        )
+        images = [b for b in body(nxt, area) if b.kind == "image"] if nxt else []
+        if images and images[0].top - area.top <= MAX_GROUP_ABOVE:
+            remedy = (
+                "its screenshot is too tall to come back even at the smallest legible size, "
+                "and no text follows it in its section to fill the page: crop the screenshot, "
+                "or move a paragraph of the section after it"
+            )
         out.append(
             f"page {number}: ends more than a third early inside its chapter; {moved} moved to "
-            f"page {number + 1} (shrink its screenshot, or mark a block {{.print-keep-with-next}} "
-            "or {.print-page-break})"
+            f"page {number + 1} ({remedy})"
         )
     return out
 
@@ -869,6 +928,70 @@ def image_fits(
     return out
 
 
+def figure_moves(
+    pages: list[Page],
+    area: Area,
+    skip: set[int],
+    natural: dict[int, float],
+    max_shrink: float = MAX_SHRINK,
+) -> list[tuple[int, list[str]]]:
+    """
+    Screenshots to place after the text that follows them, for the pages
+    ``image_fits`` cannot mend: the page ends more than a third early, the
+    next one opens with a group and its picture (a heading, an introduction,
+    the screenshot) that would need shrinking by more than ``max_shrink`` of
+    its natural height to come back. The text after the picture, in its
+    section (up to the next heading or picture), flows up instead, as far as
+    the blank allows, so that the page ends at least two thirds full; the
+    picture then opens the next page. Returns (image index, the last lines of
+    the blocks it may follow, best first); none when even that leaves the
+    page more than a third empty.
+    """
+    order = image_order(pages)
+    index_of = {(number, id(box)): i for i, (number, box) in enumerate(order)}
+    by_number = {page.number: page for page in pages}
+    out: list[tuple[int, list[str]]] = []
+    for number in early_pages(pages, area):
+        nxt = by_number.get(number + 1)
+        if number in skip or nxt is None:
+            continue
+        content = body(by_number[number], area)
+        end = max(b.bottom for b in content)
+        blank = area.bottom - end - 8
+        following = sorted(body(nxt, area), key=lambda b: b.top)
+        images = [b for b in following if b.kind == "image"]
+        if not images or images[0].top - area.top > MAX_GROUP_ABOVE:
+            continue
+        image = images[0]
+        index = index_of[(number + 1, id(image))]
+        group = image.bottom - area.top
+        height = image.bottom - image.top
+        floor = natural.get(index, height) * (1 - max_shrink)
+        if group - blank + FIT_MARGIN <= height - floor:
+            continue  # shrinking is enough: image_fits does it
+        # The text after the picture, up to the next picture.
+        later_images = [b.top for b in images[1:]]
+        stop = min(later_images, default=area.bottom)
+        lines = [b for b in following if b.kind == "line" and image.bottom < b.top < stop]
+        if not lines:
+            continue
+        above = image.top - area.top  # the heading and the introduction
+        first = lines[0].top
+        wanted = area.top + area.height * (1 - EARLY_END_SHARE)
+        candidates = []
+        for i, line in enumerate(lines):
+            last = i == len(lines) - 1
+            ends_block = last or lines[i + 1].top - line.top > BLOCK_GAP
+            if not ends_block:
+                continue
+            filled = end + FIT_MARGIN + above + (line.bottom - first) + FIT_MARGIN
+            if filled <= area.bottom - 8 and filled >= wanted:
+                candidates.append(line)
+        if candidates:
+            out.append((index, [line.text for line in reversed(candidates)]))
+    return out
+
+
 def link_mismatches(
     labels: list[str], written: list[int | None], targets: list[int | None]
 ) -> list[str]:
@@ -955,6 +1078,34 @@ def body_text_size(path: Path, sample: range = range(3, 30)) -> float | None:
     return sizes.most_common(1)[0][0] if sizes else None
 
 
+def snapped_share(steps: list[float], step: float = 0.75) -> float:
+    """
+    The share of glyph-to-glyph steps that are whole CSS pixels (0.75 pt):
+    near 1 when Chromium hinted the glyphs, a few percent when it did not.
+    """
+    if not steps:
+        return 0.0
+    on_grid = sum(1 for x in steps if abs(x / step - round(x / step)) < 0.02)
+    return on_grid / len(steps)
+
+
+def glyph_steps(path: Path, sample: range = range(3, 8)) -> list[float]:
+    """The distances between neighbouring glyphs of a line on a sample of pages, pt."""
+    import pdfplumber
+
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)
+    steps: list[float] = []
+    with pdfplumber.open(path) as pdf:
+        for index in sample:
+            if index >= len(pdf.pages):
+                continue
+            chars = [c for c in pdf.pages[index].chars if c["text"].strip()]
+            for a, b in zip(chars, chars[1:], strict=False):
+                if abs(a["top"] - b["top"]) < 1 and 0 < b["x0"] - a["x0"] < 15:
+                    steps.append(b["x0"] - a["x0"])
+    return steps
+
+
 def destinations(path: Path) -> dict[str, int]:
     """The named destinations of the PDF (Chromium names each linked id): id -> page."""
     import pdfplumber
@@ -1025,6 +1176,9 @@ def export(
     min_bytes: int,
     min_pages: int,
     block_web_fonts: bool = False,
+    font_hinting: str = "none",
+    text_scale: float = 1.0,
+    letter_spacing: float = 0.0,
 ) -> int:
     from playwright.sync_api import sync_playwright
 
@@ -1038,7 +1192,11 @@ def export(
     problems: list[str] = []
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
+            # Unhinted glyphs, whatever the machine: Chromium's hinting (from
+            # the system's fontconfig, or its own default) otherwise snaps every
+            # glyph to whole pixels, which made GitHub's text about 3 % wider
+            # than a local run's and moved its page breaks.
+            browser = playwright.chromium.launch(args=[f"--font-render-hinting={font_hinting}"])
             try:
                 # Laid out at the print width, so that what is measured here
                 # (paragraph lines, overflow) is what the PDF gets.
@@ -1068,6 +1226,9 @@ def export(
                 # The plugin's own page-number boxes (for printing from the
                 # browser) give way to this footer.
                 page.add_style_tag(content=page_css(version))
+                if text_scale != 1.0 or letter_spacing:
+                    # A perturbed rendering (--family): other line breaks, same rules.
+                    page.evaluate(PERTURB, [text_scale, letter_spacing])
                 # The PDF's title (Chromium writes the document's title into it).
                 page.evaluate("(title) => { document.title = title; }", DOCUMENT_TITLE)
                 page.emulate_media(media="print")
@@ -1091,6 +1252,7 @@ def export(
                 breaks: set[int] = set()  # heading indices with a page break before
                 tightened: set[int] = set()  # chapters (heading indices) tightened
                 text_breaks: set[str] = set()  # chapters given a break before a block
+                moved_figures: set[int] = set()  # images placed after the text that follows them
                 for round_ in range(1, MAX_ROUNDS + 1):
                     page.evaluate(SET_TOC_NUMBERS, written)
                     page.evaluate(
@@ -1119,7 +1281,17 @@ def export(
                             )
                             for i, pt in fits.items()
                         }
+                        if len(headings) == dom_headings:
+                            for index, texts in figure_moves(
+                                pages, area, chapter_ends(headings, pages), natural
+                            ):
+                                if index in moved_figures:
+                                    continue
+                                if page.evaluate(MOVE_FIGURE, [index, texts]):
+                                    moved_figures.add(index)
+                                    moved_text = True
                         tails = chapter_tails(headings, pages, area)
+
                         tail_shrinks, tail_tight, tail_breaks, tail_texts = tail_fixes(
                             headings, pages, area, tails, natural, limits, tightened
                         )
@@ -1151,7 +1323,9 @@ def export(
                         print(
                             f"Layout settled after {round_} rendering(s): Contents numbered, "
                             f"{len(limits)} screenshot(s) fitted, {len(tightened)} chapter(s) "
-                            f"tightened, {len(breaks) + len(text_breaks)} page break(s) added"
+                            f"tightened, {len(breaks) + len(text_breaks)} page break(s) added, "
+                            f"{len(moved_figures)} screenshot(s) placed after the text that "
+                            "follows them"
                         )
                         break
                     written = found
@@ -1169,6 +1343,11 @@ def export(
     pages, headings = read_layout(output)
     area = text_area(pages[0].width, pages[0].height) if pages else text_area()
     print(f"{output}: {len(pages)} pages, {len(data):,} bytes, {len(headings)} bookmarks")
+    share = snapped_share(glyph_steps(output))
+    print(
+        f"Glyph positions: {'hinted, on whole pixels' if share > 0.9 else 'unhinted'} "
+        f"({share:.0%} of glyph steps on whole pixels; --font-render-hinting={font_hinting})"
+    )
 
     tails = chapter_tails(headings, pages, area)
     problems += [
@@ -1231,14 +1410,72 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="refuse the theme's web fonts (a test of the layout passes on system fonts)",
     )
+    parser.add_argument(
+        "--font-hinting",
+        choices=("none", "slight", "medium", "full"),
+        default="none",
+        help="Chromium's glyph hinting (default none; full is what GitHub's runner did by default)",
+    )
+    parser.add_argument(
+        "--text-scale", type=float, default=1.0, help="scale the text (a robustness test)"
+    )
+    parser.add_argument(
+        "--letter-spacing", type=float, default=0.0, help="add letter spacing in em (a test)"
+    )
+    parser.add_argument(
+        "--family",
+        action="store_true",
+        help="export under every rendering of ROBUSTNESS_FAMILY (output name + its suffix) "
+        "and fail unless each one passes",
+    )
     args = parser.parse_args(argv)
     version = args.version
     if version is None:
         version_file = ROOT / "VERSION"
         version = version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else ""
+    if args.family:
+        return export_family(args.site_dir, args.output, version, args.min_bytes, args.min_pages)
     return export(
-        args.site_dir, args.output, version, args.min_bytes, args.min_pages, args.block_web_fonts
+        args.site_dir,
+        args.output,
+        version,
+        args.min_bytes,
+        args.min_pages,
+        args.block_web_fonts,
+        args.font_hinting,
+        args.text_scale,
+        args.letter_spacing,
     )
+
+
+# Renderings the layout passes must cope with (--family): the default, the
+# hinted glyphs GitHub's runner used to print with, system fonts instead of
+# the web fonts, and text a little larger, smaller, wider or narrower.
+ROBUSTNESS_FAMILY: tuple[tuple[str, dict], ...] = (
+    ("default", {}),
+    ("hinted", {"font_hinting": "full"}),
+    ("system-fonts", {"block_web_fonts": True}),
+    ("text+2%", {"text_scale": 1.02}),
+    ("text-2%", {"text_scale": 0.98}),
+    ("spacing+1%", {"letter_spacing": 0.01}),
+    ("spacing-1%", {"letter_spacing": -0.01}),
+    ("hinted-text+2%", {"font_hinting": "full", "text_scale": 1.02}),
+)
+
+
+def export_family(
+    site_dir: Path, output: Path, version: str, min_bytes: int, min_pages: int
+) -> int:
+    """Export under every rendering of ``ROBUSTNESS_FAMILY``; 0 only when each one passes."""
+    results = []
+    for name, options in ROBUSTNESS_FAMILY:
+        target = output.with_name(f"{output.stem}.{name}{output.suffix}")
+        print(f"=== {name}: {target}")
+        results.append((name, export(site_dir, target, version, min_bytes, min_pages, **options)))
+    print("Robustness family:")
+    for name, code in results:
+        print(f"  {name}: {'passed' if code == 0 else 'FAILED'}")
+    return 0 if all(code == 0 for _name, code in results) else 1
 
 
 if __name__ == "__main__":

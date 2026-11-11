@@ -58,12 +58,17 @@ jobs:
           python -m pip install -r docs/requirements.txt "playwright==${PLAYWRIGHT_VERSION}" \
             "pdfplumber==${PDFPLUMBER_VERSION}"
           python -m playwright install --with-deps chromium
+          # The fallback fonts for glyphs the theme's web fonts (Roboto,
+          # Roboto Mono) lack, named so a local run with the same packages
+          # predicts this one (the export also prints unhinted glyphs).
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation
 
       - name: Build the manual
         run: mkdocs build --strict
 
       # Fails on sloppy output: a cut image, a stranded heading, content
-      # outside the text area, a wrong Contents page number.
+      # outside the text area, a page ending early inside a chapter, a
+      # chapter ending on a scrap, a wrong Contents page number.
       - name: Print the manual to PDF and check its layout
         run: python scripts/docs/export_manual_pdf.py --site-dir site --output Milestone-Manual.pdf
 

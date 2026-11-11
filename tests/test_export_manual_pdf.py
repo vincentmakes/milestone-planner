@@ -274,8 +274,8 @@ def test_a_page_ending_early_inside_a_chapter_names_what_moved():
     found = pdf.mid_chapter_gaps(headings, pages, AREA)
     assert found == [
         'page 2: ends more than a third early inside its chapter; the section "Context Menu" '
-        "moved to page 3 (shrink its screenshot, or mark a block {.print-keep-with-next} "
-        "or {.print-page-break})"
+        "moved to page 3 (mark a block {.print-keep-with-next} or {.print-page-break} so "
+        "that the page ends at a better place)"
     ]
     # No heading at the top of the next page: its first line is named.
     pages[2] = page(3, line(44, "A paragraph that did not fit"), line(780))
@@ -397,3 +397,76 @@ def test_the_cover_reads_the_version_month_and_sentence_from_the_build(tmp_path,
         "build_month": "January 2026",
         "cover_description": "Using and running Milestone Planner: the manual.",
     }
+
+
+def _figure_case(intro_bottom=100.0, image_bottom=480.0, after=None):
+    """Page 1 ends at y=520 (about 37 % blank); page 2 opens with a heading,
+    its introduction and a tall screenshot, then the section's text."""
+    after = after if after is not None else [500, 516, 532, 560, 576, 604, 620]
+    pages = [
+        page(1, line(50), line(510)),
+        page(
+            2,
+            line(42, "Team Filter", height=14),
+            line(intro_bottom - 10, "Open it and tick:"),
+            image(intro_bottom + 15, image_bottom),
+            *(line(top, f"line at {top}") for top in after),
+        ),
+    ]
+    natural = {0: image_bottom - intro_bottom - 15}
+    return pages, natural
+
+
+def test_a_figure_too_tall_to_shrink_goes_after_the_text_that_follows_it():
+    pages, natural = _figure_case()
+    # Shrinking alone would need more than the legible floor.
+    assert pdf.image_fits(pages, AREA, skip=set()) == {}
+    moves = pdf.figure_moves(pages, AREA, skip=set(), natural=natural)
+    assert len(moves) == 1
+    index, texts = moves[0]
+    assert index == 0
+    # Only lines that end a block (a wider gap follows, or the last), best first,
+    # and only as far as the page can hold.
+    assert texts == ["line at 620", "line at 576", "line at 532"]
+
+
+def test_no_figure_move_when_shrinking_suffices_or_nothing_follows():
+    # A screenshot shrinkable within the floor is image_fits' case.
+    pages, natural = _figure_case(image_bottom=350.0)
+    assert pdf.image_fits(pages, AREA, skip=set())
+    assert pdf.figure_moves(pages, AREA, skip=set(), natural=natural) == []
+    # No text after the picture in its section: nothing to flow up.
+    pages, natural = _figure_case(after=[])
+    assert pdf.figure_moves(pages, AREA, skip=set(), natural=natural) == []
+    # A chapter end is left alone.
+    pages, natural = _figure_case()
+    assert pdf.figure_moves(pages, AREA, skip={1}, natural=natural) == []
+    # The text that could move would still leave the page more than a third empty.
+    pages, natural = _figure_case(after=[500])
+    pages[0] = page(1, line(50), line(200))
+    assert pdf.figure_moves(pages, AREA, skip=set(), natural=natural) == []
+
+
+def test_a_gap_before_a_tall_screenshot_names_a_remedy_that_works():
+    pages, _natural = _figure_case(after=[])
+    headings = [heading("Teams", 1, 50, level=1), heading("Team Filter", 2, 42)]
+    pages.append(page(3, line(50), line(780)))
+    found = pdf.mid_chapter_gaps(headings, pages, AREA)
+    assert found[0].startswith("page 1:")
+    assert 'the section "Team Filter" moved to page 2' in found[0]
+    assert "crop the screenshot, or move a paragraph of the section after it" in found[0]
+
+
+def test_hinted_glyphs_are_recognised_by_their_positions():
+    # GitHub's hinted steps (whole pixels: 0.75 pt each) against unhinted ones.
+    assert pdf.snapped_share([3.0, 3.75, 2.25, 5.25]) == 1.0
+    assert pdf.snapped_share([2.773, 3.544, 2.529, 4.749]) == 0.0
+    assert pdf.snapped_share([3.0, 2.773]) == 0.5
+    assert pdf.snapped_share([]) == 0.0
+
+
+def test_the_robustness_family_covers_the_known_renderings():
+    names = [name for name, _options in pdf.ROBUSTNESS_FAMILY]
+    assert names[0] == "default" and "hinted" in names and "system-fonts" in names
+    for _name, options in pdf.ROBUSTNESS_FAMILY:
+        assert set(options) <= {"font_hinting", "block_web_fonts", "text_scale", "letter_spacing"}
