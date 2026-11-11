@@ -76,8 +76,8 @@ A widget is one of nine kinds. Each takes one measure and up to two **dimensions
 
 | Kind | What it shows | Dimensions | Refused measures | Options |
 |------|---------------|------------|------------------|---------|
-| **KPI** | One figure in large type, or the share of one value (a **Bucket**) | At most one, to show a share | — | Number format; the bucket for a share |
-| **Gauge** | One figure on a dial, against a target | None | — | **Target** and the number format |
+| **KPI** | One figure in large type, or the share of one value (a **Bucket**) | At most one, to show a share | — | Number format; the bucket for a share; **Target** and **Show as % of target** |
+| **Gauge** | One figure on a dial, against a target | None | — | **Target**, **Show as % of target** and the number format |
 | **Bar** | One bar per value of the first dimension, split by the second | Up to two | — | Stacked or 100 % bars, horizontal or vertical, number format |
 | **Line** | One line per value of the second dimension, along the first (usually a period) | Up to two | — | Legend, number format |
 | **Pie** | Slices of the whole | Exactly one | Available days | Legend, number format |
@@ -87,6 +87,7 @@ A widget is one of nine kinds. Each takes one measure and up to two **dimensions
 | **Table** | The figures as rows and columns | Up to two | — | Number format |
 
 - **Gauge**: the dial runs from 0 (lower when the value is negative, as available days can be) to a little past the value and the target. With a **Target**, the scale is **green** up to the target, **amber** from the target up to 100 % (for a percentage) or up to 15 % above the target (for days, weeks or counts), and **red** beyond; the bar showing the value takes the colour of its band, and *Target 85 %* is written under the figure, in the widget's number format like the figure itself (*Target 20 days* with **Integer**). A target of 100 % or more leaves no amber band: a value right at such a target is already red. Without a target the dial has one colour
+- **Show as % of target** (KPI and gauge, with a target above 0): the figure becomes the value divided by the target × 100 — *91 % of target* — with the target under it in the measure's unit (*Target 70 %*). A gauge keeps its bands where the target puts them: the target is now the 100 % mark. Without a target, or with a target of 0, the switch is off and the figure is shown as it is; a value that cannot be computed stays **–**
 - **Heatmap**: when one of the two dimensions is a **Period**, the periods are the columns; otherwise the first dimension gives the rows and the second the columns. A colour scale under the grid gives the values; each cell shows its figure when the cells are wide and tall enough. An **empty cell** means no data for that pair (a utilisation with no capacity there), not zero
 - **Treemap** and **Sankey** add their values up, so they refuse the four measures that cannot be added (two percentages, available days, which can be negative, and people over capacity), and the **Period** dimension is not offered. With **Top N**, the values beyond the N largest of the first dimension become one *Other* box or node
 - A chart with nothing to draw for its period reads *Nothing to show for this period*
@@ -131,6 +132,7 @@ Needs the **Staff & Calendar** permission. A breakdown by **Person** and the **P
 - **Who counts**: every active person marked *Bookable as a resource* who is a member of one of your sites. Bookings of people no longer bookable, or deactivated, are left out on both sides
 - **Capacity** is the working days (Monday to Friday, or every day when *Weekends are working days* is on) at **their** sites minus the bank holidays of those sites, their absences of a type that counts as unavailable (a recurring absence only on its working days; Home Office leaves them plannable) and the site closures that apply to them — the same closures the Staff & Calendar view shows
 - **Sites and teams are the person's**: a breakdown by Site or Team, and the Sites, Teams and People filters, use the person's sites and teams on both sides of the ratio, not the project's. A person at two sites appears under each and once in the total
+- **Utilisation also takes the project filters** — Projects, Project teams, Project managers, Tags, project fields, Confirmed and **Has a customer** — on its **booked side only**: the capacity stays that of the people in scope. *Utilisation* with *Has a customer = With a customer* is the time booked on customer projects over everyone's capacity; the editor says so under the filters. Capacity (days), Available days and People over capacity do not take them
 - **The team figure is weighted**: a team's utilisation is the team's booked days over the team's capacity, not the average of its members' percentages. A KPI without a breakdown is the weighted figure of everyone in scope
 - A bar, line point or cell with booked time and no capacity (everyone off that week) shows **–**; with neither, 0 %
 - **Archived projects**: bookings on archived projects are left out unless the widget includes them
@@ -176,9 +178,30 @@ Needs the **Equipment view** permission.
 - Inactive equipment counts in booked days and bookings, not in utilisation
 - **Booked time is counted only on projects at your sites**, like capacity: an instrument at your site that a project at a site you cannot see has booked reads lower utilisation for you than for someone who sees both sites
 
+### Has a customer
+
+Every measure that reads projects — bookings, projects, phases, equipment bookings, and the booked side of Utilisation — takes the **Has a customer** filter: **With a customer** keeps the projects whose *Customer* field is filled in, **Without a customer** those where it is empty (spaces alone count as empty, as in the *No customer* bucket of the Customer breakdown). It needs no permission of its own. When the instance hides the *Customer* field, the filter is not offered (a widget that already uses it still shows it, so it can be cleared).
+
 ### Periods
 
 **This year**, **Last year**, **Next year**, **This quarter**, **Last quarter**, **Next quarter**, **This month**, **Last month**, **Next month**, **Last 12 months**, **Next 12 months** and **All time**, or a custom range. Quarters and months are calendar ones. **Last 12 months** and **Next 12 months** both include the **current month**: the last 12 end with it, the next 12 start with it.
+
+## Calculated Widgets
+
+A **KPI**, a **gauge**, a **bar** or a **line** can divide one measure by another: **Divide by** in the widget editor. Each side is a measure that adds up or counts — booked days or weeks, bookings, people booked, projects, project weeks, project volume, phases, phase weeks, phases due or overdue, capacity days, equipment booked days, equipment bookings, equipment booked — never Utilisation, Equipment utilisation, Available days or People over capacity, which are already a ratio, a difference or a count per bar.
+
+- Each side has **its own filters**; the **period** is the widget's, for both sides
+- The **result** is a **Percentage** (× 100) or a **Number** with two decimals
+- A KPI or a gauge shows the figure for the whole period; a bar or a line can break it down **by period only** (one bar or point per month, say), and every bar is computed on its own: its numerator over its denominator. **Percent of**, **Top N** and stacked bars are not offered
+- A bar or a point whose denominator is 0 shows **–** when its numerator is not 0, and **0** when both are
+- Both sides need their permissions: a calculated widget dividing by capacity needs the **Staff & Calendar** permission, like Capacity itself
+
+### Example: absorption
+
+The pilot's *absorption* is the time booked on customer projects over the people's capacity, against a 70 % goal. Two ways to show it:
+
+1. A **gauge** of **Utilisation**, filtered with **Has a customer = With a customer**, **Target** `70` and **Show as % of target** on: the dial reads booked customer time over capacity, divided by 70 % — *91 % of target* means the team reaches 91 % of its goal (63.7 % utilisation on customer projects)
+2. A **line** by month of **Booked days** with **Has a customer = With a customer**, **Divide by** **Capacity (days)**, result **Percentage**: the customer utilisation month by month; set the filters of the divisor to a team to follow that team's absorption
 
 ## Building a Dashboard
 
@@ -217,11 +240,12 @@ On a phone (640 px wide or less) dashboards are view-only.
 2. **Title**
 3. **Measure** — grouped by family: Bookings, Projects, Phases, Capacity and Equipment (see [Measures](#measures)). The capacity measures are listed only with the **Staff & Calendar** permission, the equipment measures only with the **Equipment view** permission. A hint under the list says how the measure counts its days
 4. **Dimension 1** and **Dimension 2** — how to break the measure down: Site, Team, Project team, Person, Project, Project manager, Customer, Confirmed, Tag, Phase, Status, Equipment, Equipment type, any dropdown or toggle **project field**, or Period (by year, quarter, month or week). Only the dimensions that make sense for the measure are offered; a pie takes one dimension, a KPI at most one, a heatmap and a sankey two, a treemap one or two (no Period for treemaps and sankeys), a gauge none
-5. **Filters** — only those of the measure's family: sites, teams, project teams, people, projects, tags, field items, confirmed or unconfirmed projects, archived projects for bookings; the same without teams and people for projects, plus **Milestones** for phases; **Sites**, **Teams** and **People** (the person's) for capacity; the project filters plus **Equipment** and **Equipment types** for the equipment measures (Sites, Equipment and Equipment types only for equipment utilisation). Changing the measure drops the filters the new one does not take
+5. **Filters** — only those of the measure's family: sites, teams, project teams, people, projects, tags, field items, confirmed or unconfirmed projects, [**Has a customer**](#has-a-customer), archived projects for bookings; the same without teams and people for projects, plus **Milestones** for phases; **Sites**, **Teams** and **People** (the person's) for capacity — and for **Utilisation** the project filters too, which narrow its booked time only; the project filters plus **Equipment** and **Equipment types** for the equipment measures (Sites, Equipment and Equipment types only for equipment utilisation). Changing the measure drops the filters the new one does not take
 6. **Period** — one of the [twelve periods](#periods) or a custom range
-7. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %). Not offered for **Utilisation**, **Equipment utilisation** (already percentages), **Available days** (which can be negative) and **People over capacity** (counted again in each bar, so the bars are not parts of the total); a KPI of these four shows its figure for the whole period, with no dimension. A treemap or a sankey offers only the share of the **total**: within each value of the first dimension, every box or left node would add up to 100 % and be drawn the same size. A gauge, which has no dimension, offers neither Percent of nor Top N
-8. **Top N** — keep the largest values and group the rest as *Other* (on a heatmap, treemap or sankey, *Other* is a row, a box or a node)
-9. **Options** — stacked or 100 % bars and their orientation (no stacked or 100 % bars of the four measures without a percentage: a stack of percentages or of negative days adds up to nothing), a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*). A gauge takes a **Target** in the measure's unit (the hint under the field says which: *In %*, *In weeks*, …); leave it empty for no target. Only a number from 0 to 1 000 000 000 is kept (`85`, `12,5`); any other text — a negative number, letters — saves the widget **without** a target, never with the one typed before
+7. **Divide by** (KPI, gauge, bar and line of a measure that adds up or counts) — a second measure to divide by, with its **Result** (*Percentage* or *Number*) and its own **Divisor filters**; see [Calculated Widgets](#calculated-widgets). Choose *Nothing* to go back to a plain widget. While dividing, the dimensions offer only **Period**, and the measure lists only the measures that can be divided
+8. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %). Not offered for **Utilisation**, **Equipment utilisation** (already percentages), **Available days** (which can be negative) and **People over capacity** (counted again in each bar, so the bars are not parts of the total); a KPI of these four shows its figure for the whole period, with no dimension. A treemap or a sankey offers only the share of the **total**: within each value of the first dimension, every box or left node would add up to 100 % and be drawn the same size. A gauge, which has no dimension, offers neither Percent of nor Top N
+9. **Top N** — keep the largest values and group the rest as *Other* (on a heatmap, treemap or sankey, *Other* is a row, a box or a node)
+10. **Options** — stacked or 100 % bars and their orientation (no stacked or 100 % bars of the four measures without a percentage: a stack of percentages or of negative days adds up to nothing), a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*). A gauge and a KPI take a **Target** in the measure's unit (the hint under the field says which: *In %*, *In weeks*, …); leave it empty for no target. Only a number from 0 to 1 000 000 000 is kept (`85`, `12,5`); any other text — a negative number, letters — saves the widget **without** a target, never with the one typed before. **Show as % of target** (a switch, available once the target is above 0) shows the figure as a percentage of the target
 
 A pie of **Available days** is refused (negative days cannot be slices), and so is a treemap or sankey of the four measures that cannot be added up. If the combination cannot be answered, the preview says why in plain words, and **Add widget** / **Save Changes** waits until you fix it. A new widget is placed below the others; arrange it on the grid afterwards.
 
