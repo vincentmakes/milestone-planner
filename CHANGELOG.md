@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Staff, equipment and the other lists no longer fail at startup when many browsers load at once.
 - The app loads every project in one request instead of one request per project, so the first load and the live refresh after a change are much faster in every open browser.
 - A change's history entry and its notification are no longer lost when the server is busy.
-- Organization databases now follow the connection-pool settings (`DB_POOL_SIZE`, `DB_POOL_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`, new `DB_POOL_RECYCLE`), and a connection closed by the database server or a firewall no longer fails the request that uses it.
+- In multi-tenant mode each workspace's database now follows the connection-pool settings (`DB_POOL_SIZE`, `DB_POOL_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`, new `DB_POOL_RECYCLE`), and a connection closed by the database server or a firewall no longer fails the request that uses it.
 
 ## [2.5.0] - 2026-11-06
 

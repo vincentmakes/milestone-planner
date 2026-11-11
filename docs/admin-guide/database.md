@@ -20,8 +20,8 @@ In single-tenant mode, only the tenant database is used.
 ## Connection Pools
 
 Each worker process keeps one connection pool per database it serves: the default
-database and, in multi-tenant mode, one per organization. All of them are sized by
-the same settings (tenant pools follow them since 2.5.1; before, they were fixed at
+database and, in multi-tenant mode, one per workspace. All of them are sized by
+the same settings (workspace pools follow them since 2.5.1; before, they were fixed at
 20 / 10 / 30):
 
 | Variable | Default | Meaning |

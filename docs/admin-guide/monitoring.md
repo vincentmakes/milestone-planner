@@ -102,7 +102,7 @@ A request waited `DB_POOL_TIMEOUT` seconds for a database connection and failed
 (users see *Internal server error*, projects missing on first load, saves that take
 about 30 seconds). Each worker process keeps a pool of `DB_POOL_SIZE` connections
 plus up to `DB_POOL_MAX_OVERFLOW` extra ones, per database: the default one and, in
-multi-tenant mode, each organization's (the same settings apply to every tenant pool
+multi-tenant mode, each workspace's (the same settings apply to every workspace pool
 since 2.5.1).
 
 - **Before 2.5.1** this came from a defect, not from the pool size: every signed-in
