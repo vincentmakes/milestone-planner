@@ -1456,6 +1456,33 @@ DASHBOARD_WIDGET_SEED_PG_SQL = _seed_insert_sql(
     [f"${i}" for i in range(1, len(DASHBOARD_WIDGET_SEED_COLUMNS) + 1)],
 )
 
+# The absorption example (2.6.0), added once to the built-in "Capacity and
+# flows" of an instance whose dashboards predate it (the data migration
+# ``tenant_data_migrations.run_data_migrations``): the marker row (an
+# internal ``settings`` key, ``instance_settings.is_internal_setting``) says
+# it ran, whatever it found, so a later deletion of the widget or of the
+# dashboard is final. Every value is bound.
+ABSORPTION_EXAMPLE_MARKER_KEY = "_internal.absorption_example_added"
+CAPACITY_DASHBOARD_FIND_SQL = (
+    "SELECT id FROM dashboards WHERE name = :name AND owner_id IS NULL ORDER BY id LIMIT 1"
+)
+DASHBOARD_WIDGET_TITLE_PROBE_SQL = (
+    "SELECT 1 FROM dashboard_widgets WHERE dashboard_id = :dashboard_id AND title = :title"
+)
+DASHBOARD_WIDGET_LAYOUTS_SQL = (
+    "SELECT layout, sort_order FROM dashboard_widgets WHERE dashboard_id = :dashboard_id"
+)
+DASHBOARD_TOUCH_SQL = (
+    "UPDATE dashboards SET updated_at = CURRENT_TIMESTAMP WHERE id = :dashboard_id"
+)
+# Claims the one-time step: a row comes back only for the process that wrote
+# the marker; a second process starting at the same time waits on the key and
+# gets nothing back once the first commits.
+ABSORPTION_EXAMPLE_MARKER_SQL = (
+    "INSERT INTO settings (key, value) VALUES (:key, :value) "
+    "ON CONFLICT (key) DO NOTHING RETURNING key"
+)
+
 # The one-shot grant of the dashboard keys to the system roles of an existing
 # tenant, in the same step: (role key, permission) pairs, inserted only where
 # the role row exists and holds no row for that key (an admin's later removal

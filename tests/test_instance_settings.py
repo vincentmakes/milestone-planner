@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.services.instance_settings import (
+    DEFAULT_HELP_URL,
     FLAG_DISABLES,
     KNOWN_SETTINGS,
     PROJECT_FIELD_SETTING_KEYS,
@@ -47,6 +48,7 @@ DEFAULTS = {
     "audit_log_retention_days": "365",
     "show_weekends": "true",
     "weekend_working_days": "false",
+    "help_url": "https://docs-milestone.verdet.me/",
 }
 
 BOOLEAN_KEYS = [
@@ -512,3 +514,70 @@ def test_project_field_setting_keys_are_the_four_known_field_settings():
         "project_tooltip_rows",
     }
     assert PROJECT_FIELD_SETTING_KEYS <= KNOWN_SETTINGS.keys()
+
+
+# ---------------------------------------------------------------------------
+# help_url (2.6.0): the manual Help opens
+# ---------------------------------------------------------------------------
+
+
+SHAREPOINT_PDF = (
+    "https://contoso.sharepoint.com/:b:/r/sites/Lab/Shared%20Documents/Milestone-Manual.pdf"
+    "?csf=1&web=1&e=AbC123#page=4"
+)
+
+
+@pytest.mark.parametrize(
+    ("raw", "stored"),
+    [
+        (DEFAULT_HELP_URL, DEFAULT_HELP_URL),
+        # Stored as entered: no slash added, no case changed, only trimmed.
+        ("https://docs-milestone.verdet.me", "https://docs-milestone.verdet.me"),
+        ("  HTTPS://Intranet.Example/Milestone-Docs  ", "HTTPS://Intranet.Example/Milestone-Docs"),
+        ("http://docs.internal:8080/manual///", "http://docs.internal:8080/manual///"),
+        ("https://10.0.0.5/", "https://10.0.0.5/"),
+        # A PDF on a file share: its query and fragment stay.
+        (SHAREPOINT_PDF, SHAREPOINT_PDF),
+        ("https://intranet.example/docs?page=1", "https://intranet.example/docs?page=1"),
+        ("https://intranet.example/docs#top", "https://intranet.example/docs#top"),
+        ("https://intranet.example/docs?next=a@b", "https://intranet.example/docs?next=a@b"),
+    ],
+)
+def test_help_url_is_stored_as_entered(raw, stored):
+    assert canonicalise("help_url", raw) == stored
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "   ",
+        "javascript:alert(1)",
+        "JavaScript://docs.example/%0aalert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "intranet.example/docs",
+        "//intranet.example/docs",
+        "ftp://intranet.example/docs",
+        "https://",
+        "https:///docs",
+        "https://user:secret@intranet.example/",
+        "https://user@intranet.example/",
+        "https://intranet example/",
+        "https://intranet.example/my docs/",
+        "https://intranet.example/\tdocs",
+        "https://intranet.example/\x00",
+        "https://intranet.example:99999/",
+        "https://intranet.example/" + "d" * 1980,
+    ],
+)
+def test_help_url_rejects_anything_else(raw):
+    with pytest.raises(ValueError):
+        canonicalise("help_url", raw)
+
+
+def test_help_url_is_at_most_2000_characters():
+    base = "https://intranet.example/"
+    longest = base + "d" * (2000 - len(base))
+    assert canonicalise("help_url", longest) == longest
+    with pytest.raises(ValueError):
+        canonicalise("help_url", longest + "d")

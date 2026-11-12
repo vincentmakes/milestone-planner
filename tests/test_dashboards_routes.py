@@ -1818,3 +1818,261 @@ async def test_data_loads_equipment_facts_only_for_an_equipment_widget(
     # The Overview's booking KPI alone never loads them.
     await client.post("/api/dashboards/1/data")
     assert len(equipment_loads) == 1
+
+
+# --- 2.6.0: calculated widgets, Has a customer, Utilisation's project filters --
+
+WINTERTHUR_TERM = {"name": "winterthur", "measure": "booked_days", "filters": {"site_ids": [1]}}
+
+
+def calc_body(second=None, result=None, **extra) -> dict:
+    """Booked days of every visible project over ``second`` (Winterthur's by default)."""
+    second = second or WINTERTHUR_TERM
+    formula = {
+        "expression": f"everything / {second['name']}",
+        "terms": [{"name": "everything", "measure": "booked_days"}, second],
+    }
+    if result:
+        formula["result"] = result
+    return {
+        "measure": "booked_days",
+        "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}},
+        "formula": formula,
+        **extra,
+    }
+
+
+OVER_WINTERTHUR = calc_body()
+OVER_CAPACITY = calc_body({"name": "capacity", "measure": "capacity_days"})
+
+
+async def test_a_calculated_query_divides_two_measures(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    resp = await client.post("/api/dashboards/query", json=OVER_WINTERTHUR)
+    assert resp.status_code == 200
+    body = resp.json()
+    # (5 + 2.5) / 5 days.
+    assert body["rows"] == [{"keys": [], "value": 150}]
+    assert body["total"] == 150 and body["unit"] == "percent"
+
+    body = (await client.post("/api/dashboards/query", json=calc_body(result="number"))).json()
+    assert body["total"] == 1.5 and body["unit"] == "number"
+
+
+async def test_a_calculated_query_by_month_lists_every_bucket(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    query = {
+        **OVER_WINTERTHUR,
+        "dimensions": [{"kind": "period", "grain": "month"}],
+        "filters": {"period": {"from": "2026-02-01", "to": "2026-03-31"}},
+    }
+    body = (await client.post("/api/dashboards/query", json=query)).json()
+    assert [(r["keys"][0]["label"], r["value"]) for r in body["rows"]] == [
+        ("Feb 2026", 0),
+        ("Mar 2026", 150),
+    ]
+
+
+async def test_a_calculated_query_by_site_and_project(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    query = calc_body(
+        {"name": "everything_else", "measure": "booked_days", "total": True},
+        dimensions=[{"kind": "site"}],
+    )
+    body = (await client.post("/api/dashboards/query", json=query)).json()
+    # Each site's share of all booked days: 2.5 / 7.5 and 5 / 7.5.
+    assert [(r["keys"][0]["label"], r["value"]) for r in body["rows"]] == [
+        ("Frankfurt", 33.33),
+        ("Winterthur", 66.67),
+    ]
+
+
+async def test_a_calculated_query_loads_both_families(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    query = OVER_CAPACITY
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        resp = await client.post("/api/dashboards/query", json=query)
+    assert resp.status_code == 200
+    assert loader.await_args.kwargs["families"] == frozenset({"booking", "capacity"})
+    # 7.5 booked days over the capacity of the bookable active people (Sue, Uma, Leo, Sam).
+    assert resp.json()["unit"] == "percent"
+
+
+async def test_a_calculated_query_needs_the_permission_of_each_term(authed_client):
+    client, set_user = authed_client
+    set_user(uma(permissions={"views.dashboards"}))
+    resp = await client.post("/api/dashboards/query", json=OVER_CAPACITY)
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "This widget needs the Staff & Calendar view permission"
+    archived = calc_body(
+        {"name": "archived", "measure": "booked_days", "filters": {"archived": "include"}}
+    )
+    resp = await client.post("/api/dashboards/query", json=archived)
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "This widget needs the Archived view permission"
+
+
+async def test_a_calculated_query_loads_the_widest_archived_mode(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    archived = calc_body(
+        {"name": "archived", "measure": "booked_days", "filters": {"archived": "only"}}
+    )
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        resp = await client.post("/api/dashboards/query", json=archived)
+    assert resp.status_code == 200
+    assert loader.await_args.kwargs["archived"] == "include"
+    # No archived project: booked time over nothing has no ratio.
+    assert resp.json()["total"] is None
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            {**OVER_CAPACITY, "dimensions": [{"kind": "project"}]},
+            "Capacity (days) cannot be broken down by project",
+        ),
+        (
+            calc_body({"name": "util", "measure": "utilisation"}),
+            "Utilisation cannot be a term of a calculation",
+        ),
+        (
+            calc_body({"name": "kit", "measure": "booked_days", "filters": {"equipment_ids": [1]}}),
+            "The Equipment filter does not apply to booked days",
+        ),
+        (
+            {**OVER_WINTERTHUR, "formula": {**OVER_WINTERTHUR["formula"], "expression": "a / "}},
+            "The formula ends too early",
+        ),
+    ],
+)
+async def test_calculated_query_refusals(authed_client, body, message):
+    client, set_user = authed_client
+    set_user(uma())
+    resp = await client.post("/api/dashboards/query", json=body)
+    assert resp.status_code == 422
+    assert message in _detail(resp)
+
+
+async def test_has_customer_filters_the_booked_projects(authed_client, sqlite):
+    sqlite.execute(text("UPDATE projects SET customer = 'Acme' WHERE id = 2"))
+    sqlite.commit()
+    client, set_user = authed_client
+    set_user(admin())
+    for has_customer, expected in ((True, [("Frankfurt", 2.5)]), (False, [("Winterthur", 5)])):
+        query = {**BY_SITE, "filters": {**BY_SITE["filters"], "has_customer": has_customer}}
+        body = (await client.post("/api/dashboards/query", json=query)).json()
+        assert [(r["keys"][0]["label"], r["value"]) for r in body["rows"]] == expected
+
+
+async def test_utilisation_takes_project_filters_on_its_booked_side(authed_client):
+    client, set_user = authed_client
+    set_user(uma(site_ids=(1,)))
+    query = {**UTILISATION_BY_PERSON, "filters": {**BY_SITE["filters"], "project_ids": [1]}}
+    resp = await client.post("/api/dashboards/query", json=query)
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 7.58  # Uma's 5 days on Alpha / 66
+    customers = {**UTILISATION_BY_PERSON, "filters": {**BY_SITE["filters"], "has_customer": True}}
+    body = (await client.post("/api/dashboards/query", json=customers)).json()
+    # No project has a customer: no booked time, the capacity unchanged.
+    assert body["total"] == 0
+    assert [r["value"] for r in body["rows"]] == [0, 0, 0]
+    refused = {**UTILISATION_BY_PERSON, "measure": "available_days", "filters": {"tag_ids": [1]}}
+    resp = await client.post("/api/dashboards/query", json=refused)
+    assert resp.status_code == 422
+    assert _detail(resp) == "The Tags filter does not apply to available days"
+
+
+async def test_data_answers_a_calculated_widget(authed_client, sqlite):
+    sqlite.add(
+        Dashboard(
+            id=32,
+            name="Ratios",
+            visibility="everyone",
+            owner_id=SUE,
+            widgets=[
+                widget_row("Share", OVER_WINTERTHUR, 0),
+                widget_row("Over capacity", OVER_CAPACITY, 1),
+            ],
+        )
+    )
+    sqlite.commit()
+    client, set_user = authed_client
+    set_user(uma(permissions={"views.dashboards"}))
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        resp = await client.post("/api/dashboards/32/data")
+    assert resp.status_code == 200
+    widgets = {w["title"]: resp.json()["widgets"][str(w["id"])] for w in await _widgets(client, 32)}
+    # Uma sees Winterthur only: 5 / 5.
+    assert widgets["Share"]["total"] == 100
+    assert widgets["Over capacity"] == {
+        "error": "This widget needs the Staff & Calendar view permission"
+    }
+    assert loader.await_args.kwargs["families"] == frozenset({"booking"})
+
+
+async def test_a_widget_stores_percent_of_target(authed_client, sqlite):
+    client, set_user = authed_client
+    set_user(sue())
+    body = {
+        "name": "Absorption",
+        "widgets": [
+            {
+                **widget_body("Absorption", OVER_WINTERTHUR),
+                "kind": "gauge",
+                "options": {"target": 70, "percent_of_target": True, "target_is_goal": True},
+            }
+        ],
+    }
+    resp = await client.post("/api/dashboards", json=body)
+    assert resp.status_code == 201
+    widget = resp.json()["widgets"][0]
+    assert widget["options"] == {"target": 70, "percent_of_target": True, "target_is_goal": True}
+    assert widget["query"]["formula"] == OVER_WINTERTHUR["formula"]
+    bad = {**body, "widgets": [{**body["widgets"][0], "options": {"percent_of_target": "maybe"}}]}
+    assert (await client.post("/api/dashboards", json=bad)).status_code == 422
+
+
+def test_target_is_goal_is_a_boolean_option_on_any_kind():
+    from pydantic import ValidationError
+
+    from app.schemas.dashboard import WidgetOptions
+
+    assert WidgetOptions.model_validate({"target_is_goal": True}).target_is_goal is True
+    assert WidgetOptions.model_validate({}).target_is_goal is None
+    with pytest.raises(ValidationError):
+        WidgetOptions.model_validate({"target_is_goal": "maybe"})
+
+
+async def test_a_widget_with_a_bad_formula_is_refused(authed_client, sqlite):
+    client, set_user = authed_client
+    set_user(sue())
+    created = await client.post("/api/dashboards", json={"name": "Calc"})
+    assert created.status_code == 201
+    dashboard_id = created.json()["id"]
+    bad_query = {
+        **OVER_WINTERTHUR,
+        "formula": {**OVER_WINTERTHUR["formula"], "expression": "everything / nobody"},
+    }
+    body = {"name": "Calc", "widgets": [widget_body("Ratio", bad_query)]}
+    resp = await client.put(f"/api/dashboards/{dashboard_id}", json=body)
+    assert resp.status_code == 422
+    assert _detail(resp) == '"Ratio": "nobody" is not one of your terms: everything, winterthur'
+    good = {"name": "Calc", "widgets": [widget_body("Ratio", OVER_WINTERTHUR)]}
+    resp = await client.put(f"/api/dashboards/{dashboard_id}", json=good)
+    assert resp.status_code == 200
+    # Another owner's dashboard: 403 for a viewer.
+    set_user(uma())
+    resp = await client.put(f"/api/dashboards/{dashboard_id}", json=good)
+    assert resp.status_code in (403, 404)

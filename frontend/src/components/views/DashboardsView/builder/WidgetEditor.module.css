@@ -112,6 +112,191 @@
   gap: 0.75rem;
 }
 
+/* A sentence under a section's heading (Utilisation's filters) */
+.hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* A measure's filters in the formula field's panel (no disclosure of their own) */
+.termFilters {
+  display: grid;
+  /* Two columns at the dialog's width, one when the panel is narrow (below). */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+@container (max-width: 28rem) {
+  .termFilters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.termFilters > * {
+  min-width: 0;
+}
+
+/* A hint spans both columns */
+.termFilters > p {
+  grid-column: 1 / -1;
+}
+
+/* Calculation: the formula field, its line, the result and the examples */
+.formulaBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.formulaError {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--accent-red);
+  overflow-wrap: anywhere;
+}
+
+/* The did-you-mean measure, a button inside the sentence */
+.suggestion {
+  display: inline;
+  vertical-align: baseline;
+  padding: 0;
+  height: auto;
+  min-height: 0;
+  font-size: inherit;
+  color: var(--accent-primary);
+  text-decoration: underline;
+}
+
+.formulaHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+}
+
+.formulaTools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.termTotal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+
+
+
+
+
+.readBackLine {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.calcResult {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.stalePreview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-height: 0;
+}
+
+.stalePreview > .stale {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stalePreview > .stale > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The last valid value while the formula cannot be computed */
+.stale {
+  opacity: 0.5;
+}
+
+.examples {
+  position: relative;
+}
+
+.examplesMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  /* Wide enough for "Booked weeks ÷ (Capacity (weeks) × 70 %)" on one line */
+  width: max-content;
+  min-width: 16rem;
+  max-width: min(24rem, 80vw);
+  padding: 0.25rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.examplesItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.examplesItem:hover:not(:disabled),
+.examplesItem:focus-visible {
+  background: var(--bg-hover);
+}
+
+.examplesItem:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
+.examplesItem:disabled {
+  cursor: not-allowed;
+}
+
+.examplesItem:disabled .examplesName {
+  color: var(--text-muted);
+}
+
+.examplesName {
+  font-size: var(--font-size-sm);
+}
+
+.examplesFormula {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
 .options {
   display: flex;
   flex-direction: column;

@@ -123,14 +123,17 @@ export function isAnchorIntact(text: string, anchor: MentionAnchor): boolean {
   return !isWordChar(text[end]);
 }
 
-interface TextEdit {
+export interface TextEdit {
   start: number;
   removed: number;
   inserted: number;
 }
 
-/** Single-range diff from the common prefix and suffix of two strings. */
-function diffEdit(prev: string, next: string): TextEdit {
+/**
+ * Single-range diff from the common prefix and suffix of two strings (also
+ * carries the formula field's pills: `utils/formulaField.ts`).
+ */
+export function diffEdit(prev: string, next: string): TextEdit {
   let start = 0;
   const shortest = Math.min(prev.length, next.length);
   while (start < shortest && prev[start] === next[start]) start++;

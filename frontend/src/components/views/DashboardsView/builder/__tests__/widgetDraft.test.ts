@@ -7,7 +7,7 @@
  * a treemap or sankey, the ratio refusal, the gauge target and size.
  */
 import { describe, it, expect } from 'vitest';
-import type { MetricQuery, WidgetKind } from '@/types';
+import type { MetricFormula, MetricQuery, WidgetKind } from '@/types';
 import {
   activeFilterCount,
   changeMeasure,
@@ -26,15 +26,26 @@ import {
   newClientId,
   noDimensionKind,
   normaliseQuery,
+  offersFormula,
+  normaliseFormula,
+  startFormula,
+  endFormula,
+  isDefaultFormula,
+  exampleFormula,
+  exampleNeeds,
+  cleanFormula,
+  FORMULA_EXAMPLES,
   parseTarget,
   placeNewWidget,
   queryProblem,
   RATIO_HIERARCHY_PROBLEM,
+  FORMULA_KINDS,
   SUMMED_KINDS,
   sameLayout,
   savedTargets,
   stableKey,
   TARGET_KEYS,
+  TARGET_KINDS,
   toDraftWidget,
 } from '../widgetDraft';
 
@@ -115,10 +126,21 @@ describe('kind rules', () => {
     };
     const q = query({ measure: 'phase_count', filters });
     // Capacity: Sites, Teams, People, archived and the period only.
+    expect(changeMeasure('bar', q, 'capacity_days').filters).toEqual({
+      site_ids: [1],
+      team_ids: [5],
+      person_ids: [8],
+      archived: 'include',
+      period: { relative: 'next_quarter' },
+    });
+    // Utilisation also keeps the project filters (its booked side).
     expect(changeMeasure('bar', q, 'utilisation').filters).toEqual({
       site_ids: [1],
       team_ids: [5],
       person_ids: [8],
+      project_ids: [30],
+      tag_ids: [40],
+      confirmed: true,
       archived: 'include',
       period: { relative: 'next_quarter' },
     });
@@ -350,7 +372,9 @@ describe('gauge, heatmap, treemap and sankey rules', () => {
       expect(cleanOptions('gauge', query(), { target })).toEqual({});
     }
     expect(cleanOptions('gauge', query(), { target: '85' as unknown as number })).toEqual({});
-    for (const kind of ['kpi', 'bar', 'line', 'pie', 'table', 'heatmap', 'treemap', 'sankey'] as const) {
+    // A KPI keeps a target too (2.6.0); the other kinds drop it.
+    expect(cleanOptions('kpi', query(), { target: 85 })).toEqual({ target: 85 });
+    for (const kind of ['bar', 'line', 'pie', 'table', 'heatmap', 'treemap', 'sankey'] as const) {
       expect(cleanOptions(kind, query(), { target: 85 })).not.toHaveProperty('target');
     }
     // A gauge takes no bar, line or pie option.
@@ -566,5 +590,297 @@ describe('placement and ids', () => {
     expect(dimensionKey({ kind: 'field', field_id: 4 })).toBe('field:4');
     expect(dimensionKey({ kind: 'period', grain: 'week' })).toBe('period');
     expect(dimensionKey({ kind: 'site' })).toBe('site');
+  });
+});
+
+
+describe('calculated widgets and % of target (2.6.0)', () => {
+  const MONTH = { kind: 'period' as const, grain: 'month' as const };
+  const calc = (extra: Partial<MetricQuery> = {}, formula: Partial<MetricFormula> = {}): MetricQuery =>
+    query({
+      measure: 'booked_weeks',
+      filters: { period: { relative: 'this_year' } },
+      formula: {
+        expression: 'a / b',
+        terms: [
+          { name: 'a', measure: 'booked_weeks' },
+          { name: 'b', measure: 'capacity_weeks' },
+        ],
+        ...formula,
+      },
+      ...extra,
+    });
+
+  it('offers a calculation on every kind whose values need not add up', () => {
+    expect([...FORMULA_KINDS].sort()).toEqual(['bar', 'gauge', 'heatmap', 'kpi', 'line', 'table']);
+    expect([...TARGET_KINDS].sort()).toEqual(['gauge', 'kpi']);
+    expect(offersFormula('table')).toBe(true);
+    expect(offersFormula('pie')).toBe(false);
+    expect(offersFormula('sankey')).toBe(false);
+  });
+
+  it('keeps a dimension one term accepts, the period only when all do, and forces refusing terms to their total', () => {
+    // Project: booked weeks accept it, capacity weeks do not (it uses its total).
+    const q = normaliseQuery('bar', calc({ dimensions: [{ kind: 'project' }, MONTH], percent_of: 'total', top_n: 3 }));
+    expect(q.dimensions).toEqual([{ kind: 'project' }, MONTH]);
+    expect(q.percent_of).toBeNull();
+    expect(q.top_n).toBe(3);
+    expect(q.formula?.terms).toEqual([
+      { name: 'a', measure: 'booked_weeks', filters: {} },
+      { name: 'b', measure: 'capacity_weeks', filters: {}, total: true },
+    ]);
+    // Equipment: no term accepts it.
+    expect(normaliseQuery('bar', calc({ dimensions: [{ kind: 'equipment' }] })).dimensions).toEqual([]);
+    // A period a term refuses goes (project volume has none).
+    const volume = calc({ dimensions: [MONTH] }, { terms: [{ name: 'a', measure: 'booked_weeks' }, { name: 'b', measure: 'project_volume' }] });
+    expect(normaliseQuery('line', volume).dimensions).toEqual([]);
+    // Top N needs a first dimension that is not a period.
+    expect(normaliseQuery('bar', calc({ dimensions: [MONTH], top_n: 3 })).top_n).toBeNull();
+  });
+
+  it('has no dimension on a KPI or a gauge, and no total flag without a breakdown beyond the period', () => {
+    const totalled = calc({ dimensions: [MONTH] }, {
+      terms: [
+        { name: 'a', measure: 'booked_weeks', total: true },
+        { name: 'b', measure: 'capacity_weeks' },
+      ],
+    });
+    expect(normaliseQuery('kpi', totalled).dimensions).toEqual([]);
+    expect(normaliseQuery('gauge', totalled).dimensions).toEqual([]);
+    expect(normaliseQuery('line', totalled).formula?.terms[0]).not.toHaveProperty('total');
+    expect(noDimensionKind('kpi', 'booked_days', true)).toBe(true);
+    expect(noDimensionKind('bar', 'booked_days', true)).toBe(false);
+    // A term the user marked keeps its total while a breakdown is set.
+    const byTeam = normaliseQuery('table', { ...totalled, dimensions: [{ kind: 'team' }] });
+    expect(byTeam.formula?.terms[0].total).toBe(true);
+  });
+
+  it('takes the measure from the first term and keeps only the period on top; terms keep the filters they take', () => {
+    const q = calc(
+      { measure: 'project_count', filters: { period: { relative: 'all' }, team_ids: [1] } },
+      {
+        terms: [
+          { name: 'a', measure: 'booked_days', filters: { team_ids: [5], equipment_ids: [9], period: { relative: 'all' } } as never },
+          { name: 'b', measure: 'capacity_days', filters: { project_ids: [30], person_ids: [8] } },
+        ],
+      }
+    );
+    const n = normaliseQuery('kpi', q);
+    expect(n.measure).toBe('booked_days');
+    expect(n.filters).toEqual({ period: { relative: 'all' } });
+    expect(n.formula?.terms.map((t) => t.filters)).toEqual([{ team_ids: [5] }, { person_ids: [8] }]);
+    expect(normaliseFormula('kpi', query())).toBeNull();
+    expect(normaliseFormula('pie', q)).toBeNull();
+    expect(normaliseFormula('kpi', calc({}, { terms: [] }))).toBeNull();
+  });
+
+  it('turns into the plain widget of the first term on a kind that offers no calculation', () => {
+    const q = calc({ dimensions: [{ kind: 'site' }] }, {
+      terms: [
+        { name: 'a', measure: 'booked_days', filters: { team_ids: [5] } },
+        { name: 'b', measure: 'capacity_days' },
+      ],
+    });
+    const pie = normaliseQuery('pie', q);
+    expect(pie).not.toHaveProperty('formula');
+    expect(pie.measure).toBe('booked_days');
+    expect(pie.filters).toEqual({ team_ids: [5], period: { relative: 'this_year' } });
+  });
+
+  it('starts a calculation with nothing to type', () => {
+    const plain = query({ measure: 'booked_weeks', filters: { period: { relative: 'last_year' }, has_customer: true } });
+    const started = startFormula('gauge', plain, true);
+    expect(started.measure).toBe('booked_weeks');
+    expect(started.filters).toEqual({ period: { relative: 'last_year' } });
+    expect(started.formula).toEqual({
+      expression: 'a / b',
+      result: 'percent',
+      terms: [
+        { name: 'a', measure: 'booked_weeks', filters: { has_customer: true } },
+        { name: 'b', measure: 'capacity_weeks', filters: {} },
+      ],
+    });
+    // Booked days pair with capacity days; without views.staff, or for another measure, b repeats a.
+    expect(startFormula('bar', query({ measure: 'booked_days' }), true).formula?.terms[1].measure).toBe('capacity_days');
+    // Without views.staff, or for another measure: the measure alone, as a number.
+    expect(startFormula('bar', plain, false).formula).toEqual({
+      expression: 'a',
+      result: 'number',
+      terms: [{ name: 'a', measure: 'booked_weeks', filters: { has_customer: true } }],
+    });
+    expect(startFormula('bar', query({ measure: 'project_count' }), true).formula?.expression).toBe('a');
+    // Utilisation is booked days over capacity days; another ratio starts from booked weeks.
+    expect(startFormula('bar', query({ measure: 'utilisation' }), true).formula?.terms.map((t) => t.measure)).toEqual([
+      'booked_days',
+      'capacity_days',
+    ]);
+    expect(startFormula('bar', query({ measure: 'available_days' }), true).formula?.terms[0].measure).toBe('booked_weeks');
+  });
+
+  it('goes back to the plain widget of term a, and knows an untouched calculation', () => {
+    const started = startFormula('bar', query({ measure: 'booked_weeks', filters: { has_customer: true } }), true);
+    expect(isDefaultFormula(started, true)).toBe(true);
+    const back = endFormula(started);
+    expect(back).not.toHaveProperty('formula');
+    expect(back.filters).toEqual({ has_customer: true });
+    expect(endFormula({ ...started, filters: { period: { relative: 'all' } } }).filters).toEqual({
+      has_customer: true,
+      period: { relative: 'all' },
+    });
+    expect(endFormula(query())).toEqual(query());
+    expect(endFormula(calc({ filters: {} }, { terms: [] })).measure).toBe('booked_weeks');
+    // Any change counts: the expression, a term's measure or filters, a third term, the result.
+    expect(isDefaultFormula({ ...started, formula: { ...started.formula!, expression: 'a / b * 2' } }, true)).toBe(false);
+    const third = { name: 'c', measure: 'project_count' as const };
+    expect(isDefaultFormula({ ...started, formula: { ...started.formula!, terms: [...started.formula!.terms, third] } }, true)).toBe(false);
+    expect(isDefaultFormula({ ...started, formula: { ...started.formula!, result: 'number' } }, true)).toBe(false);
+    expect(isDefaultFormula(query(), true)).toBe(true);
+  });
+
+  it('builds each example on the current terms', () => {
+    const current = calc({}, {
+      expression: 'a * 2',
+      terms: [
+        { name: 'a', measure: 'booked_days', filters: { team_ids: [5] } },
+        { name: 'x', measure: 'project_count' },
+      ],
+    });
+    expect(FORMULA_EXAMPLES.map((e) => e.label)).toEqual([
+      'Ratio of two measures',
+      'Share of capacity',
+      'Against a goal',
+      'Difference',
+      'Sum',
+    ]);
+    const ratio = exampleFormula('bar', current, 'ratio').formula!;
+    expect(ratio.expression).toBe('a / b');
+    // The calculation's own second measure (not a capacity): days over projects, a number.
+    expect(ratio.terms.map((t) => [t.name, t.measure])).toEqual([
+      ['a', 'booked_days'],
+      ['b', 'project_count'],
+    ]);
+    expect(ratio.result).toBe('number');
+    const goal = exampleFormula('gauge', current, 'goal');
+    expect(goal.measure).toBe('booked_weeks');
+    expect(goal.formula).toEqual({
+      expression: 'a / (b * 70%)',
+      result: 'percent',
+      terms: [
+        { name: 'a', measure: 'booked_weeks', filters: { team_ids: [5], has_customer: true } },
+        { name: 'b', measure: 'capacity_weeks', filters: {} },
+      ],
+    });
+    // Days stay with days.
+    const share = exampleFormula('bar', current, 'capacity_share').formula!;
+    expect(share.terms.map((t) => [t.measure, t.filters])).toEqual([
+      ['booked_days', { team_ids: [5] }],
+      ['capacity_days', {}],
+    ]);
+    const difference = exampleFormula('bar', current, 'difference').formula!;
+    expect(difference).toMatchObject({ expression: 'a - b', result: 'number' });
+    expect(difference.terms.map((t) => t.measure)).toEqual(['capacity_days', 'booked_days']);
+    const sum = exampleFormula('bar', current, 'sum').formula!;
+    expect(sum).toMatchObject({ expression: 'a + b', result: 'number' });
+    expect(sum.terms.map((t) => t.measure)).toEqual(['phases_due', 'phases_overdue']);
+    expect(exampleFormula('bar', current, 'nope' as never).formula?.expression).toBe('a / b');
+  });
+
+  it('never makes two examples the same formula, from the starting one or a plain query', () => {
+    const started = startFormula('bar', query({ measure: 'booked_weeks' }), true);
+    for (const from of [started, query({ measure: 'booked_weeks' }), query({ measure: 'booked_days' })]) {
+      const formulas = FORMULA_EXAMPLES.map((e) => stableKey(exampleFormula('bar', from, e.key).formula));
+      expect(new Set(formulas).size).toBe(FORMULA_EXAMPLES.length);
+    }
+    // Booked weeks over the capacity to start: the ratio takes project weeks instead, a percentage.
+    const ratio = exampleFormula('bar', started, 'ratio').formula!;
+    expect(ratio.terms.map((t) => t.measure)).toEqual(['booked_weeks', 'project_weeks']);
+    expect(ratio.result).toBe('percent');
+    // Equipment days per equipment booking.
+    expect(exampleFormula('bar', query({ measure: 'equipment_booked_days' }), 'ratio').formula?.terms[1].measure).toBe(
+      'equipment_booking_count'
+    );
+  });
+
+  it('names the permissions an example needs', () => {
+    const plain = query({ measure: 'booked_weeks' });
+    expect(exampleNeeds('bar', plain, 'ratio')).toEqual([]);
+    expect(exampleNeeds('bar', plain, 'sum')).toEqual([]);
+    expect(exampleNeeds('bar', plain, 'capacity_share')).toEqual(['views.staff']);
+    expect(exampleNeeds('bar', plain, 'goal')).toEqual(['views.staff']);
+    expect(exampleNeeds('bar', plain, 'difference')).toEqual(['views.staff']);
+    expect(exampleNeeds('bar', query({ measure: 'equipment_booked_days' }), 'ratio')).toEqual(['views.equipment']);
+  });
+
+  it('stores the formula cleaned: empty filters, unset totals and the default result left out', () => {
+    expect(cleanQuery(calc()).formula).toEqual({
+      expression: 'a / b',
+      terms: [
+        { name: 'a', measure: 'booked_weeks' },
+        { name: 'b', measure: 'capacity_weeks' },
+      ],
+    });
+    expect(
+      cleanFormula({
+        expression: 'a',
+        result: 'number',
+        terms: [{ name: 'a', measure: 'booked_days', filters: { tag_ids: [], has_customer: true, archived: 'exclude' }, total: true }],
+      })
+    ).toEqual({
+      expression: 'a',
+      result: 'number',
+      terms: [{ name: 'a', measure: 'booked_days', filters: { has_customer: true }, total: true }],
+    });
+    expect(cleanQuery(query({ filters: { has_customer: false } })).filters).toEqual({
+      has_customer: false,
+      period: { relative: 'this_year' },
+    });
+    expect(activeFilterCount({ has_customer: false })).toBe(1);
+    expect(activeFilterCount({ has_customer: null })).toBe(0);
+  });
+
+  it("drops each term's filters the user may not use", () => {
+    const q = calc({}, {
+      terms: [
+        { name: 'a', measure: 'booked_weeks', filters: { equipment_ids: [2] } },
+        { name: 'b', measure: 'capacity_days', filters: { person_ids: [8], team_ids: [5] } },
+      ],
+    });
+    const staffOnly = (key: string | null) => key === null || key === 'views.staff';
+    // Equipment needs views.equipment, People on capacity absences.view_others.
+    expect(dropUnheld(q, staffOnly).formula?.terms.map((t) => t.filters)).toEqual([{}, { team_ids: [5] }]);
+    const all = () => true;
+    expect(dropUnheld(q, all)).toBe(q);
+  });
+
+  it('never stacks a calculated bar', () => {
+    expect(cleanOptions('bar', calc(), { stacked: true, percent: true })).toEqual({});
+  });
+
+  it('keeps % of target on a gauge or a KPI with a target above 0 only', () => {
+    expect(cleanOptions('gauge', query(), { target: 70, percent_of_target: true })).toEqual({
+      target: 70,
+      percent_of_target: true,
+    });
+    expect(cleanOptions('kpi', query(), { target: 0, percent_of_target: true })).toEqual({ target: 0 });
+    expect(cleanOptions('kpi', query(), { percent_of_target: true })).toEqual({});
+    expect(cleanOptions('bar', query(), { target: 70, percent_of_target: true })).toEqual({});
+    // Shown as a percentage, the Percent number format is kept.
+    expect(cleanOptions('kpi', query(), { target: 70, percent_of_target: true, number_format: 'percent' })).toEqual({
+      target: 70,
+      percent_of_target: true,
+      number_format: 'percent',
+    });
+    expect(cleanOptions('kpi', query(), { target: 70, number_format: 'percent' })).toEqual({ target: 70 });
+  });
+});
+
+
+describe('target is a goal (2.6.0)', () => {
+  it('is kept on a gauge with a target above 0 only', () => {
+    expect(cleanOptions('gauge', query(), { target: 70, target_is_goal: true })).toEqual({ target: 70, target_is_goal: true });
+    expect(cleanOptions('gauge', query(), { target: 0, target_is_goal: true })).toEqual({ target: 0 });
+    expect(cleanOptions('gauge', query(), { target_is_goal: true })).toEqual({});
+    expect(cleanOptions('kpi', query(), { target: 70, target_is_goal: true })).toEqual({ target: 70 });
+    expect(cleanOptions('bar', query(), { target: 70, target_is_goal: true })).toEqual({});
   });
 });

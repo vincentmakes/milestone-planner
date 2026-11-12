@@ -43,6 +43,7 @@
 import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } from '@/types';
 import { formatMetric, normaliseKey, OTHER_KEY, unitWord, widgetColor } from '@/utils/metrics';
 import type { ChartTheme } from './echartsTheme';
+import { gaugeTarget, OF_TARGET, percentOfTarget, targetBase } from './kpi';
 
 export type ChartKind = Extract<WidgetKind, 'bar' | 'line' | 'pie' | 'gauge' | 'heatmap' | 'treemap' | 'sankey'>;
 
@@ -169,12 +170,11 @@ export function niceCeil(value: number): number {
   }
 }
 
-/** The largest gauge target, the server's (`MAX_GAUGE_TARGET` in `app/schemas/dashboard.py`). */
-export const MAX_GAUGE_TARGET = 1_000_000_000;
+// The target rule lives beside the KPI's (a KPI takes a target too, 2.6.0).
+export { gaugeTarget, MAX_GAUGE_TARGET } from './kpi';
 
-/** A stored target, when it is one (finite, from 0 to `MAX_GAUGE_TARGET`). */
-export const gaugeTarget = (target: number | null | undefined): number | null =>
-  typeof target === 'number' && Number.isFinite(target) && target >= 0 && target <= MAX_GAUGE_TARGET ? target : null;
+/** A goal gauge (`target_is_goal`) turns amber from this share of its target. */
+export const GOAL_AMBER_FROM = 0.85;
 
 /**
  * The scale of a gauge of `value` against `target`, in `unit`.
@@ -188,12 +188,18 @@ export const gaugeTarget = (target: number | null | undefined): number | null =>
  * then red — and red after; without
  * one it is the plain colour. The stops are fractions of the track from
  * `min` to `max`, so a negative minimum keeps every band at its value.
+ *
+ * With `isGoal` (2.6.0, `target_is_goal`) the target is a goal to reach, for
+ * every unit alike: red below `GOAL_AMBER_FROM` (85 %) of the target, amber
+ * from there up to the target, green from the target up (the same `max`, so
+ * the green zone above the target shows).
  */
 export function gaugeScale(
   value: number,
   target: number | null | undefined,
   unit: MetricUnit,
-  colours: GaugeColours = GAUGE_BANDS
+  colours: GaugeColours = GAUGE_BANDS,
+  isGoal = false
 ): GaugeScale {
   const goal = gaugeTarget(target);
   const percent = unit === 'percent';
@@ -202,6 +208,21 @@ export function gaugeScale(
     ? Math.max(120, ceil10(value), ceil10(goal ?? 0))
     : niceCeil(Math.max((goal ?? 0) * 1.25, value * 1.1, 1));
   if (goal === null) return { min, max, stops: [[1, colours.plain]], band: () => colours.plain };
+  if (isGoal) {
+    // Compared as values: amber from 85 % of the goal, green from the goal itself.
+    const amberFrom = goal * GOAL_AMBER_FROM;
+    const at = (v: number) => (v - min) / (max - min);
+    return {
+      min,
+      max,
+      stops: [
+        [at(amberFrom), colours.bad],
+        [at(goal), colours.warn],
+        [1, colours.good],
+      ],
+      band: (v) => (v >= goal ? colours.good : v >= amberFrom ? colours.warn : colours.bad),
+    };
+  }
   // The amber band's end, as a value: 100 % or 115 % of the target, never before the target.
   const amber = Math.max(goal, Math.min(max, percent ? 100 : goal * 1.15));
   const fraction = (v: number) => (v - min) / (max - min);
@@ -222,18 +243,53 @@ export function gaugeScale(
 /** The gauge's track (and progress) width in pixels. */
 export const GAUGE_TRACK_WIDTH = 20;
 
-/** A gauge of the result's total (its dimensions, which only the API can send, are ignored). */
+/**
+ * A gauge scale relabelled as a percentage of `target` (> 0): the same track
+ * and bands, its ends and values × 100 / target, so the target sits at 100 %.
+ */
+export function percentOfTargetScale(scale: GaugeScale, target: number): GaugeScale {
+  const factor = 100 / target;
+  return {
+    min: scale.min * factor,
+    max: scale.max * factor,
+    stops: scale.stops,
+    band: (v) => scale.band(v / factor),
+  };
+}
+
+/**
+ * A gauge of the result's total (its dimensions, which only the API can send,
+ * are ignored). With *Show as % of target* (`targetBase`) the value reads as a
+ * percentage of the target ("91 % of target"), the bands stay where the target
+ * puts them and the title names the target in the result's unit.
+ */
 function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartTheme): ChartOption {
   const palette = theme.palette;
   const unit = result.unit;
-  const value = result.total ?? 0;
+  const raw = result.total ?? 0;
   const target = gaugeTarget(opts.target);
-  const scale = gaugeScale(value, target, unit, {
-    good: theme.good ?? palette[1],
-    warn: theme.warn ?? palette[2],
-    bad: theme.bad ?? palette[7] ?? palette[0],
-    plain: palette[0],
-  });
+  const base = targetBase(opts);
+  const plain = gaugeScale(
+    raw,
+    target,
+    unit,
+    {
+      good: theme.good ?? palette[1],
+      warn: theme.warn ?? palette[2],
+      bad: theme.bad ?? palette[7] ?? palette[0],
+      plain: palette[0],
+    },
+    // A goal to reach (red, then amber within 15 % below it, green from it up).
+    Boolean(opts.target_is_goal) && (target ?? 0) > 0
+  );
+  const scale = base === null ? plain : percentOfTargetScale(plain, base);
+  const value = base === null ? raw : percentOfTarget(raw, base) ?? 0;
+  const detail = (v: number): string => {
+    if (base === null) return withUnit(v, unit, opts);
+    // A ratio over nothing stays "–", as on a KPI.
+    if (result.total === null) return formatMetric(null, 'percent');
+    return `${formatMetric(v, 'percent', opts)} ${OF_TARGET}`;
+  };
   return {
     aria: quietAria(),
     series: [
@@ -253,7 +309,7 @@ function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartThem
         detail: {
           valueAnimation: false,
           offsetCenter: [0, '20%'],
-          formatter: (v: number) => withUnit(v, unit, opts),
+          formatter: detail,
           color: theme.textPrimary,
         },
         data: [

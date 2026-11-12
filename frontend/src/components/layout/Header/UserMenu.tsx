@@ -4,8 +4,9 @@ import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
 import { getAppVersion } from '@/api/endpoints/health';
+import { helpAddress } from '@/utils/instanceSettings';
 import styles from './UserMenu.module.css';
-import { Icon, LogoutIcon, CalendarIcon, ChevronDownIcon } from '@/components/common/Icon';
+import { Icon, LogoutIcon, CalendarIcon, ChevronDownIcon, HelpIcon } from '@/components/common/Icon';
 
 export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,6 +15,8 @@ export function UserMenu() {
   const currentUser = useAppStore((s) => s.currentUser);
   const { logout } = useAuth();
   const openModal = useUIStore((s) => s.openModal);
+  // The address set in Settings → Features & defaults, as it is; the public manual by default.
+  const helpHref = useAppStore((s) => helpAddress(s.instanceSettings));
   const [version, setVersion] = useState<string | null>(null);
 
   const { onBlur } = useDismissableOverlay({
@@ -82,6 +85,17 @@ export function UserMenu() {
             <Icon icon={CalendarIcon} size={16} />
             <span>My absences</span>
           </button>
+          {/* The manual (help_url), exactly the address set, in a new tab. */}
+          <a
+            className={styles.menuItem}
+            href={helpHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setIsOpen(false)}
+          >
+            <Icon icon={HelpIcon} size={16} />
+            <span>Help</span>
+          </a>
           <button className={styles.menuItem} onClick={handleLogout}>
             <Icon icon={LogoutIcon} size={16} />
             <span>Log out</span>

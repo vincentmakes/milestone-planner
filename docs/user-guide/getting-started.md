@@ -60,12 +60,16 @@ Which views you see depends on your role: a view your role does not include is n
 - Theme toggle (light/dark)
 - Online users indicator
 - **Offline** badge — appears only while live updates are disconnected. Your edits still save; you just don't see colleagues' changes until the connection is back. It reconnects by itself when the network returns or you switch back to the tab
-- User menu (your name and role, My absences, logout, and the version this instance is running)
+- User menu (your name and role, My absences, Help, logout, and the version this instance is running)
 
 !!! note "The header adapts to the window width"
     On a narrower window the bar collapses in stages rather than crowding. Button labels shorten to icons first; below roughly 1280px the zoom and undo/redo controls move into a **⋯** menu beside the notification bell, and below about 1024px the view switcher and the theme and What-If toggles join them. Nothing is removed — everything stays reachable in that menu, and zoom and undo/redo also have [keyboard shortcuts](keyboard-shortcuts.md).
 
 ### Checking your version
+
+To keep the manual offline, open **[Print or save as PDF](../../print_page/)**: the whole User Guide and Admin Guide on one page, which your browser's Print dialog saves as a PDF; a [ready-made PDF](https://github.com/vincentmakes/milestone-planner/releases/download/manual-latest/Milestone-Manual.pdf) is also available.
+
+**Help** in the user menu opens this manual's home page in a new browser tab, from any view. If your organisation keeps its own copy of the manual — a hosted copy, or the PDF of the manual on a file share — an administrator sets its address in [Settings → Features & defaults](settings.md#features-defaults) and Help opens that address instead.
 
 The bottom of the user menu shows the version this instance is running, for example `v1.4.0`. It is read from the server each time you open the menu, so if your administrator upgrades the instance while you have the application open, the number changes here — reload the page to pick up the new version.
 

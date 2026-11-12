@@ -24,6 +24,10 @@ import {
   formatMetric,
   GRAINS,
   isDimensionHidden,
+  isTermMeasure,
+  MAX_FORMULA_LENGTH,
+  MAX_FORMULA_TERMS,
+  TERM_MEASURES,
   isValidDimension,
   MATRIX,
   MEASURE_FILTERS,
@@ -75,6 +79,7 @@ describe('metric matrix mirror', () => {
       phases_due: 'Phases due',
       phases_overdue: 'Phases overdue',
       capacity_days: 'Capacity (days)',
+      capacity_weeks: 'Capacity (weeks)',
       available_days: 'Available days',
       utilisation: 'Utilisation',
       people_over_capacity: 'People over capacity',
@@ -178,6 +183,16 @@ describe('metric matrix mirror', () => {
     expect(sorted(NO_PERCENT_MEASURES)).toEqual(matrix.no_percent);
   });
 
+  it('takes the same measures as terms of a calculation, with the same limits', () => {
+    expect(sorted(TERM_MEASURES)).toEqual(matrix.term_measures);
+    expect(isTermMeasure('booked_days')).toBe(true);
+    expect(isTermMeasure('capacity_weeks')).toBe(true);
+    expect(isTermMeasure('utilisation')).toBe(false);
+    expect(MAX_FORMULA_TERMS).toBe(matrix.formula.max_terms);
+    expect(MAX_FORMULA_LENGTH).toBe(matrix.formula.max_length);
+    expect(matrix.formula.results).toEqual(['percent', 'number']);
+  });
+
   it('offers the same relative periods and grains, in order', () => {
     expect(RELATIVE_PERIODS.map((p) => p.key)).toEqual(matrix.relative_periods);
     expect(GRAINS.map((g) => g.key)).toEqual(matrix.grains);
@@ -201,7 +216,13 @@ describe('matrix helpers', () => {
 
   it('tells the filters a measure takes', () => {
     expect(takesFilter('booked_days', 'person_ids')).toBe(true);
-    expect(takesFilter('utilisation', 'project_ids')).toBe(false);
+    // Utilisation's booked side takes the project filters, not the other capacity measures.
+    expect(takesFilter('utilisation', 'project_ids')).toBe(true);
+    expect(takesFilter('utilisation', 'has_customer')).toBe(true);
+    expect(takesFilter('available_days', 'project_ids')).toBe(false);
+    expect(takesFilter('people_over_capacity', 'has_customer')).toBe(false);
+    expect(takesFilter('project_count', 'has_customer')).toBe(true);
+    expect(takesFilter('equipment_utilisation', 'has_customer')).toBe(false);
     expect(takesFilter('phase_count', 'milestones')).toBe(true);
     expect(takesFilter('equipment_utilisation', 'equipment_types')).toBe(true);
     expect(takesFilter('unknown' as Measure, 'site_ids')).toBe(false);
@@ -220,6 +241,7 @@ describe('matrix helpers', () => {
     expect(groups.flatMap((g) => g.options.map((o) => o.value))).toEqual(MEASURES.map((m) => m.key));
     expect(groups[3].options).toEqual([
       { value: 'capacity_days', label: 'Capacity (days)' },
+      { value: 'capacity_weeks', label: 'Capacity (weeks)' },
       { value: 'available_days', label: 'Available days' },
       { value: 'utilisation', label: 'Utilisation' },
       { value: 'people_over_capacity', label: 'People over capacity' },
@@ -259,6 +281,9 @@ describe('matrix helpers', () => {
     expect(queryUnit({ measure: 'utilisation' })).toBe('percent');
     expect(queryUnit({ measure: 'equipment_booked' })).toBe('equipment');
     expect(queryUnit({ measure: 'unknown' as Measure })).toBe('count');
+    const terms = [{ name: 'a', measure: 'booked_days' as Measure }];
+    expect(queryUnit({ measure: 'booked_days', formula: { expression: 'a', terms } })).toBe('percent');
+    expect(queryUnit({ measure: 'booked_days', formula: { expression: 'a', terms, result: 'number' } })).toBe('number');
   });
 });
 
@@ -298,6 +323,12 @@ describe('formatMetric', () => {
     expect(formatMetric(12.5, 'weeks', { number_format: 'percent' })).toBe('12.5 %');
     expect(formatMetric(12.5, 'percent', { number_format: 'integer' })).toBe('13 %');
     expect(formatMetric(12.5, 'weeks', null)).toBe('12.5');
+  });
+
+  it('shows a calculated plain number with two decimals and no unit word', () => {
+    expect(formatMetric(0.4545, 'number')).toBe('0.45');
+    expect(formatMetric(2, 'number')).toBe('2.00');
+    expect(unitWord(1, 'number')).toBe('');
   });
 
   it('shows a dash for no value', () => {

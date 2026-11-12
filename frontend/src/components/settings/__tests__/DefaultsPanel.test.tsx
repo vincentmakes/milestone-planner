@@ -306,3 +306,65 @@ describe('DefaultsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument();
   });
 });
+
+
+describe('DefaultsPanel — Documentation URL (2.6.0)', () => {
+  const field = () => screen.getByLabelText('Documentation URL') as HTMLInputElement;
+
+  it('shows the public manual on a fresh instance, and saves an address exactly as entered', async () => {
+    const pdf =
+      'https://contoso.sharepoint.com/:b:/r/sites/Lab/Shared%20Documents/Milestone-Manual.pdf?csf=1&web=1&e=AbC123#page=4';
+    api.updateSetting.mockImplementation(async (key: string, value: string | null) => ({ key, value }));
+    const onDirtyChange = await renderPanel();
+    expect(field()).toHaveValue('https://docs-milestone.verdet.me/');
+    expect(field()).toHaveAccessibleDescription(/any web address.*a PDF on SharePoint\. Empty: the public manual\./);
+    expect(field()).toHaveAttribute('maxLength', '2000');
+
+    fireEvent.change(field(), { target: { value: ` ${pdf} ` } });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    save();
+    await screen.findByText('Settings saved');
+    expect(api.updateSetting.mock.calls).toEqual([['help_url', pdf]]);
+    expect(field()).toHaveValue(pdf);
+    expect(useAppStore.getState().instanceSettings?.help_url).toBe(pdf);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    // No slash added to an address without one, and the saved value is clean again.
+    fireEvent.change(field(), { target: { value: 'https://intranet.example/docs' } });
+    save();
+    await waitFor(() => expect(field()).toHaveValue('https://intranet.example/docs'));
+    expect(api.updateSetting).toHaveBeenLastCalledWith('help_url', 'https://intranet.example/docs');
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it('refuses an address that is not http(s) in place, saving nothing', async () => {
+    await renderPanel();
+    fireEvent.change(field(), { target: { value: 'javascript:alert(1)' } });
+    save();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Enter a web address starting with http:// or https://, without spaces or a user name.'
+    );
+    expect(api.updateSetting).not.toHaveBeenCalled();
+    // Typing again clears the message.
+    fireEvent.change(field(), { target: { value: 'https://intranet.example/' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.change(field(), { target: { value: 'ftp://x' } });
+    save();
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(field()).toHaveValue('https://docs-milestone.verdet.me/');
+  });
+
+  it('goes back to the public manual when the field is cleared (null deletes the row)', async () => {
+    api.getInstanceSettings.mockResolvedValue({ ...STORED, help_url: 'https://intranet.example/docs' });
+    await renderPanel();
+    expect(field()).toHaveValue('https://intranet.example/docs');
+    fireEvent.change(field(), { target: { value: '' } });
+    save();
+    await screen.findByText('Settings saved');
+    expect(api.updateSetting.mock.calls).toEqual([['help_url', null]]);
+    expect(field()).toHaveValue('https://docs-milestone.verdet.me/');
+    expect(useAppStore.getState().instanceSettings?.help_url).toBe('https://docs-milestone.verdet.me/');
+  });
+});

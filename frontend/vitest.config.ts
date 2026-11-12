@@ -88,12 +88,17 @@ export default defineConfig({
       // audit log on its own, without the approval history (lines 94.26,
       // statements 93.32, functions 94.63, branches 86.49); set 0.1 under
       // the 2.5.0 totals of the pilot adjustments (lines 94.43, statements
-      // 93.5, functions 94.74, branches 86.86).
+      // 93.5, functions 94.74, branches 86.86); set 0.1 under the 2.6.0
+      // totals of calculated widgets and Help (lines 94.5, statements 93.56,
+      // functions 94.77, branches 87.01 — the lower of two runs); set 0.1
+      // under the 2.6.0 totals with the formula engine and its one-field
+      // editor (lines 94.72, statements 93.76, functions 94.96, branches
+      // 87.32 — two runs, equal).
       thresholds: {
-        lines: 94.33,
-        statements: 93.4,
-        functions: 94.64,
-        branches: 86.76,
+        lines: 94.7,
+        statements: 93.75,
+        functions: 94.95,
+        branches: 87.3,
       },
     },
   },

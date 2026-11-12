@@ -1,0 +1,119 @@
+name: Manual PDF
+
+# The manual as one PDF (User Guide and Admin Guide): built from the print
+# page of the MkDocs site (mkdocs-print-site-plugin, /print_page/) by
+# scripts/docs/export_manual_pdf.py. Every run uploads it as an artifact; a
+# push to main (or a manual run on main) replaces Milestone-Manual.pdf on the
+# rolling pre-release `manual-latest`, so its download link never changes.
+# The site itself is still deployed by Cloudflare Pages (docs/build.sh), not
+# here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "VERSION"
+      - "scripts/docs/export_manual_pdf.py"
+      - ".github/workflows/manual-pdf.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "VERSION"
+      - "scripts/docs/export_manual_pdf.py"
+      - ".github/workflows/manual-pdf.yml"
+  workflow_dispatch:
+
+# Least privilege: only the publish job writes (contents: write, below).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The Playwright release whose Chromium prints the PDF (pinned, like a
+  # dependency; the screenshot pipeline documents the same pairing).
+  PLAYWRIGHT_VERSION: "1.63.0"
+  # The PDF reader the export script checks the layout with (MIT; pinned).
+  PDFPLUMBER_VERSION: "0.11.7"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+
+      - name: Install MkDocs, Playwright and pdfplumber
+        run: |
+          python -m pip install -r docs/requirements.txt "playwright==${PLAYWRIGHT_VERSION}" \
+            "pdfplumber==${PDFPLUMBER_VERSION}"
+          python -m playwright install --with-deps chromium
+          # The fallback fonts for glyphs the theme's web fonts (Roboto,
+          # Roboto Mono) lack, named so a local run with the same packages
+          # predicts this one (the export also prints unhinted glyphs).
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation
+
+      - name: Build the manual
+        run: mkdocs build --strict
+
+      # Fails on sloppy output: a cut image, a stranded heading, content
+      # outside the text area, a page ending early inside a chapter, a
+      # chapter ending on a scrap, a wrong Contents page number.
+      - name: Print the manual to PDF and check its layout
+        run: python scripts/docs/export_manual_pdf.py --site-dir site --output Milestone-Manual.pdf
+
+      # Uploaded even when the checks fail, to look at what they found.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && hashFiles('Milestone-Manual.pdf') != '' }}
+        with:
+          name: Milestone-Manual
+          path: Milestone-Manual.pdf
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # One publish at a time: two merges in a row must not race on the release.
+    concurrency:
+      group: manual-pdf-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: Milestone-Manual
+
+      - name: Publish on the manual-latest pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          notes="$(printf 'The Milestone Planner User and Admin Manual as one PDF, rebuilt on every change to the manual on main.\n\nBuilt from version %s, commit %s.\n\nDownload: [Milestone-Manual.pdf](https://github.com/%s/releases/download/manual-latest/Milestone-Manual.pdf)' "$version" "$SHA" "$REPO")"
+          if gh release view manual-latest >/dev/null 2>&1; then
+            gh release upload manual-latest Milestone-Manual.pdf --clobber
+            gh release edit manual-latest --title "Manual (latest)" --notes "$notes" \
+              --prerelease --latest=false
+          else
+            gh release create manual-latest Milestone-Manual.pdf --target "$SHA" \
+              --title "Manual (latest)" --notes "$notes" --prerelease --latest=false
+          fi

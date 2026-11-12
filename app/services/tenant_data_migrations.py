@@ -11,16 +11,29 @@ The SQL lives in ``app.services.tenant_provisioner`` so the fresh-install
 schema, ``setup_databases.sql`` and the ``migrations/*.sql`` files share it.
 """
 
+import json
 import logging
 
 from sqlalchemy import text
 
+from app.services.dashboard_seed import (
+    ABSORPTION_WIDGET_TITLE,
+    CAPACITY_DASHBOARD_NAME,
+    absorption_widget_row,
+)
 from app.services.tenant_provisioner import (
+    ABSORPTION_EXAMPLE_MARKER_KEY,
+    ABSORPTION_EXAMPLE_MARKER_SQL,
     APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
+    CAPACITY_DASHBOARD_FIND_SQL,
     CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL,
     CARD_COMMENTS_AUTHOR_FK_SQL,
     CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
     CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
+    DASHBOARD_TOUCH_SQL,
+    DASHBOARD_WIDGET_LAYOUTS_SQL,
+    DASHBOARD_WIDGET_SEED_SQL,
+    DASHBOARD_WIDGET_TITLE_PROBE_SQL,
     PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL,
     PROJECTS_SITE_FK_NEEDS_FIX_SQL,
     PROJECTS_SITE_FK_SQL,
@@ -86,8 +99,73 @@ async def _rollback_quietly(conn) -> None:
         logger.debug("Data-migration rollback failed: %s", e)
 
 
+def _layout_of(text_value) -> dict:
+    try:
+        value = json.loads(text_value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+async def add_absorption_example(conn) -> bool:
+    """
+    The absorption gauge on the built-in "Capacity and flows", once per
+    instance (2.6.0). The marker row is claimed first (``INSERT ... ON
+    CONFLICT DO NOTHING RETURNING``): only the process that wrote it goes on,
+    so two workers starting together cannot both add the gauge (the second
+    waits on the key and gets no row back). Then, in the same transaction:
+    append the gauge below the existing widgets of a "Capacity and flows"
+    with no owner that has no widget of that title, and bump the dashboard's
+    ``updated_at``. The marker stays whether or not anything was added, so a
+    later deletion is final; a failure rolls the claim back with the rest.
+    Returns whether the gauge was added. Fresh installs got it from the
+    seed; their first run only writes the marker.
+    """
+    marker = ABSORPTION_EXAMPLE_MARKER_KEY
+    claimed = (
+        await conn.execute(text(ABSORPTION_EXAMPLE_MARKER_SQL).bindparams(key=marker, value="1"))
+    ).scalar()
+    if not claimed:
+        # Done before, or by another process right now.
+        await conn.rollback()
+        return False
+    added = False
+    dashboard_id = (
+        await conn.execute(
+            text(CAPACITY_DASHBOARD_FIND_SQL).bindparams(name=CAPACITY_DASHBOARD_NAME)
+        )
+    ).scalar()
+    if dashboard_id:
+        present = (
+            await conn.execute(
+                text(DASHBOARD_WIDGET_TITLE_PROBE_SQL).bindparams(
+                    dashboard_id=dashboard_id, title=ABSORPTION_WIDGET_TITLE
+                )
+            )
+        ).scalar()
+        if not present:
+            rows = (
+                await conn.execute(
+                    text(DASHBOARD_WIDGET_LAYOUTS_SQL).bindparams(dashboard_id=dashboard_id)
+                )
+            ).all()
+            layouts = [_layout_of(layout) for layout, _sort in rows]
+            next_order = max((int(sort or 0) for _layout, sort in rows), default=-1) + 1
+            widget = absorption_widget_row(layouts, next_order)
+            await conn.execute(
+                text(DASHBOARD_WIDGET_SEED_SQL).bindparams(dashboard_id=dashboard_id, **widget)
+            )
+            await conn.execute(text(DASHBOARD_TOUCH_SQL).bindparams(dashboard_id=dashboard_id))
+            added = True
+    await conn.commit()
+    return added
+
+
 async def run_data_migrations(conn) -> None:
-    """Apply the guarded FK rewrites, the RBAC seed and the orphan cleanups. Never raises."""
+    """
+    Apply the guarded FK rewrites, the RBAC seed, the orphan cleanups and
+    the one-time absorption example. Never raises.
+    """
     db = _label(conn)
 
     for label, needs_fix_sql, fix_sql in FK_STEPS:
@@ -124,3 +202,12 @@ async def run_data_migrations(conn) -> None:
         except Exception as e:
             logger.warning("Data migration (%s) warning for %s: %s", label, db, e)
             await _rollback_quietly(conn)
+
+    # After the dashboards tables and their seed (the built-in steps ran
+    # before): the absorption example, once per instance (2.6.0).
+    try:
+        if await add_absorption_example(conn):
+            logger.info("Data migration: added the absorption example on %s", db)
+    except Exception as e:
+        logger.warning("Data migration (absorption example) warning for %s: %s", db, e)
+        await _rollback_quietly(conn)

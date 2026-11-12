@@ -612,7 +612,7 @@ async def test_the_base_dashboard_with_the_demo_field_widgets(loaded):
         {"kind": "field", "field_id": fields["Area"]}
     ]
     assert counts["dashboards"] == 2
-    assert counts["dashboard_widgets"] == 14
+    assert counts["dashboard_widgets"] == 15
 
 
 async def test_the_demo_capacity_and_flows_dashboard(loaded):
@@ -639,11 +639,11 @@ async def test_the_demo_capacity_and_flows_dashboard(loaded):
     assert dashboard_id != conn.ids[("dashboards", (True,))]
     _, expected = capacity_dashboard_rows(with_gauge=True)
     widgets = conn.inserts("dashboard_widgets")[10:]
-    assert len(widgets) == len(expected) == 4
+    assert len(widgets) == len(expected) == 5
     for (sql, args), widget in zip(widgets, expected, strict=True):
         assert args == (dashboard_id, *widget.values(), dashboard_id, widget["sort_order"])
         assert "{" not in sql
-    assert [args[1] for _, args in widgets] == ["gauge", "heatmap", "treemap", "sankey"]
+    assert [args[1] for _, args in widgets] == ["gauge", "gauge", "heatmap", "treemap", "sankey"]
     assert json.loads(widgets[0][1][4]) == {"target": 85}
 
 
@@ -695,12 +695,12 @@ async def test_insert_demo_dashboards_creates_both_once():
 
     counts = await demo_seed.insert_demo_dashboards(conn, fields)
 
-    assert counts == {"dashboards": 2, "dashboard_widgets": 14}
+    assert counts == {"dashboards": 2, "dashboard_widgets": 15}
     assert {DEFAULT_KEY, DEMO_KEY} <= conn.present
     overview_id, demo_id = conn.ids[DEFAULT_KEY], conn.ids[DEMO_KEY]
     widgets = [args for _, args in conn.inserts("dashboard_widgets")]
-    assert [a[0] for a in widgets] == [overview_id] * 10 + [demo_id] * 4
-    assert [a[1] for a in widgets[10:]] == ["gauge", "heatmap", "treemap", "sankey"]
+    assert [a[0] for a in widgets] == [overview_id] * 10 + [demo_id] * 5
+    assert [a[1] for a in widgets[10:]] == ["gauge", "gauge", "heatmap", "treemap", "sankey"]
 
     # A second run: every insert still guarded, nothing inserted, no id
     # looked up again, the same counts.
@@ -723,10 +723,10 @@ async def test_insert_demo_dashboards_on_a_seeded_tenant_adds_only_the_second():
     assert DEFAULT_KEY not in conn.ids
     assert DEMO_KEY in conn.ids
     widgets = [args for _, args in conn.inserts("dashboard_widgets")]
-    assert len(widgets) == 4
+    assert len(widgets) == 5
     assert all(a[0] == conn.ids[DEMO_KEY] for a in widgets)
     # Without fields the Overview counts its eight base widgets.
-    assert counts == {"dashboards": 2, "dashboard_widgets": 12}
+    assert counts == {"dashboards": 2, "dashboard_widgets": 13}
 
 
 async def test_insert_demo_dashboards_keeps_an_existing_second_dashboard():

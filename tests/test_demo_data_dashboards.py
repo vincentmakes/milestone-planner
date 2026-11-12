@@ -595,7 +595,7 @@ def test_every_overview_widget_has_a_shape(facts: metrics.Facts):
 def _capacity_and_flows(facts: metrics.Facts) -> dict[str, metrics.MetricResult]:
     """Every widget of the demo's second dashboard (the gauge first), by title."""
     _, widgets = capacity_dashboard_rows(with_gauge=True)
-    assert len(widgets) == 4
+    assert len(widgets) == 5
     return {
         w["title"]: metrics.aggregate(
             facts, MetricQuery.model_validate(json.loads(w["query"])), viewer=VIEWER
@@ -613,7 +613,7 @@ def test_every_widget_of_both_dashboards_has_rows(facts: metrics.Facts):
 def test_every_base_widget_has_rows_without_the_demo_extras(facts: metrics.Facts):
     """What a tenant without the demo's fields gets: both base dashboards."""
     rows = base_dashboard_rows()
-    assert [len(widgets) for _, widgets in rows] == [8, 3]
+    assert [len(widgets) for _, widgets in rows] == [8, 4]
     for _, widgets in rows:
         for w in widgets:
             query = MetricQuery.model_validate(json.loads(w["query"]))
@@ -630,6 +630,16 @@ def test_the_capacity_and_flows_widgets_have_a_shape(facts: metrics.Facts):
     assert gauge.unit == "percent"
     assert gauge.total is not None
     assert 0 <= gauge.total <= 150, gauge.total
+
+    # The absorption gauge (2.6.0): a figure, below plain utilisation over
+    # 70 % because the demo has internal projects (no customer).
+    absorption = results["Customer absorption this year"]
+    assert absorption.unit == "percent" and absorption.total is not None
+    weeks = {term["name"]: term["value"] for term in absorption.terms or []}
+    booked = metrics.aggregate(
+        facts, MetricQuery.model_validate({"measure": "booked_weeks"}), viewer=VIEWER
+    ).total
+    assert 0 < weeks["customer_weeks"] < booked
 
     # The heatmap: several teams over several months.
     heatmap = results["Booked weeks per team and month"]

@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { KpiTile } from '../KpiTile';
-import { kpiValue, BUCKET_NOT_FOUND } from '../kpi';
+import { kpiValue, BUCKET_NOT_FOUND, OF_TARGET, percentOfTarget, targetBase } from '../kpi';
 import type { MetricQuery, MetricResult } from '@/types';
 
 const plain: MetricResult = {
@@ -125,5 +125,70 @@ describe('kpiValue', () => {
     expect(kpiValue(share, { ...shareQuery, percent_of: null }, { kpi_bucket: true }).value).toBe(100);
     expect(kpiValue(share, shareQuery, {}).value).toBe(100);
     expect(kpiValue(share, shareQuery, null).missing).toBe(false);
+  });
+});
+
+describe('KpiTile — % of target (2.6.0)', () => {
+  const utilisation = (total: number | null): MetricResult => ({
+    unit: 'percent',
+    dimensions: [],
+    rows: [{ keys: [], value: total }],
+    total,
+    truncated: false,
+    warnings: [],
+  });
+
+  it('shows the value as a percentage of the target, the target under it', () => {
+    render(<KpiTile result={utilisation(63.7)} query={{ measure: 'utilisation' }} options={{ target: 70, percent_of_target: true }} />);
+    expect(screen.getByText(/^91\s%$/)).toBeInTheDocument();
+    expect(screen.getByText(OF_TARGET)).toBeInTheDocument();
+    expect(screen.getByText(/^Target 70\s%$/)).toBeInTheDocument();
+  });
+
+  it('names the target with its unit word, and keeps a missing value as "–"', () => {
+    render(<KpiTile result={{ ...plain, total: null }} query={{ measure: 'booked_weeks' }} options={{ target: 20, percent_of_target: true }} />);
+    expect(screen.getByText('–')).toBeInTheDocument();
+    expect(screen.queryByText(OF_TARGET)).not.toBeInTheDocument();
+    expect(screen.getByText('Target 20.0 weeks')).toBeInTheDocument();
+  });
+
+  it('keeps a share bucket\'s name, or says it is missing, under a percentage of the target', () => {
+    const options = { kpi_bucket: true, target: 50, percent_of_target: true };
+    const { unmount } = render(<KpiTile result={share} query={shareQuery} options={options} />);
+    expect(screen.getByText(/^125\s%$/)).toBeInTheDocument();
+    expect(screen.getByText('Confirmed')).toBeInTheDocument();
+    unmount();
+    render(<KpiTile result={share} query={shareQuery} options={{ ...options, kpi_bucket: 'nope' }} />);
+    expect(screen.getByText(BUCKET_NOT_FOUND)).toBeInTheDocument();
+  });
+
+  it('ignores the flag without a target above 0', () => {
+    render(<KpiTile result={plain} query={{ measure: 'booked_weeks' }} options={{ target: 0, percent_of_target: true }} />);
+    expect(screen.getByText('123.4')).toBeInTheDocument();
+    expect(screen.queryByText(OF_TARGET)).not.toBeInTheDocument();
+  });
+
+  it('computes the base and the percentage', () => {
+    expect(targetBase({ target: 70, percent_of_target: true })).toBe(70);
+    expect(targetBase({ target: 70 })).toBeNull();
+    expect(targetBase({ target: 0, percent_of_target: true })).toBeNull();
+    expect(targetBase({ target: -1, percent_of_target: true })).toBeNull();
+    expect(targetBase(null)).toBeNull();
+    expect(percentOfTarget(35, 70)).toBe(50);
+    expect(percentOfTarget(null, 70)).toBeNull();
+  });
+});
+
+describe('KpiTile — a calculation (2.6.0)', () => {
+  it('shows a plain number without a unit word, and a percentage with "%"', () => {
+    const formula = { expression: 'a / b', terms: [{ name: 'a', measure: 'booked_weeks' as const }, { name: 'b', measure: 'capacity_weeks' as const }] };
+    const { container, unmount } = render(
+      <KpiTile result={{ ...plain, unit: 'number', total: 0.755 }} query={{ measure: 'booked_weeks', formula: { ...formula, result: 'number' } }} />
+    );
+    expect(screen.getByText('0.76')).toBeInTheDocument();
+    expect(container.textContent).toBe('0.76');
+    unmount();
+    render(<KpiTile result={{ ...plain, unit: 'percent', total: 75.5 }} query={{ measure: 'booked_weeks', formula }} />);
+    expect(screen.getByText(/75\.5/)).toBeInTheDocument();
   });
 });

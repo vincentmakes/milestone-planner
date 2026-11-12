@@ -194,4 +194,55 @@ describe('TableWidget', () => {
     expect(cells(rows[2])).toEqual(['2.0', '', '2.0']);
     expect(cells(rows[3])).toEqual(['2.0', '4.0', '6.0']);
   });
+
+  it('never sums the rows of a calculation, and heads a number "Value" and a percentage "%"', () => {
+    const rows = [
+      { keys: [A, yes], value: 0.5 },
+      { keys: [B, yes], value: 0.25 },
+    ];
+    const result: MetricResult = {
+      ...base,
+      unit: 'number',
+      dimensions: [
+        { kind: 'team', label: 'Team' },
+        { kind: 'confirmed', label: 'Confirmed' },
+      ],
+      rows,
+      total: 0.4,
+    };
+    const query: MetricQuery = {
+      measure: 'booked_weeks',
+      dimensions: [{ kind: 'team' }, { kind: 'confirmed' }],
+      formula: { expression: 'a / b', terms: [{ name: 'a', measure: 'booked_weeks' }, { name: 'b', measure: 'capacity_weeks' }], result: 'number' },
+    };
+    const { unmount } = render(<TableWidget result={result} query={query} />);
+    // No row or column sums; the total row holds the server's total only.
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Team', 'Confirmed']);
+    expect(screen.getByText('0.40')).toBeInTheDocument();
+    unmount();
+    const one = { ...result, dimensions: [{ kind: 'team' as const, label: 'Team' }], rows: [{ keys: [A], value: 0.5 }] };
+    const { unmount: unmountOne } = render(<TableWidget result={one} query={{ ...query, dimensions: [{ kind: 'team' }] }} />);
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Team', 'Value']);
+    unmountOne();
+    render(<TableWidget result={{ ...one, unit: 'percent' }} query={{ ...query, dimensions: [{ kind: 'team' }] }} />);
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Team', '%']);
+  });
+
+  it('sums capacity weeks like capacity days', () => {
+    const result: MetricResult = {
+      ...base,
+      unit: 'weeks',
+      dimensions: [
+        { kind: 'team', label: 'Team' },
+        { kind: 'confirmed', label: 'Confirmed' },
+      ],
+      rows: [
+        { keys: [A, yes], value: 4 },
+        { keys: [A, no], value: 1 },
+      ],
+      total: 5,
+    };
+    render(<TableWidget result={result} query={{ measure: 'capacity_weeks', dimensions: [{ kind: 'team' }, { kind: 'confirmed' }] }} />);
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toContain('Total');
+  });
 });

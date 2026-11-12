@@ -1,9 +1,11 @@
 """
-Dashboards (2.3.0): the metric-query spec, widget and dashboard bodies, responses.
+Dashboards (2.6.0): the metric-query spec, widget and dashboard bodies, responses.
 
 ``MetricQuery`` is what a widget asks the metric engine
 (``app/services/metrics.py``): a measure, up to two dimensions, filters with a
-period, an optional percentage and top N. Every refusal is a 422 in plain
+period, an optional percentage and top N -- or, for a calculated widget,
+``formula``: named terms (each a measure with its own filters) combined by an
+arithmetic expression (``app/services/formula.py``). Every refusal is a 422 in plain
 words (``PydanticCustomError``, no "Value error," prefix), including the
 validity matrix (``metrics.MATRIX``): "<measure> cannot be broken down by
 <dimension>". The engine's constants are the one source; this module imports
@@ -15,6 +17,7 @@ them as compact JSON text. A widget that fails validation is named by its
 title in the 422.
 """
 
+import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal, get_args
 
@@ -33,15 +36,24 @@ from pydantic_core import PydanticCustomError
 
 from app.models.dashboard import DASHBOARD_VISIBILITIES, DASHBOARD_WIDGET_KINDS
 from app.services.dashboard_seed import GRID_COLUMNS
+from app.services.formula import (
+    MAX_FORMULA_LENGTH,
+    FormulaError,
+    parse,
+    unknown_name_detail,
+    unused_term_detail,
+)
 from app.services.metrics import (
     DIMENSION_LABELS,
     FILTER_KEYS,
+    MAX_FORMULA_TERMS,
     MAX_PERIOD_DAYS,
     PERIOD_TOO_LONG_DETAIL,
     filter_error,
     filter_given,
     matrix_error,
     percent_error,
+    term_error,
 )
 
 # The Literals spell out the engine's tuples (``metrics.MEASURES``,
@@ -60,6 +72,7 @@ Measure = Literal[
     "phases_due",
     "phases_overdue",
     "capacity_days",
+    "capacity_weeks",
     "available_days",
     "utilisation",
     "people_over_capacity",
@@ -175,7 +188,12 @@ Period = Annotated[
 IdList = Annotated[list[int], Field(max_length=MAX_FILTER_IDS)]
 
 
-class MetricFilters(_Strict):
+class TermFilters(_Strict):
+    """
+    The filters of a query, the period aside: those of a calculated widget's
+    terms (``FormulaTerm``), which share the widget's period.
+    """
+
     site_ids: IdList | None = None
     team_ids: IdList | None = None
     project_team_ids: IdList | None = None
@@ -186,7 +204,6 @@ class MetricFilters(_Strict):
     confirmed: bool | None = None
     field_options: dict[int, IdList] | None = Field(default=None, max_length=100)
     archived: Literal["exclude", "include", "only"] = "exclude"
-    period: Period = Field(default_factory=lambda: RelativePeriod(relative="this_year"))
     equipment_ids: IdList | None = None
     equipment_types: (
         Annotated[
@@ -196,6 +213,60 @@ class MetricFilters(_Strict):
         | None
     ) = None
     milestones: Literal["include", "only", "exclude"] = "include"
+    # True: projects with a customer (not blank); False: projects without one.
+    has_customer: bool | None = None
+
+
+class MetricFilters(TermFilters):
+    period: Period = Field(default_factory=lambda: RelativePeriod(relative="this_year"))
+
+
+TERM_NAME_PATTERN = r"[a-z][a-z0-9_]{0,39}"
+TERM_NAME_DETAIL = (
+    "A term name is a lowercase word of letters, digits and _, starting with a letter "
+    "(customer_weeks)"
+)
+
+
+class FormulaTerm(_Strict):
+    """
+    One named term of a calculated widget: a summed or counted measure with
+    its own filters over the widget's period. ``total``: not split by the
+    dimensions other than the period (its whole-scope value in every row).
+    """
+
+    name: str
+    measure: Measure
+    filters: TermFilters = Field(default_factory=TermFilters)
+    total: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, value: str) -> str:
+        # Names are case-insensitive, like the formula's: stored in lower case.
+        value = value.strip().lower()
+        if not re.fullmatch(TERM_NAME_PATTERN, value):
+            raise _error(TERM_NAME_DETAIL)
+        return value
+
+
+class MetricFormula(_Strict):
+    """
+    A calculated widget (2.6.0): ``terms`` combined by ``expression``; the
+    result is a percentage (x 100) or a plain number.
+    """
+
+    expression: str = Field(max_length=MAX_FORMULA_LENGTH)
+    terms: list[FormulaTerm] = Field(min_length=1, max_length=MAX_FORMULA_TERMS)
+    result: Literal["percent", "number"] = "percent"
+
+
+def _check_filters(measure: str, filters: TermFilters) -> None:
+    """A filter the measure's facts do not carry would be silently ignored: a 422."""
+    for key in FILTER_KEYS:
+        message = filter_error(measure, key)
+        if message and filter_given(filters, key):
+            raise _error(message)
 
 
 class MetricQuery(_Strict):
@@ -204,6 +275,8 @@ class MetricQuery(_Strict):
     filters: MetricFilters = Field(default_factory=MetricFilters)
     percent_of: Literal["total", "first_dimension"] | None = None
     top_n: int | None = Field(default=None, ge=1, le=50)
+    # A calculated widget: named terms combined by a formula.
+    formula: MetricFormula | None = None
 
     @model_validator(mode="after")
     def _check_query(self) -> "MetricQuery":
@@ -214,16 +287,15 @@ class MetricQuery(_Strict):
         identities = [(d.kind, getattr(d, "field_id", None)) for d in self.dimensions]
         if len(set(identities)) != len(identities):
             raise _error("The two dimensions must be different")
-        for kind in kinds:
-            message = matrix_error(self.measure, kind)
-            if message:
-                raise _error(message)
-        # A filter the measure's facts do not carry would be silently ignored
-        # (``metrics.MEASURE_FILTERS``); a default value is no filter.
-        for key in FILTER_KEYS:
-            message = filter_error(self.measure, key)
-            if message and filter_given(self.filters, key):
-                raise _error(message)
+        if self.formula is not None:
+            self._check_formula(self.formula, kinds)
+        else:
+            for kind in kinds:
+                message = matrix_error(self.measure, kind)
+                if message:
+                    raise _error(message)
+            # The measure's filters (``metrics.MEASURE_FILTERS``).
+            _check_filters(self.measure, self.filters)
         if self.percent_of is not None:
             message = percent_error(self.measure)
             if message:
@@ -240,6 +312,54 @@ class MetricQuery(_Strict):
                 raise _error(f"Top N cannot be used when the first dimension is the {label}")
         return self
 
+    def _check_formula(self, formula: MetricFormula, kinds: list[str]) -> None:
+        """
+        A calculated widget: a formula that parses and uses exactly its terms
+        (unique names); the query's measure is the first term's and its
+        filters carry the period only; each term a summed or counted measure
+        with filters it takes; each dimension accepted by every term it splits
+        (the period by every term); at least one split term when a dimension
+        other than the period is set; no percentage of a dimension.
+        """
+        try:
+            parsed = parse(formula.expression)
+        except FormulaError as exc:
+            raise _error(exc.message) from None
+        names = [term.name for term in formula.terms]
+        for name in names:
+            if names.count(name) > 1:
+                raise _error(f'Two terms are named "{name}"')
+        for name in parsed.names:
+            if name not in names:
+                raise _error(unknown_name_detail(name, names))
+        for name in names:
+            if name not in parsed.names:
+                raise _error(unused_term_detail(name))
+        if self.measure != formula.terms[0].measure:
+            raise _error("A calculation's measure is the measure of its first term")
+        for key in FILTER_KEYS:
+            if key != "period" and filter_given(self.filters, key):
+                raise _error("The filters of a calculation belong to its terms")
+        if self.percent_of is not None:
+            raise _error("A calculation cannot show a percentage of a dimension")
+        for term in formula.terms:
+            message = term_error(term.measure)
+            if message:
+                raise _error(message)
+            _check_filters(term.measure, term.filters)
+        for kind in kinds:
+            for term in formula.terms:
+                if kind != "period" and term.total:
+                    continue
+                message = matrix_error(term.measure, kind)
+                if message:
+                    raise _error(message)
+        if any(kind != "period" for kind in kinds) and all(term.total for term in formula.terms):
+            raise _error(
+                "With a dimension other than the period, at least one term must be split "
+                "by it (not use its total)"
+            )
+
 
 class WidgetOptions(_Strict):
     stacked: bool | None = None
@@ -251,8 +371,15 @@ class WidgetOptions(_Strict):
     kpi_bucket: bool | int | Annotated[str, Field(max_length=MAX_KPI_BUCKET_LENGTH)] | None = None
     # The gauge's target (the bands sit around it), in the measure's unit.
     # Accepted on any kind, like the other options; the client keeps it for a
-    # gauge only.
+    # gauge and a KPI.
     target: float | None = Field(default=None, ge=0, le=MAX_GAUGE_TARGET, allow_inf_nan=False)
+    # Show the value as a percentage of ``target`` (2.6.0): value / target x
+    # 100, computed by the client; ignored without a target above 0.
+    percent_of_target: bool | None = None
+    # A gauge's target is a goal to reach (2.6.0): red below 85 % of it, amber
+    # up to it, green from it. Kept by the client on a gauge with a target
+    # above 0 only.
+    target_is_goal: bool | None = None
 
 
 class GridPosition(_Strict):

@@ -48,6 +48,7 @@ DEFAULTS = {
     "audit_log_retention_days": "365",
     "show_weekends": "true",
     "weekend_working_days": "false",
+    "help_url": "https://docs-milestone.verdet.me/",
 }
 
 
@@ -211,6 +212,11 @@ async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_sess
         ("volume_decimals", " Any ", "any"),
         ("volume_decimals", "2", "2"),
         ("project_tooltip_rows", '["staff", 9, "volume", 4, 9]', '["volume","staff",4,9]'),
+        (
+            "help_url",
+            " https://Intranet.Example/milestone-docs ",
+            "https://Intranet.Example/milestone-docs",
+        ),
     ],
 )
 async def test_a_known_key_stores_its_canonical_form(
@@ -269,6 +275,8 @@ async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_se
         ("project_tooltip_rows", '["customer", "notes"]'),
         ("project_tooltip_rows", "[true]"),
         ("project_tooltip_rows", "[0]"),
+        ("help_url", "javascript:alert(1)"),
+        ("help_url", "intranet.example/docs"),
     ],
 )
 async def test_an_invalid_value_for_a_known_key_is_422(authed_client, mock_db_session, key, raw):
@@ -643,3 +651,109 @@ async def test_sso_settings_follow_the_settings_sso_permission(
     response = await client.put("/api/settings/sso", json={"enabled": False})
 
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_help_url_needs_settings_general(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user", {"project_fields.manage"}))
+
+    response = await client.put(
+        "/api/settings/help_url", json={"value": "https://intranet.example/docs/"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: settings.general"
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "address",
+    [
+        "https://intranet.example/milestone-docs",
+        "https://contoso.sharepoint.com/:b:/r/sites/Lab/Shared%20Documents/Milestone-Manual.pdf"
+        "?csf=1&web=1&e=AbC123#page=4",
+    ],
+)
+async def test_help_url_is_stored_as_entered(authed_client, mock_db_session, address):
+    client, set_user = authed_client
+    set_user(FakeUser(4, "ops", {"settings.general"}))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.put("/api/settings/help_url", json={"value": f"  {address} "})
+
+    assert response.status_code == 200
+    assert response.json()["value"] == address
+
+
+@pytest.mark.asyncio
+async def test_help_url_refuses_an_unsafe_or_too_long_address(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(4, "ops", {"settings.general"}))
+    mock_db_session.execute.return_value = scalar_result(None)
+    base = "https://intranet.example/"
+    refused = ["https://user:pw@intranet.example/", "https://a b/", base + "d" * (2001 - len(base))]
+
+    for value in refused:
+        response = await client.put("/api/settings/help_url", json={"value": value})
+        assert response.status_code == 422, value
+    longest = base + "d" * (2000 - len(base))
+    response = await client.put("/api/settings/help_url", json={"value": longest})
+    assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Internal rows (2.6.0): the application's own markers
+# ---------------------------------------------------------------------------
+
+MARKER = "_internal.absorption_example_added"
+
+
+@pytest.mark.asyncio
+async def test_internal_rows_are_never_listed(app_client, mock_db_session):
+    mock_db_session.execute.return_value = scalars_result(
+        [Settings(key="instance_title", value="Lab"), Settings(key=MARKER, value="1")]
+    )
+
+    response = await app_client.get("/api/settings")
+
+    assert response.status_code == 200
+    assert MARKER not in response.json()
+    assert response.json()["instance_title"] == "Lab"
+
+
+@pytest.mark.asyncio
+async def test_an_internal_row_reads_as_missing(app_client, mock_db_session):
+    mock_db_session.execute.return_value = scalar_result(Settings(key=MARKER, value="1"))
+
+    response = await app_client.get(f"/api/settings/{MARKER}")
+
+    assert response.status_code == 200
+    assert response.json() == {"key": MARKER, "value": None}
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["0", None])
+async def test_an_internal_row_cannot_be_written_or_deleted(authed_client, mock_db_session, value):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+
+    response = await client.put(f"/api/settings/{MARKER}", json={"value": value})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "This setting is kept by the application and cannot be changed"
+    )
+    mock_db_session.execute.assert_not_awaited()
+    mock_db_session.commit.assert_not_awaited()
+
+
+def test_the_internal_prefix():
+    from app.services.instance_settings import KNOWN_SETTINGS, is_internal_setting
+    from app.services.tenant_provisioner import ABSORPTION_EXAMPLE_MARKER_KEY
+
+    assert is_internal_setting(ABSORPTION_EXAMPLE_MARKER_KEY)
+    assert not is_internal_setting("help_url")
+    assert not any(is_internal_setting(key) for key in KNOWN_SETTINGS)

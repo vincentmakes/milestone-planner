@@ -30,6 +30,7 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,10 @@ if TYPE_CHECKING:
 MAX_DEFAULT_SKILLS = 500
 MAX_TYPE_NAME_LENGTH = 100
 MAX_FIELD_LABEL_LENGTH = 60
+# The online manual Help opens (help_url, 2.6.0): the public one by default.
+# The client's DEFAULT_HELP_URL (frontend/src/utils/helpLinks.ts) is the same.
+DEFAULT_HELP_URL = "https://docs-milestone.verdet.me/"
+MAX_HELP_URL_LENGTH = 2000
 
 # The built-in project fields an admin may rename (project_field_labels), in
 # display order, and those that may be hidden (project_fields_hidden): Confirmed
@@ -224,6 +229,34 @@ def _tooltip_rows(value: str) -> str:
     return _compact(rows + sorted(ids))
 
 
+def _help_url(value: str) -> str:
+    """
+    The address Help opens (``help_url``), stored exactly as entered (trimmed)
+    and opened as is: the manual's home page, or its PDF on a file share
+    (a SharePoint link with ``?csf=1&web=1#page=4``). Only what keeps the
+    ``<a href>`` safe is checked: an absolute ``http`` / ``https`` URL with a
+    host, no ``user:password@``, no whitespace or control character, at most
+    2000 characters -- ``javascript:``, ``data:`` and scheme-less values are
+    refused.
+    """
+    text = value.strip()
+    if not text or any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in text):
+        raise ValueError("expected an http or https address without spaces")
+    try:
+        parts = urlsplit(text)
+        hostname = parts.hostname
+        parts.port  # noqa: B018 -- an invalid port raises ValueError here
+    except ValueError as exc:
+        raise ValueError("expected an http or https address") from exc
+    if parts.scheme.lower() not in ("http", "https") or not hostname:
+        raise ValueError("expected an http or https address")
+    if "@" in parts.netloc:
+        raise ValueError("an address must not carry a user name or password")
+    if len(text) > MAX_HELP_URL_LENGTH:
+        raise ValueError(f"an address has at most {MAX_HELP_URL_LENGTH} characters")
+    return text
+
+
 KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "gantt_default_panel": SettingSpec(_choice("none", "staff", "equipment"), "none"),
     "staff_panel_default_skills": SettingSpec(_skill_ids, "[]"),
@@ -250,7 +283,21 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     # capacity and availability. Off by default -- NOT a switch: read it with
     # ``weekends_working_from``, never ``flag_enabled``.
     "weekend_working_days": SettingSpec(_boolean, "false"),
+    # 2.6.0: where Help in the user menu opens (a self-hosted copy of the
+    # manual); the client checks the scheme again before using it.
+    "help_url": SettingSpec(_help_url, DEFAULT_HELP_URL),
 }
+
+# Rows of the ``settings`` table the application keeps for itself (one-time
+# markers of the data migrations, 2.6.0): never listed nor answered by
+# ``GET /settings``, never written through ``PUT /settings/{key}``.
+INTERNAL_SETTING_PREFIX = "_internal."
+
+
+def is_internal_setting(key: str) -> bool:
+    """Whether ``key`` is one of the application's own rows (``INTERNAL_SETTING_PREFIX``)."""
+    return key.startswith(INTERNAL_SETTING_PREFIX)
+
 
 # The settings Settings -> Project fields saves: writable with
 # project_fields.manage as well as settings.general (PUT /settings/{key}).

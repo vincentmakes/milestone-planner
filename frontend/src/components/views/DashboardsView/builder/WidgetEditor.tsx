@@ -1,5 +1,5 @@
 /**
- * WidgetEditor — add or edit one dashboard widget (2.3.0), with a live
+ * WidgetEditor — add or edit one dashboard widget (2.6.0), with a live
  * preview.
  *
  * The form, in order: the kind (a radio group of nine), the title, the
@@ -23,6 +23,18 @@
  * *Period*), the others up to two; changing the measure drops a dimension or
  * a filter it refuses.
  *
+ * 2.6.0: the filters are the shared `FilterSection` (Utilisation adds the
+ * project filters with a hint, every project-backed measure *Has a
+ * customer*); a KPI, a gauge, a bar, a line, a table and a heatmap may be a
+ * *Calculation* (`CalculationSection`): one formula field in which measures
+ * are pills, each with its own filters. Turning it on needs no typing (the
+ * is the widget's measure and filters, `b` its natural partner, `a / b`);
+ * while it is on the top *Measure* and *Filters* give way to the terms, an
+ * invalid formula keeps the last valid preview on screen (dimmed) and blocks
+ * Save with the formula's message; turning it off goes back to term `a`
+ * (after a confirmation when the calculation was customised). A KPI and a
+ * gauge take a *Target* and *Show as % of target*.
+ *
  * The preview asks the server (`/dashboards/query`) 400 ms after the last
  * change; a newer request supersedes an older one (answers are matched by a
  * sequence number) and an answer after the dialog closed is dropped. A
@@ -33,6 +45,11 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { confirmAction } from '@/utils/confirmDialog';
+import { fieldFromFormula, formulaFromField, insertPill, measureOptions, readField } from '@/utils/formulaField';
+import type { FieldProblem, FieldState, TermFilters } from '@/utils/formulaField';
+import { calculationsHelpUrl } from '@/utils/helpLinks';
+import { customHelpUrl } from '@/utils/instanceSettings';
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
@@ -40,8 +57,6 @@ import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { SearchableOption } from '@/components/common/SearchableSelect';
-import { MultiSelectDropdown } from '@/components/common/MultiSelectDropdown';
-import type { MultiSelectDropdownItem } from '@/components/common/MultiSelectDropdown';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { DateRangeField } from '@/components/common/DateRangeField';
 import { Notice } from '@/components/common/Notice';
@@ -49,8 +64,6 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import {
   Icon,
   BarChartIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   GaugeIcon,
   HeatmapIcon,
   KpiIcon,
@@ -64,14 +77,10 @@ import { ApiError } from '@/api/client';
 import { dashboardsApi } from '@/api/endpoints/dashboards';
 import { useAppStore } from '@/stores/appStore';
 import { useHasPermission } from '@/hooks/useCan';
-import { useVisibleSites } from '@/hooks/useVisibleSites';
-import { uniqueById } from '@/utils/uniqueById';
 import {
   DIMENSION_KINDS,
   dimensionLabel,
   dimensionNeeds,
-  FILTER_LABELS,
-  filterNeeds,
   GRAINS,
   isDimensionHidden,
   isValidDimension,
@@ -82,10 +91,8 @@ import {
   OTHER_KEY,
   queryUnit,
   RELATIVE_PERIODS,
-  takesFilter,
   unitWord,
 } from '@/utils/metrics';
-import type { FilterKey } from '@/utils/metrics';
 import type {
   DimensionKind,
   Grain,
@@ -101,26 +108,38 @@ import type {
 import { WidgetCard } from '../WidgetCard';
 import { gaugeTarget } from '../charts/toOption';
 import { plainError } from './useDashboardEditor';
+import { FilterSection } from './FilterSection';
+import { CalculationSection, CAPACITY_EXAMPLE_HINT, OTHER_EXAMPLE_HINT } from './CalculationSection';
+import type { FormulaExampleRow } from './CalculationSection';
+import { pillLabel } from './termSummary';
+import { useNameLookups } from './useNameLookups';
 import {
-  activeFilterCount,
   changeMeasure,
   cleanOptions,
   cleanQuery,
   defaultQuery,
   dimensionKey,
   dropUnheld,
+  endFormula,
+  exampleFormula,
+  exampleNeeds,
+  isDefaultFormula,
   MAX_DIMENSIONS,
   MIN_DIMENSIONS,
   newClientId,
   noDimensionKind,
   normaliseQuery,
+  offersFormula,
   parseTarget,
   placeNewWidget,
   queryProblem,
   stableKey,
+  startFormula,
+  FORMULA_EXAMPLES,
   SUMMED_KINDS,
+  TARGET_KINDS,
 } from './widgetDraft';
-import type { DraftWidget } from './widgetDraft';
+import type { DraftWidget, FormulaExampleKey } from './widgetDraft';
 import type { PermissionKey } from '@/types/permissions';
 import styles from './WidgetEditor.module.css';
 
@@ -166,11 +185,15 @@ function measureHint(measure: Measure): string | undefined {
   return undefined;
 }
 
-const MILESTONE_OPTIONS = [
-  { value: 'include', label: 'Include' },
-  { value: 'only', label: 'Only' },
-  { value: 'exclude', label: 'Exclude' },
-];
+export const GOAL_HINT = 'Green from the target up, amber within 15 % below it';
+export const CALCULATION_HINT = 'Combine measures, each with its own filters, with a formula';
+export const STALE_PREVIEW = 'The last valid result: fix the formula to update it';
+export const PENDING_PREVIEW = 'Updates when the formula is complete';
+export const FIX_FORMULA = 'Fix the formula to see the preview';
+export const LEAVE_CALCULATION =
+  'Turn the calculation off? The widget goes back to the formula’s first measure alone; the formula is lost.';
+const replaceWithExample = (label: string): string =>
+  `Replace your formula with the example “${label}”?`;
 
 /** Picker ids of the dimension choices: a kind by its position, a project field by its id. */
 const FIELD_ID_BASE = 1000;
@@ -183,8 +206,8 @@ interface DimensionChoice extends SearchableOption {
 
 type PreviewState =
   | { status: 'idle' }
-  | { status: 'loading'; result: MetricResult | null; key: string | null }
-  | { status: 'ok'; result: MetricResult; key: string }
+  | { status: 'loading'; result: MetricResult | null; key: string | null; query: MetricQuery | null }
+  | { status: 'ok'; result: MetricResult; key: string; query: MetricQuery }
   | { status: 'invalid'; message: string }
   | { status: 'unavailable' };
 
@@ -198,9 +221,9 @@ export interface WidgetEditorProps {
   onSave: (widget: DraftWidget, preview: MetricResult | null) => void;
 }
 
-type ListFilter = 'site_ids' | 'team_ids' | 'project_team_ids' | 'person_ids' | 'project_ids' | 'tag_ids' | 'equipment_ids';
-
 const bucketValue = (key: unknown): string => JSON.stringify(key);
+
+const FORMULA_EXAMPLES_BY_KEY = new Map<string, string>(FORMULA_EXAMPLES.map((e) => [e.key, e.label]));
 
 export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorProps) {
   const [kind, setKind] = useState<WidgetKind>(widget?.kind ?? 'bar');
@@ -214,17 +237,16 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   );
   const [options, setOptions] = useState<WidgetOptions>(widget?.options ?? {});
   const [topNText, setTopNText] = useState(widget?.query.top_n ? String(widget.query.top_n) : '');
-  // The stored target as text: only one the gauge draws (finite, ≥ 0).
+  // The stored target as text: only one the gauge or KPI draws (finite, ≥ 0).
   const [targetText, setTargetText] = useState(() => {
     const target = gaugeTarget(widget?.options.target);
     return target === null ? '' : String(target);
   });
-  const [filtersOpen, setFiltersOpen] = useState(() => activeFilterCount(widget?.query.filters) > 0);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
   const { isSubmitting, begin, end } = useSubmitGuard();
-  const filtersId = useId();
+  const calculationHintId = useId();
 
   const canStaff = useHasPermission('views.staff');
   const canEquipment = useHasPermission('views.equipment');
@@ -242,25 +264,43 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const holds = (key: PermissionKey | null): boolean => key === null || heldKeys.has(key);
   const fields = useAppStore((s) => s.projectFields);
   const settings = useAppStore((s) => s.instanceSettings);
-  const teams = useAppStore((s) => s.teams);
-  const staff = useAppStore((s) => s.staff);
-  const projects = useAppStore((s) => s.projects);
-  const tags = useAppStore((s) => s.tags);
-  const equipment = useAppStore((s) => s.equipment);
-  const sites = useVisibleSites();
+  // The configured manual (Settings → Features & defaults), the public one by default.
+  const calculationsHelp = useAppStore((s) => calculationsHelpUrl(customHelpUrl(s.instanceSettings)));
 
   const dimensions = useMemo(() => query.dimensions ?? [], [query.dimensions]);
   const filters = useMemo<MetricFilters>(() => query.filters ?? {}, [query.filters]);
-  // The filters the measure takes, and the user may use (People: views.staff, and on a
-  // capacity measure absences.view_others; Equipment: views.equipment).
-  const showsFilter = (key: FilterKey): boolean =>
-    takesFilter(query.measure, key) && holds(filterNeeds(key)) && holds(filterNeeds(key, query.measure));
+  const formula = query.formula ?? null;
+  // The formula field: text and pills; the query's formula follows it while it reads.
+  const lookups = useNameLookups();
+  const labelOf = (measure: Measure, termFilters: TermFilters | undefined) => pillLabel(measure, termFilters, lookups);
+  const [field, setField] = useState<FieldState | null>(() =>
+    query.formula ? fieldFromFormula(query.formula, (t) => pillLabel(t.measure, t.filters, lookups)) : null
+  );
+  const fieldOptions = useMemo(
+    () => measureOptions((m) => m === query.measure || holds(measureNeeds(m))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- holds reads heldKeys
+    [heldKeys, query.measure]
+  );
+  const fieldRead = useMemo(
+    () => (formula && field ? formulaFromField(field, fieldOptions) : null),
+    [formula, field, fieldOptions]
+  );
+  const fieldProblem: FieldProblem | null = fieldRead && 'problem' in fieldRead ? fieldRead.problem : null;
+  // A word that starts a measure's name is still being typed: the list helps, no message yet.
+  const typing =
+    fieldProblem?.word !== undefined &&
+    fieldOptions.some((o) => o.label.toLowerCase().startsWith(fieldProblem.word!.text.toLowerCase()));
+  const shownProblem = typing ? null : fieldProblem;
   const noPercent = NO_PERCENT_MEASURES.has(query.measure);
-  // A gauge, and a KPI of a measure that takes no percentage, show the total: no dimension.
-  const noDimension = noDimensionKind(kind, query.measure);
+  // A gauge, and a KPI of a measure that takes no percentage or of a calculated widget, show the total.
+  const noDimension = noDimensionKind(kind, query.measure, formula !== null);
   const problem = queryProblem(kind, query);
+  // The field's problem: shown under it, the last valid preview kept, Save blocked.
+  const formulaError = fieldProblem ? shownProblem?.message ?? 'Finish typing the measure’s name' : null;
   const clean = useMemo(() => cleanQuery(query), [query]);
-  const previewKey = problem ? null : stableKey(clean);
+  const previewKey = problem || formulaError ? null : stableKey(clean);
+  const keepPreviewRef = useRef(false);
+  keepPreviewRef.current = formulaError !== null;
 
   // --- The live preview ------------------------------------------------------
   const seqRef = useRef(0);
@@ -269,18 +309,21 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   useEffect(() => {
     const seq = ++seqRef.current;
     if (previewKey === null) {
-      setPreview({ status: 'idle' });
+      // While the formula is being typed, the last valid result stays (dimmed).
+      if (!keepPreviewRef.current) setPreview({ status: 'idle' });
       return;
     }
     setPreview((prev) => ({
       status: 'loading',
       result: prev.status === 'ok' || prev.status === 'loading' ? prev.result : null,
       key: prev.status === 'ok' || prev.status === 'loading' ? prev.key : null,
+      query: prev.status === 'ok' || prev.status === 'loading' ? prev.query : null,
     }));
+    const asked = cleanRef.current;
     const timer = window.setTimeout(() => {
-      dashboardsApi.query(cleanRef.current).then(
+      dashboardsApi.query(asked).then(
         (result) => {
-          if (seq === seqRef.current) setPreview({ status: 'ok', result, key: previewKey });
+          if (seq === seqRef.current) setPreview({ status: 'ok', result, key: previewKey, query: asked });
         },
         (err: unknown) => {
           if (seq !== seqRef.current) return;
@@ -303,6 +346,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   );
 
   const previewResult = preview.status === 'ok' || preview.status === 'loading' ? preview.result : null;
+  const previewQuery = preview.status === 'ok' || preview.status === 'loading' ? preview.query : null;
 
   // --- Changes -----------------------------------------------------------------
   const update = (nextKind: WidgetKind, next: MetricQuery) => {
@@ -338,6 +382,70 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     setQuery((prev) => ({ ...prev, filters: { ...(prev.filters ?? {}), ...patch } }));
   };
 
+  // --- Calculation ---------------------------------------------------------------------
+  /** The query with `next`'s formula, and the field showing it. */
+  const showFormula = (next: MetricQuery) => {
+    const normalised = normaliseQuery(kind, next);
+    setField(normalised.formula ? fieldFromFormula(normalised.formula, (t) => labelOf(t.measure, t.filters)) : null);
+    update(kind, next);
+  };
+
+  const customised = !isDefaultFormula(query, canStaff) || fieldProblem !== null;
+
+  const setCalculation = async (on: boolean) => {
+    if (on) {
+      showFormula(dropUnheld(startFormula(kind, query, canStaff), holds));
+      return;
+    }
+    if (customised && !(await confirmAction({ message: LEAVE_CALCULATION, confirmLabel: 'Turn off' }))) {
+      return;
+    }
+    setField(null);
+    update(kind, endFormula(query));
+  };
+
+  const changeField = (next: FieldState) => {
+    setField(next);
+    const read = formulaFromField(next, fieldOptions);
+    if ('problem' in read || !formula) return;
+    update(kind, dropUnheld({ ...query, measure: read.formula.terms[0].measure, formula: { ...formula, ...read.formula } }, holds));
+  };
+
+  const acceptSuggestion = (fieldIssue: FieldProblem) => {
+    const word = fieldIssue.word;
+    if (!field || !word?.suggestion) return;
+    const inserted = insertPill(field, word, { measure: word.suggestion.measure }, labelOf(word.suggestion.measure, undefined));
+    changeField(inserted.state);
+  };
+
+  /** The *Examples* menu's rows: each formula as the field will read it, on the current one. */
+  const exampleRows: FormulaExampleRow[] = formula
+    ? FORMULA_EXAMPLES.map((example) => {
+        const missing = exampleNeeds(kind, query, example.key).filter((key) => !holds(key));
+        // The very field the example shows (`showFormula`), read with real operator signs.
+        const built = normaliseQuery(kind, dropUnheld(exampleFormula(kind, query, example.key), holds)).formula;
+        return {
+          key: example.key,
+          label: example.label,
+          formula: built ? readField(fieldFromFormula(built, (t) => labelOf(t.measure, t.filters))) : '',
+          blocked: missing.length === 0 ? null : missing.includes('views.staff') ? CAPACITY_EXAMPLE_HINT : OTHER_EXAMPLE_HINT,
+        };
+      })
+    : [];
+
+  const pickExample = async (key: FormulaExampleKey) => {
+    const label = FORMULA_EXAMPLES_BY_KEY.get(key) ?? key;
+    if (customised && !(await confirmAction({ message: replaceWithExample(label), confirmLabel: 'Replace' }))) {
+      return;
+    }
+    showFormula(dropUnheld(exampleFormula(kind, query, key), holds));
+    // On a gauge, the goal example draws its goal band like the built-in absorption gauge.
+    if (kind === 'gauge' && key === 'goal') {
+      setTargetText('100');
+      setOptions((prev) => ({ ...prev, target: 100, target_is_goal: true }));
+    }
+  };
+
   const setTopN = (text: string) => {
     setTopNText(text);
     const n = Number.parseInt(text, 10);
@@ -357,12 +465,17 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   };
 
   // --- Dimension choices -------------------------------------------------------
+  // A calculation's term measures: a dimension one of them accepts (the period: all of them).
+  const termMeasures = useMemo(() => formula?.terms.map((t) => t.measure) ?? null, [formula]);
   const allChoices = useMemo<DimensionChoice[]>(() => {
     const out: DimensionChoice[] = [];
     for (const { key, label } of DIMENSION_KINDS) {
-      if (!isValidDimension(query.measure, key)) continue;
-      // The common need (Person: views.staff) and the measure family's (capacity by person: absences).
-      const needs = [dimensionNeeds(key), dimensionNeeds(key, query.measure)];
+      const measures = termMeasures ?? [query.measure];
+      const accepting = measures.filter((m) => isValidDimension(m, key));
+      if (accepting.length === 0) continue;
+      if (key === 'period' && accepting.length < measures.length) continue;
+      // The common need (Person: views.staff) and each measure family's (capacity by person: absences).
+      const needs = [dimensionNeeds(key), ...accepting.map((m) => dimensionNeeds(key, m))];
       if (needs.some((need) => need !== null && !heldKeys.has(need))) continue;
       if (isDimensionHidden(key, settings)) continue;
       if (key === 'field') {
@@ -384,7 +497,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
       out.push({ id: kindId(key), label: key === 'period' ? label : dimensionLabel(dimension, fields, settings), dimension });
     }
     return out;
-  }, [query.measure, heldKeys, settings, fields]);
+  }, [query.measure, termMeasures, heldKeys, settings, fields]);
 
   // Only the exact same choice is excluded: two different project fields cross. A
   // treemap or a sankey takes no period (its boxes or flows would be periods).
@@ -446,70 +559,6 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     );
   };
 
-  // --- Filter choices ----------------------------------------------------------
-  const allSites = useAppStore((s) => s.sites);
-  const siteName = useMemo(() => new Map(allSites.map((s) => [s.id, s.name])), [allSites]);
-  const filterOptions = useMemo<Record<ListFilter, MultiSelectDropdownItem[]>>(() => {
-    const teamItems = teams.map((t) => ({
-      id: t.id,
-      name: t.name,
-      color: t.color ?? undefined,
-      hint: siteName.get(t.site_id),
-    }));
-    const archived = filters.archived ?? 'exclude';
-    const projectItems = projects
-      .filter((p) => (archived === 'exclude' ? !p.archived : archived === 'only' ? p.archived : true))
-      .map((p) => ({ id: p.id, name: p.name, hint: siteName.get(p.site_id) }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    return {
-      site_ids: sites.map((s) => ({ id: s.id, name: s.name })),
-      team_ids: teamItems,
-      project_team_ids: teamItems,
-      person_ids: uniqueById(staff)
-        .map((s) => ({ id: s.id, name: s.name, hint: s.role || undefined }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-      project_ids: projectItems,
-      tag_ids: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
-      // The store holds one row per equipment-site pair (empty without views.equipment).
-      equipment_ids: uniqueById(equipment)
-        .map((e) => ({
-          id: e.id,
-          name: e.name,
-          hint:
-            (e.site_ids ?? [e.site_id])
-              .map((id) => siteName.get(id))
-              .filter(Boolean)
-              .join(', ') || undefined,
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    };
-  }, [teams, projects, staff, tags, equipment, sites, siteName, filters.archived]);
-
-  // Equipment types are names: the picker numbers them (1-based, in name order),
-  // a stored type no equipment has any more kept so it can be removed.
-  const equipmentTypes = useMemo(() => {
-    const names = new Set<string>();
-    for (const e of equipment) if (e.type?.trim()) names.add(e.type);
-    for (const name of filters.equipment_types ?? []) names.add(name);
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [equipment, filters.equipment_types]);
-
-  const listFilter = (key: ListFilter, searchable = false) => (
-    <MultiSelectDropdown
-      key={key}
-      label={FILTER_LABELS[key]}
-      options={filterOptions[key]}
-      selectedIds={new Set(filters[key] ?? [])}
-      onChange={(ids) => setFilters({ [key]: ids })}
-      placeholder="Any"
-      emptyText="Nothing to choose"
-      searchable={searchable}
-      searchLabel={`Find ${FILTER_LABELS[key].toLowerCase()}`}
-    />
-  );
-
-  const dropdownFields = fields.filter((f) => f.field_type === 'select' || f.field_type === 'multiselect');
-
   // --- Measures ----------------------------------------------------------------------
   // Those whose key the user holds; the current one always (a stored widget of a lost key).
   const measureGroups = measuresByFamily((m) => m === query.measure || holds(measureNeeds(m)));
@@ -556,7 +605,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     // A KPI share shows one value's share: it needs that value (the preview still runs without it).
     const noBucket =
       kind === 'kpi' && Boolean(query.percent_of) && (options.kpi_bucket === undefined || options.kpi_bucket === null);
-    const formProblem = problem ?? (noBucket ? KPI_BUCKET_REQUIRED : null);
+    const formProblem = problem ?? formulaError ?? (noBucket ? KPI_BUCKET_REQUIRED : null);
     setFormError(formProblem);
     if (!trimmed || formProblem || preview.status === 'invalid') return;
     if (!begin()) return;
@@ -586,15 +635,15 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
         type="button"
         onClick={() => handleSave()}
         loading={isSubmitting}
-        disabled={preview.status === 'invalid'}
-        title={preview.status === 'invalid' ? 'The server refuses this widget: see the preview' : undefined}
+        disabled={preview.status === 'invalid' || formulaError !== null}
+        title={
+          formulaError ?? (preview.status === 'invalid' ? 'The server refuses this widget: see the preview' : undefined)
+        }
       >
         {widget ? 'Save Changes' : 'Add widget'}
       </Button>
     </div>
   );
-
-  const filterCount = activeFilterCount(filters);
 
   return (
     <Modal isOpen onClose={onClose} title={widget ? 'Edit widget' : 'Add widget'} size="xxl" footer={footer}>
@@ -617,15 +666,51 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               error={titleError ?? undefined}
             />
 
-            <Select
-              label="Measure"
-              fullWidth
-              value={query.measure}
-              onChange={(e) => update(kind, dropUnheld(changeMeasure(kind, query, e.target.value as Measure), holds))}
-              options={[]}
-              groups={measureGroups}
-              hint={measureHint(query.measure)}
-            />
+            {offersFormula(kind) && (
+              <ToggleSwitch
+                label="Calculation"
+                checked={formula !== null}
+                onChange={(on) => void setCalculation(on)}
+                aria-describedby={calculationHintId}
+              />
+            )}
+            {offersFormula(kind) && (
+              <p className={styles.hint} id={calculationHintId}>
+                {CALCULATION_HINT}.{' '}
+                <a href={calculationsHelp} target="_blank" rel="noopener noreferrer">
+                  How calculations work
+                </a>
+              </p>
+            )}
+
+            {formula && field ? (
+              <CalculationSection
+                formula={formula}
+                field={field}
+                onFieldChange={changeField}
+                onResultChange={(result) => update(kind, { ...query, formula: { ...formula, result } })}
+                options={fieldOptions}
+                label={labelOf}
+                holds={holds}
+                examples={exampleRows}
+                dimensions={dimensions}
+                problem={shownProblem}
+                typing={typing}
+                onAcceptSuggestion={acceptSuggestion}
+                result={preview.status === 'ok' && preview.key === previewKey ? preview.result : null}
+                onExample={(key) => void pickExample(key)}
+              />
+            ) : (
+              <Select
+                label="Measure"
+                fullWidth
+                value={query.measure}
+                onChange={(e) => update(kind, dropUnheld(changeMeasure(kind, query, e.target.value as Measure), holds))}
+                options={[]}
+                groups={measureGroups}
+                hint={measureHint(query.measure)}
+              />
+            )}
 
             {/* A gauge, and a KPI of a measure that takes no percentage, show the total: no dimension.
                 A heatmap and a sankey show both fields at once (they need two). */}
@@ -635,94 +720,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               (dimensions.length > 0 || MIN_DIMENSIONS[kind] > 1) &&
               dimensionField(1)}
 
-            <section className={styles.section}>
-              <Button
-                type="button"
-                variant="ghost"
-                className={styles.disclosure}
-                aria-expanded={filtersOpen}
-                aria-controls={filtersId}
-                icon={<Icon icon={filtersOpen ? ChevronDownIcon : ChevronRightIcon} />}
-                onClick={() => setFiltersOpen((open) => !open)}
-              >
-                {filterCount > 0 ? `Filters (${filterCount})` : 'Filters'}
-              </Button>
-              {filtersOpen && (
-                <div id={filtersId} className={styles.filters}>
-                  {showsFilter('site_ids') && listFilter('site_ids')}
-                  {showsFilter('team_ids') && listFilter('team_ids', true)}
-                  {showsFilter('project_team_ids') && listFilter('project_team_ids', true)}
-                  {showsFilter('person_ids') && listFilter('person_ids', true)}
-                  {showsFilter('project_ids') && listFilter('project_ids', true)}
-                  {showsFilter('tag_ids') && listFilter('tag_ids')}
-                  {showsFilter('equipment_ids') && listFilter('equipment_ids', true)}
-                  {showsFilter('equipment_types') && (
-                    <MultiSelectDropdown
-                      label={FILTER_LABELS.equipment_types}
-                      options={equipmentTypes.map((name, i) => ({ id: i + 1, name }))}
-                      selectedIds={
-                        new Set((filters.equipment_types ?? []).map((name) => equipmentTypes.indexOf(name) + 1))
-                      }
-                      onChange={(ids) => setFilters({ equipment_types: ids.map((id) => equipmentTypes[id - 1]) })}
-                      placeholder="Any"
-                      emptyText="No equipment type"
-                    />
-                  )}
-                  {showsFilter('field_options') && dropdownFields.map((field) => (
-                    <MultiSelectDropdown
-                      key={`field-${field.id}`}
-                      label={field.name}
-                      options={field.options.map((o) => ({ id: o.id, name: o.name, color: o.color ?? undefined }))}
-                      selectedIds={new Set(filters.field_options?.[String(field.id)] ?? [])}
-                      onChange={(ids) =>
-                        setFilters({ field_options: { ...(filters.field_options ?? {}), [String(field.id)]: ids } })
-                      }
-                      placeholder="Any"
-                      emptyText="No item"
-                    />
-                  ))}
-                  {showsFilter('milestones') && (
-                    <Select
-                      label={FILTER_LABELS.milestones}
-                      fullWidth
-                      value={filters.milestones ?? 'include'}
-                      onChange={(e) => setFilters({ milestones: e.target.value as MetricFilters['milestones'] })}
-                      options={MILESTONE_OPTIONS}
-                    />
-                  )}
-                  {showsFilter('confirmed') && (
-                    <Select
-                      label={FILTER_LABELS.confirmed}
-                      fullWidth
-                      value={typeof filters.confirmed === 'boolean' ? String(filters.confirmed) : 'any'}
-                      onChange={(e) =>
-                        setFilters({ confirmed: e.target.value === 'any' ? null : e.target.value === 'true' })
-                      }
-                      options={[
-                        { value: 'any', label: 'Any' },
-                        { value: 'true', label: 'Confirmed' },
-                        { value: 'false', label: 'Not confirmed' },
-                      ]}
-                    />
-                  )}
-                  {showsFilter('archived') && (
-                    <Select
-                      label="Archived projects"
-                      fullWidth
-                      value={filters.archived ?? 'exclude'}
-                      onChange={(e) => setFilters({ archived: e.target.value as MetricFilters['archived'] })}
-                      options={[
-                        { value: 'exclude', label: 'Exclude' },
-                        ...(canArchived || filters.archived === 'include'
-                          ? [{ value: 'include', label: 'Include' }]
-                          : []),
-                        ...(canArchived || filters.archived === 'only' ? [{ value: 'only', label: 'Only' }] : []),
-                      ]}
-                    />
-                  )}
-                </div>
-              )}
-            </section>
+            {!formula && <FilterSection measure={query.measure} filters={filters} onChange={setFilters} holds={holds} />}
 
             <Select
               label="Period"
@@ -748,11 +746,12 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               </div>
             )}
 
-            {/* Without a dimension there is nothing to take a percentage of, nor to rank. */}
+            {/* Without a dimension there is nothing to take a percentage of, nor to rank;
+                a calculated widget ranks its formula's values but takes no percentage. */}
             {!noDimension && (
               <div className={styles.row}>
                 {/* Utilisation, available days and people over capacity take no percentage. */}
-                {!noPercent && (
+                {!noPercent && !formula && (
                   <Select
                     label="Percent of"
                     fullWidth
@@ -780,7 +779,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
             <KindOptions
               kind={kind}
               options={options}
-              stackable={!noPercent}
+              stackable={!noPercent && !formula}
               share={Boolean(query.percent_of)}
               percentUnit={queryUnit(query) === 'percent'}
               unitHint={queryUnit(query) === 'percent' ? 'In %' : `In ${unitWord(2, queryUnit(query))}`}
@@ -802,6 +801,16 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
 
   function renderPreview(): ReactNode {
     if (problem) return <p className={styles.previewNote}>{problem}</p>;
+    if (formulaError) {
+      // The last valid result stays on screen, dimmed, until the formula reads again.
+      if (!previewResult || !previewQuery) return <p className={styles.previewNote}>{FIX_FORMULA}</p>;
+      return (
+        <div className={styles.stalePreview}>
+          <p className={styles.hint}>{typing ? PENDING_PREVIEW : STALE_PREVIEW}</p>
+          <div className={styles.stale}>{previewCard(previewQuery, previewResult, false)}</div>
+        </div>
+      );
+    }
     if (preview.status === 'invalid') return <Notice tone="error">{preview.message}</Notice>;
     if (preview.status === 'unavailable') {
       return (
@@ -810,19 +819,23 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
         </p>
       );
     }
+    return previewCard(clean, previewResult, preview.status === 'loading');
+  }
+
+  function previewCard(shown: MetricQuery, result: MetricResult | null, loading: boolean): ReactNode {
     return (
       <WidgetCard
         widget={{
           id: 0,
           kind,
           title: title.trim() || 'Untitled widget',
-          query: clean,
-          options: cleanOptions(kind, query, options),
+          query: shown,
+          options: cleanOptions(kind, shown, options),
           layout: placeNewWidget(kind, []),
           sort_order: 0,
         }}
-        result={previewResult ?? undefined}
-        loading={preview.status === 'loading'}
+        result={result ?? undefined}
+        loading={loading}
       />
     );
   }
@@ -893,13 +906,13 @@ interface KindOptionsProps {
   /** The unit of the result, under the gauge's target ("In weeks", "In %") */
   unitHint: string;
   bucketOptions: { value: string; label: string }[];
-  /** The gauge target as typed (kept apart from the stored number) */
+  /** The gauge or KPI target as typed (kept apart from the stored number) */
   targetText: string;
   onTargetChange: (text: string) => void;
   onChange: (patch: Partial<WidgetOptions>) => void;
 }
 
-/** The display options of a kind (a gauge: its target), and the number format of every kind. */
+/** The display options of a kind (a gauge or a KPI: its target), and the number format of every kind. */
 function KindOptions({
   kind,
   options,
@@ -912,7 +925,10 @@ function KindOptions({
   onTargetChange,
   onChange,
 }: KindOptionsProps) {
-  const numberFormat = options.number_format === 'percent' && !percentUnit ? '' : options.number_format ?? '';
+  // A value shown as % of its target reads in percent whatever the measure's unit.
+  const hasTarget = (gaugeTarget(options.target) ?? 0) > 0;
+  const asPercent = percentUnit || (TARGET_KINDS.has(kind) && hasTarget && Boolean(options.percent_of_target));
+  const numberFormat = options.number_format === 'percent' && !asPercent ? '' : options.number_format ?? '';
   return (
     <div className={styles.options}>
       {kind === 'bar' && (
@@ -959,7 +975,7 @@ function KindOptions({
           onChange={(show) => onChange({ show_legend: show })}
         />
       )}
-      {kind === 'gauge' && (
+      {TARGET_KINDS.has(kind) && (
         <Input
           label="Target"
           type="text"
@@ -969,6 +985,25 @@ function KindOptions({
           value={targetText}
           onChange={(e) => onTargetChange(e.target.value)}
           hint={unitHint}
+        />
+      )}
+      {kind === 'gauge' && (
+        <ToggleSwitch
+          label="Target is a goal"
+          checked={Boolean(options.target_is_goal) && hasTarget}
+          disabled={!hasTarget}
+          title={hasTarget ? undefined : 'Enter a target above 0 first'}
+          onChange={(isGoal) => onChange({ target_is_goal: isGoal })}
+        />
+      )}
+      {kind === 'gauge' && <p className={styles.hint}>{GOAL_HINT}</p>}
+      {TARGET_KINDS.has(kind) && (
+        <ToggleSwitch
+          label="Show as % of target"
+          checked={Boolean(options.percent_of_target) && hasTarget}
+          disabled={!hasTarget}
+          title={hasTarget ? undefined : 'Enter a target above 0 first'}
+          onChange={(percentOfTarget) => onChange({ percent_of_target: percentOfTarget })}
         />
       )}
       {kind === 'kpi' && share && (
@@ -993,7 +1028,7 @@ function KindOptions({
           { value: '', label: 'Auto' },
           { value: 'integer', label: 'Integer' },
           { value: 'decimal', label: 'Decimal' },
-          ...(percentUnit ? [{ value: 'percent', label: 'Percent' }] : []),
+          ...(asPercent ? [{ value: 'percent', label: 'Percent' }] : []),
         ]}
       />
     </div>

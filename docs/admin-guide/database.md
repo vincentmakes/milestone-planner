@@ -90,7 +90,16 @@ DDL:
       a CHECK constraint to a foreign key on `roles.key`;
     - expiry of approval requests whose phase, subphase or booking is gone, removal of pending
       bookings whose request is closed, and clearing of stale request pointers on approved
-      bookings.
+      bookings;
+    - the absorption example (2.6.0), **once per instance**: when the built-in *Capacity and
+      flows* dashboard (no owner) exists and has no widget titled *Customer absorption this
+      year*, the gauge is appended below its widgets (an edited dashboard gets it too). The
+      step then records the internal setting `_internal.absorption_example_added`, whether or
+      not it added anything, so deleting the gauge or the dashboard afterwards is final. A
+      deleted *Capacity and flows* is not recreated. The marker is not listed by
+      `GET /settings` and cannot be written through the API. Instances without dashboard
+      tables (upgrading from before 2.3.0) get the gauge with the normal one-time dashboard
+      seed instead.
 
     The foreign-key rewrites only run when the current constraint differs, and the cleanup
     logs how many rows it removed. The same SQL is available as the

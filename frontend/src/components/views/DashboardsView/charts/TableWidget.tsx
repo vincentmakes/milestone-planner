@@ -9,7 +9,9 @@
  * counts or percentages would double count — and only when no fact counted
  * in several values (the result's `note`: a booking on a project tagged A and
  * B sits in both cells), while the grand total is always the server's
- * (recomputed over distinct facts).
+ * (recomputed over distinct facts). A calculated widget's rows never add up
+ * (its total is the formula over each term's total, from the server); its
+ * value column reads "%" for a percentage and "Value" for a number.
  */
 
 import type { MetricKey, MetricQuery, MetricResult, WidgetOptions } from '@/types';
@@ -31,6 +33,7 @@ const ADDITIVE = new Set([
   'project_weeks',
   'phase_weeks',
   'capacity_days',
+  'capacity_weeks',
   'available_days',
   'equipment_booked_days',
 ]);
@@ -56,8 +59,8 @@ const valueOrZero = (value: number | null | undefined): number | null => (value 
 export function TableWidget({ result, query, options, dimensionLabels }: TableWidgetProps) {
   const fmt = (value: number | null) => formatMetric(value, result.unit, options);
   const labels = dimensionLabels ?? result.dimensions.map((d) => d.label);
-  const sums = ADDITIVE.has(query.measure) && result.unit !== 'percent' && !result.note;
-  const valueHeader = UNIT_LABELS[result.unit] || '%';
+  const sums = ADDITIVE.has(query.measure) && result.unit !== 'percent' && !result.note && !query.formula;
+  const valueHeader = result.unit === 'percent' ? '%' : UNIT_LABELS[result.unit] || 'Value';
 
   if (result.dimensions.length === 0) {
     return (

@@ -262,6 +262,7 @@ describe('settings endpoints', () => {
       project_tooltip_rows: settings.INSTANCE_SETTING_DEFAULTS.project_tooltip_rows,
       audit_log_retention_days: '365',
       weekend_working_days: 'false',
+      help_url: 'https://docs-milestone.verdet.me/',
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
   });
@@ -286,8 +287,9 @@ describe('settings endpoints', () => {
       audit_log_retention_days: '365',
       show_weekends: 'true',
       weekend_working_days: 'false',
+      help_url: 'https://docs-milestone.verdet.me/',
     });
-    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(16);
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(17);
   });
 });
 

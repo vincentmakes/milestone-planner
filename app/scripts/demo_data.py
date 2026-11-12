@@ -596,7 +596,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         project(
             REFERENCE,
             WINTERTHUR,
-            "Internal",
+            # No customer (2.6.0): the absorption gauge counts customer time.
+            "",
             True,
             today - months(14),
             today - months(6),
@@ -647,7 +648,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         project(
             CLEANROOM,
             WINTERTHUR,
-            "Internal",
+            # No customer (2.6.0): the absorption gauge counts customer time.
+            "",
             True,
             today - months(3),
             today + months(1),

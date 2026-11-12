@@ -30,6 +30,7 @@ from app.services.instance_settings import (
     PROJECT_FIELD_SETTING_KEYS,
     canonicalise,
     default_for,
+    is_internal_setting,
     with_defaults,
 )
 from app.services.permissions import permission_required_detail
@@ -38,6 +39,8 @@ from app.services.sso import apply_secret_update, ensure_sso_default_role
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+INTERNAL_SETTING_DETAIL = "This setting is kept by the application and cannot be changed"
 
 
 @router.get("/settings", response_model=dict[str, str | None])
@@ -51,8 +54,9 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings))
     settings = result.scalars().all()
 
-    # The known keys without a row read as their default (nothing is written).
-    return with_defaults({s.key: s.value for s in settings})
+    # The known keys without a row read as their default (nothing is written);
+    # the application's own rows (``is_internal_setting``) are never listed.
+    return with_defaults({s.key: s.value for s in settings if not is_internal_setting(s.key)})
 
 
 # ---------------------------------------------------------
@@ -165,9 +169,12 @@ async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
     """
     Get a specific setting by key.
 
-    This endpoint is public. A known key without a row reads as its default.
+    This endpoint is public. A known key without a row reads as its default;
+    an internal key (``is_internal_setting``) reads as missing.
     Matches: GET /api/settings/:key
     """
+    if is_internal_setting(key):
+        return SettingsResponse(key=key, value=None)
     result = await db.execute(select(Settings).where(Settings.key == key))
     setting = result.scalar_one_or_none()
 
@@ -230,6 +237,8 @@ async def update_setting(
     Any other key stores the value as given.
     Matches: PUT /api/settings/:key
     """
+    if is_internal_setting(key):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=INTERNAL_SETTING_DETAIL)
     allowed = user.permissions.has("settings.general") or (
         key in PROJECT_FIELD_SETTING_KEYS and user.permissions.has("project_fields.manage")
     )

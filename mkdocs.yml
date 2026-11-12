@@ -33,8 +33,39 @@ theme:
   logo: assets/logo.svg
   favicon: assets/favicon.svg
 
+# Build-time helpers inside docs/ that are not pages: the version hook and
+# the print page's templates.
+exclude_docs: |
+  hooks/
+  print-templates/
+
+# Reads /VERSION into config.extra.version (the print page's cover).
+hooks:
+  - docs/hooks/manual_version.py
+
 plugins:
   - search
+  # One page with the User Guide and the Admin Guide, to print or save as PDF
+  # (/print_page/); scripts/docs/export_manual_pdf.py prints it to the PDF that
+  # .github/workflows/manual-pdf.yml publishes. Must stay the last plugin.
+  - print-site:
+      add_to_navigation: false
+      print_page_title: "User and Admin Manual"
+      add_cover_page: true
+      cover_page_template: docs/print-templates/cover_page.tpl
+      add_print_site_banner: true
+      print_site_banner_template: docs/print-templates/banner.tpl
+      add_table_of_contents: true
+      toc_title: "Contents"
+      toc_depth: 2
+      # Off: the plugin numbers the excluded Home page and sections too (the
+      # User Guide would start at 2).
+      enumerate_headings: false
+      enumerate_figures: false
+      exclude:
+        - index.md
+        - developer-guide/
+        - release-notes.md
 
 markdown_extensions:
   - admonition
@@ -59,6 +90,7 @@ validation:
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/print.css
 
 extra:
   social:
@@ -91,6 +123,7 @@ nav:
     - Database & Migrations: admin-guide/database.md
     - Backup & Recovery: admin-guide/backup-recovery.md
     - Monitoring & Troubleshooting: admin-guide/monitoring.md
+    - Hosting the Documentation: admin-guide/hosting-the-documentation.md
   - Developer Guide:
     - Architecture: developer-guide/architecture.md
     - Local Development: developer-guide/local-development.md

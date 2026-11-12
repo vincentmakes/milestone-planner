@@ -608,6 +608,17 @@ decision, not an oversight.
 - **`MentionTextarea`** / `MentionText` (`components/common/MentionTextarea`): the comment
   composer and renderer. A real `<textarea>` with an ARIA listbox for `@` suggestions; both build
   their output from React children and never use `dangerouslySetInnerHTML`.
+- **`FormulaField`** (`components/views/DashboardsView/builder/FormulaField`): the widget
+  editor's formula, on the same technique. A real `<textarea>` (one line that grows when it
+  wraps) over a mirror that paints a pill behind each picked measure (`utils/formulaField.ts`
+  carries the pills through edits). Letters typed open an inline listbox of measures (no portal:
+  it lives in a Modal). A full name typed by hand becomes a pill once the user moves on. A pill
+  shows a pointer and "<pill>: click to filter", and a click or Enter on it opens its filter
+  panel inline under the field (Done or Escape returns focus to the field). The single line under
+  the field is either the problem in plain words (red only for a real mistake, with a
+  did-you-mean button) or the formula with its numbers and the result. While a measure name is
+  still being typed, a neutral hint shows instead. A choice never shows a number that is not the
+  current valid result.
 - **Dialog form layout** (`PhaseModal.module.css` is the reference): `.form` is a flex column
   with a 1 rem gap; `.formGroup` stacks label and control with `0.375rem`; `.formRow` is a
   two-column grid with a 1 rem gap; labels are `--text-secondary`, weight 500. Settings panels

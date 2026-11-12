@@ -21,6 +21,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "period",
         "person_ids",
         "project_ids",
@@ -54,6 +55,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "period",
         "person_ids",
         "project_ids",
@@ -87,6 +89,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "period",
         "person_ids",
         "project_ids",
@@ -119,6 +122,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "period",
         "person_ids",
         "project_ids",
@@ -149,6 +153,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "period",
         "project_ids",
         "project_manager_ids",
@@ -177,6 +182,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "period",
         "project_ids",
         "project_manager_ids",
@@ -204,6 +210,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "period",
         "project_ids",
         "project_manager_ids",
@@ -234,6 +241,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "milestones",
         "period",
         "project_ids",
@@ -265,6 +273,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "milestones",
         "period",
         "project_ids",
@@ -296,6 +305,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "milestones",
         "period",
         "project_ids",
@@ -327,6 +337,7 @@
         "archived",
         "confirmed",
         "field_options",
+        "has_customer",
         "milestones",
         "period",
         "project_ids",
@@ -340,6 +351,29 @@
     },
     "capacity_days": {
       "unit": "days",
+      "dimensions": [
+        "period",
+        "person",
+        "site",
+        "team"
+      ],
+      "needs": "views.staff",
+      "filters": [
+        "archived",
+        "period",
+        "person_ids",
+        "site_ids",
+        "team_ids"
+      ],
+      "dimension_needs": {
+        "person": "absences.view_others"
+      },
+      "filter_needs": {
+        "person_ids": "absences.view_others"
+      }
+    },
+    "capacity_weeks": {
+      "unit": "weeks",
       "dimensions": [
         "period",
         "person",
@@ -395,9 +429,16 @@
       "needs": "views.staff",
       "filters": [
         "archived",
+        "confirmed",
+        "field_options",
+        "has_customer",
         "period",
         "person_ids",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
         "site_ids",
+        "tag_ids",
         "team_ids"
       ],
       "dimension_needs": {
@@ -452,6 +493,7 @@
         "equipment_ids",
         "equipment_types",
         "field_options",
+        "has_customer",
         "period",
         "project_ids",
         "project_manager_ids",
@@ -484,6 +526,7 @@
         "equipment_ids",
         "equipment_types",
         "field_options",
+        "has_customer",
         "period",
         "project_ids",
         "project_manager_ids",
@@ -515,6 +558,7 @@
         "equipment_ids",
         "equipment_types",
         "field_options",
+        "has_customer",
         "period",
         "project_ids",
         "project_manager_ids",
@@ -560,6 +604,32 @@
     "people_over_capacity",
     "utilisation"
   ],
+  "term_measures": [
+    "booked_days",
+    "booked_weeks",
+    "booking_count",
+    "capacity_days",
+    "capacity_weeks",
+    "equipment_booked",
+    "equipment_booked_days",
+    "equipment_booking_count",
+    "people_booked",
+    "phase_count",
+    "phase_weeks",
+    "phases_due",
+    "phases_overdue",
+    "project_count",
+    "project_volume",
+    "project_weeks"
+  ],
+  "formula": {
+    "max_terms": 6,
+    "max_length": 200,
+    "results": [
+      "percent",
+      "number"
+    ]
+  },
   "relative_periods": [
     "this_year",
     "last_year",
@@ -593,6 +663,7 @@
     "phases_due": "Phases due",
     "phases_overdue": "Phases overdue",
     "capacity_days": "Capacity (days)",
+    "capacity_weeks": "Capacity (weeks)",
     "available_days": "Available days",
     "utilisation": "Utilisation",
     "people_over_capacity": "People over capacity",
@@ -632,7 +703,8 @@
     "period": "Period",
     "equipment_ids": "Equipment",
     "equipment_types": "Equipment types",
-    "milestones": "Milestones"
+    "milestones": "Milestones",
+    "has_customer": "Has a customer"
   },
   "period_labels": {
     "this_year": "This year",

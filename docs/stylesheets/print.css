@@ -1,0 +1,370 @@
+/*
+ * The print page (/print_page/, mkdocs-print-site-plugin): the User and
+ * Admin Manual to print or save as PDF. Only what the plugin's own styles
+ * leave broken:
+ *
+ * - the plugin cannot exclude a whole nav section: it keeps the heading of a
+ *   section whose pages are all excluded (the Developer Guide). Such a
+ *   section, and its entry in the contents, are hidden;
+ * - the cover: the logo at a sensible size, the title block on one page.
+ */
+
+/* A section without a page of its own (all its pages excluded). */
+#print-site-page section.md-section:not(:has(section.print-page:not(.md-section))) {
+  display: none;
+}
+
+/* Its contents entry: an item whose links all point at sections. */
+#print-page-toc li:has(> a[href^="#section-"]):not(:has(a[href]:not([href^="#section-"]))),
+body:has(#print-site-page) .md-sidebar--secondary li:has(> a[href^="#section-"]):not(:has(a[href]:not([href^="#section-"]))) {
+  display: none;
+}
+
+/* The cover: a left-aligned document cover. The wordmark at a modest size,
+   the title block a third of the way down after a short rule in the brand
+   blue, the address and the license along the bottom margin. On screen it
+   reads as the top of the print page; on paper it fills the first page. */
+.milestone-cover {
+  --milestone-brand: #0078fd;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 1rem 0 2rem;
+}
+
+#print-site-cover-page .milestone-cover img.milestone-cover__logo {
+  display: block;
+  height: 13mm;
+  width: auto;
+  max-width: none;
+  margin: 0;
+}
+
+.milestone-cover__title-block {
+  margin-top: 4rem;
+}
+
+.milestone-cover__rule {
+  width: 18mm;
+  height: 1mm;
+  margin-bottom: 7mm;
+  background: var(--milestone-brand);
+}
+
+#print-site-cover-page .milestone-cover h1.milestone-cover__title {
+  margin: 0;
+  font-size: 32pt;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--md-default-fg-color);
+}
+
+.milestone-cover__subtitle {
+  margin: 3mm 0 0;
+  font-size: 17pt;
+  font-weight: 400;
+  color: var(--md-default-fg-color);
+}
+
+.milestone-cover__meta {
+  margin: 8mm 0 0;
+  font-size: 11pt;
+  color: var(--md-default-fg-color--light);
+}
+
+.milestone-cover__note {
+  max-width: 110mm;
+  margin: 3mm 0 0;
+  font-size: 10.5pt;
+  line-height: 1.5;
+  color: var(--md-default-fg-color--light);
+}
+
+.milestone-cover__foot {
+  display: flex;
+  justify-content: space-between;
+  align-self: stretch;
+  margin-top: 3rem;
+  padding-top: 2.5mm;
+  border-top: 0.5pt solid var(--md-default-fg-color--lighter);
+  font-size: 8.5pt;
+  color: var(--md-default-fg-color--light);
+}
+
+/* The Contents page numbers: written by scripts/docs/export_manual_pdf.py into
+   the PDF only (empty, and hidden, elsewhere). */
+#print-page-toc .milestone-toc-page {
+  display: none;
+}
+
+/* The page box for printing from the browser too: A4 with the PDF's margins,
+   and no page number on the cover. */
+@page {
+  size: A4;
+  margin: 15mm 15mm 18mm 15mm;
+}
+
+@page :first {
+  @bottom-center {
+    content: none;
+  }
+
+  @bottom-right {
+    content: none;
+  }
+}
+
+@media print {
+  /* The cover fills the first page's text area (A4 less the margins), its
+     foot on the bottom margin's line; the theme's space above the content
+     goes, so the logo sits on the top margin. */
+  .md-main__inner {
+    margin-top: 0;
+  }
+
+  .md-content__inner {
+    padding-top: 0;
+  }
+
+  #print-site-cover-page {
+    break-after: page;
+    padding: 0;
+    margin: 0;
+  }
+
+  .milestone-cover {
+    box-sizing: border-box;
+    height: calc(297mm - 15mm - 18mm - 6mm);
+    padding: 0;
+  }
+
+  .milestone-cover__title-block {
+    margin-top: 72mm;
+  }
+
+  .milestone-cover__foot {
+    margin-top: auto;
+  }
+
+  /*
+   * Pagination. Measured on the PDF the export script writes (its checks
+   * fail the build on a cut image, a stranded heading or content outside
+   * the text area), not assumed.
+   */
+
+  /* Each chapter starts on a new page (the plugin's rule, kept); the two part
+     dividers stand alone on theirs. */
+  #print-site-page section.print-page.md-section > h1 {
+    break-after: page;
+  }
+
+  /* A paragraph may break across pages (the plugin keeps every one whole,
+     which leaves half pages blank), with no orphan or widow lines. */
+  #print-site-page p {
+    break-inside: auto;
+  }
+
+  #print-site-page p,
+  #print-site-page li,
+  #print-site-page td,
+  #print-site-page th {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* A heading stays with the start of its section. */
+  #print-site-page h1,
+  #print-site-page h2,
+  #print-site-page h3,
+  #print-site-page h4,
+  #print-site-page h5,
+  #print-site-page h6 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
+  /* So does a sentence that introduces a screenshot, a table, a list, a
+     code block or a note ("… as follows:"). */
+  #print-site-page p:not(:has(> img)):has(+ p > img),
+  #print-site-page p:not(:has(> img)):has(+ .md-typeset__scrollwrap),
+  #print-site-page p:not(:has(> img)):has(+ .md-typeset__table),
+  #print-site-page p:not(:has(> img)):has(+ table),
+  #print-site-page p:not(:has(> img)):has(+ ul),
+  #print-site-page p:not(:has(> img)):has(+ ol),
+  #print-site-page p:not(:has(> img)):has(+ .highlight),
+  #print-site-page p:not(:has(> img)):has(+ pre),
+  #print-site-page p:not(:has(> img)):has(+ .admonition) {
+    break-after: avoid;
+  }
+
+  /* A paragraph that does not introduce what follows (it does not end with a
+     colon: marked by the export script) lets the page break after it. */
+  #print-site-page p.milestone-loose {
+    break-after: auto !important;
+  }
+
+  /* A set of tabs is several blocks: it may break between them. */
+  #print-site-page .tabbed-set {
+    break-inside: auto;
+  }
+
+  /* A code block, a note or a tab taller than a third of a page (marked by
+     the export script) may break, with at least four lines on each side:
+     kept whole it would leave more than a third of a page blank wherever it
+     does not fit. */
+  #print-site-page .milestone-tall.milestone-tall,
+  #print-site-page .milestone-tall.milestone-tall pre,
+  #print-site-page .milestone-tall.milestone-tall .highlight {
+    break-inside: auto;
+    orphans: 4;
+    widows: 4;
+  }
+
+  /* A paragraph too short to split with three lines on each side stays
+     whole (marked by the export script, which measures it). */
+  #print-site-page p.milestone-short {
+    break-inside: avoid;
+  }
+
+  /* A chapter the export script tightened so that its last lines join the
+     page before: two lines, not three, may open or close a page. */
+  #print-site-page .milestone-tight p,
+  #print-site-page .milestone-tight li {
+    orphans: 2;
+    widows: 2;
+  }
+
+  #print-site-page .milestone-tight p.milestone-short {
+    break-inside: auto;
+  }
+
+  /* A section the export script moved onto a chapter's last page, so that
+     the page holds a proper block instead of a scrap. */
+  #print-site-page .milestone-break-before {
+    break-before: page;
+  }
+
+  /* The author's escape hatches, set in the Markdown with attr_list:
+     `## Heading {.print-page-break}` starts on a new page in print,
+     `{.print-keep-with-next}` keeps a block with the one after it. */
+  #print-site-page .print-page-break {
+    break-before: page;
+  }
+
+  #print-site-page .print-keep-with-next {
+    break-after: avoid;
+  }
+
+  /* Nothing shorter than a page is cut: screenshots, notes, code, rows,
+     short list items. */
+  #print-site-page img,
+  #print-site-page figure,
+  #print-site-page p:has(> img:only-child),
+  #print-site-page .admonition,
+  #print-site-page details,
+  #print-site-page pre,
+  #print-site-page .highlight,
+  #print-site-page tr,
+  #print-site-page li {
+    break-inside: avoid;
+  }
+
+  /* Screenshots sized for paper: never wider than the text, never so tall
+     that a heading, its introduction and the picture cannot share a page. */
+  #print-site-page img {
+    max-width: 100%;
+    max-height: 105mm;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  #print-site-page p:has(> img) {
+    text-align: center;
+  }
+
+  /* Tables: the full width, rows that wrap instead of overflowing, and the
+     header row repeated on each page of a long table. */
+  #print-site-page .md-typeset__scrollwrap,
+  #print-site-page .md-typeset__table {
+    overflow: visible;
+    margin: 0;
+    padding: 0;
+  }
+
+  #print-site-page table:not([class]) {
+    display: table;
+    width: 100%;
+    table-layout: auto;
+  }
+
+  #print-site-page thead {
+    display: table-header-group;
+  }
+
+  /* Paper-dense rows: the screen's padding (about 0.9em above and below)
+     made a nine-row table spill two rows onto a page of their own. */
+  #print-site-page table:not([class]) td,
+  #print-site-page table:not([class]) th {
+    padding: 0.45em 0.9em;
+  }
+
+  #print-site-page td,
+  #print-site-page th,
+  #print-site-page code {
+    overflow-wrap: break-word;
+  }
+
+  /* A table's code is not cut mid-word to make its column narrower (the
+     theme's `word-break: break-word` would, "dashboard_sit es"). */
+  #print-site-page td code,
+  #print-site-page th code {
+    word-break: normal;
+  }
+
+  /* Code wraps on paper instead of running off the page. */
+  #print-site-page pre,
+  #print-site-page pre > code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    max-height: none;
+  }
+
+  /* On-screen only: copy buttons, permalinks. */
+  #print-site-page .md-code__nav,
+  #print-site-page .md-clipboard,
+  #print-site-page .headerlink {
+    display: none;
+  }
+
+  /* The Contents page numbers, right-aligned with leaders (PDF only). */
+  #print-page-toc .milestone-toc-page {
+    display: inline;
+    margin-left: auto;
+    padding-left: 0.5em;
+  }
+
+  #print-page-toc a.md-nav__link:has(.milestone-toc-page) {
+    display: flex;
+    align-items: baseline;
+  }
+
+  #print-page-toc a.md-nav__link:has(.milestone-toc-page) > .md-ellipsis {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  #print-page-toc a.md-nav__link:has(.milestone-toc-page) > .md-ellipsis::after {
+    content: "";
+    flex: 1;
+    margin: 0 0.25em;
+    border-bottom: 1px dotted currentColor;
+    opacity: 0.5;
+  }
+}

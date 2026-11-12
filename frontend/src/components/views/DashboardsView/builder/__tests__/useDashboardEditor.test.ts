@@ -18,7 +18,7 @@ import { useDashboardStore } from '@/stores/dashboardStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import { viewLeaveGuard } from '@/utils/viewLeaveGuard';
 import type { Dashboard, DashboardWidget, MetricResult, WidgetLayout } from '@/types';
-import { COALESCE_MS, DISCARD_CONFIRM, HISTORY_LIMIT, plainError, useDashboardEditor } from '../useDashboardEditor';
+import { COALESCE_MS, DISCARD_CONFIRM, FORMULA_TERMS_ERROR, HISTORY_LIMIT, plainError, useDashboardEditor } from '../useDashboardEditor';
 import type { DraftWidget } from '../widgetDraft';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
@@ -523,6 +523,14 @@ describe('useDashboardEditor', () => {
     );
     expect(plainError(new Error('body: absolute: Too long'), 'x')).toBe('Too long');
     expect(plainError(new Error('The dashboard could not be saved.'), 'x')).toBe('The dashboard could not be saved.');
+    // A server message naming a calculation's stored terms is said in the editor's own words.
+    for (const message of [
+      'body: Two terms are named "a"',
+      '"Revenue": "c" is not one of your terms: a, b',
+      'Term b is not used in the formula: use it or remove it',
+    ]) {
+      expect(plainError(new Error(message), 'x')).toBe(FORMULA_TERMS_ERROR);
+    }
     expect(plainError(new Error('"Per week": People booked cannot be broken down by period'), 'x')).toBe(
       '"Per week": People booked cannot be broken down by period'
     );

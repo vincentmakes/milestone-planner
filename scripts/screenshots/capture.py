@@ -655,6 +655,35 @@ def shot_dashboard_builder(context: BrowserContext) -> None:
     fresh.close()
 
 
+def shot_dashboard_formula(context: BrowserContext) -> None:
+    """The widget editor's formula field as Bob, on a new (unsaved) dashboard:
+    a gauge with the *Against a goal* example (the customer absorption), its
+    numbers and result under the field, the preview beside it. Nothing is
+    saved: the widget and the draft are cancelled afterwards."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_dashboards(page)
+    page.get_by_role("button", name="New", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Name").first.fill("Absorption")
+    dialog.get_by_role("button", name="Create dashboard", exact=True).click()
+    page.wait_for_timeout(600)
+    page.get_by_role("button", name="Add widget").first.click()
+    dialog = page.get_by_role("dialog", name="Add widget")
+    dialog.get_by_role("radio", name="Gauge").click()
+    dialog.get_by_label("Title *").fill("Customer absorption this year")
+    dialog.get_by_role("switch", name="Calculation").check(force=True)
+    dialog.get_by_role("button", name="Examples").click()
+    page.get_by_role("menuitem", name=re.compile("Against a goal")).click()
+    # The numbers line appears once the preview answered.
+    dialog.get_by_role("status").filter(has_text="=").wait_for()
+    dialog.locator("canvas").first.wait_for()
+    page.wait_for_timeout(2000)
+    dialog.get_by_role("region", name="Calculation").scroll_into_view_if_needed()
+    page.screenshot(path=str(OUT / "dashboard-formula.png"))
+    log("[done] dashboard-formula.png")
+    fresh.close()
+
+
 def _dashboard_picker(page: Page):
     """The toolbar's dashboard picker: a listbox button named "Dashboard ..."
     (its label, then the chosen dashboard)."""
@@ -1366,6 +1395,7 @@ TARGETS = {
     "my-assignments": shot_my_assignments,
     "dashboards": shot_dashboards,
     "dashboard-builder": shot_dashboard_builder,
+    "dashboard-formula": shot_dashboard_formula,
     "dashboard-share": shot_dashboard_share,
     "pending": shot_pending_assignment,
     "assignment-overview-row": shot_assignment_overview,

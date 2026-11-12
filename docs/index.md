@@ -19,6 +19,11 @@
 - **Microsoft Entra SSO** — Enterprise single sign-on with group-based access control
 - **Multi-Tenant SaaS** — Isolated databases per organization with centralized admin portal
 
+## The Manual as One Document
+
+- **[Print or save as PDF](print_page/)** — the User Guide and the Admin Guide on one page, with a cover and a table of contents; your browser's Print dialog saves it as a PDF.
+- **[Download the manual as PDF](https://github.com/vincentmakes/milestone-planner/releases/download/manual-latest/Milestone-Manual.pdf)** — a ready-made PDF, rebuilt with every update of the manual.
+
 ## Quick Links
 
 | Section | Description |

@@ -27,6 +27,10 @@ import {
   tooltipRowsValue,
   volumeDecimals,
   volumeDecimalsValue,
+  customHelpUrl,
+  helpAddress,
+  MAX_HELP_URL_LENGTH,
+  safeHelpUrl,
 } from '../instanceSettings';
 import type { TooltipRow } from '../instanceSettings';
 import { INSTANCE_SETTING_DEFAULTS } from '@/api/endpoints/settings';
@@ -309,5 +313,63 @@ describe('selectWeekendsWorking', () => {
     // Where a switch would read on, this reads off.
     expect(isSettingOn({}, 'show_weekends')).toBe(true);
     expect(INSTANCE_SETTING_DEFAULTS.weekend_working_days).toBe('false');
+  });
+});
+
+
+const SHAREPOINT_PDF =
+  'https://contoso.sharepoint.com/:b:/r/sites/Lab/Shared%20Documents/Milestone-Manual.pdf?csf=1&web=1&e=AbC123#page=4';
+
+describe('help_url (2.6.0): the address Help opens, as entered', () => {
+  it('keeps a safe address exactly as entered, only trimmed', () => {
+    expect(safeHelpUrl('https://docs-milestone.verdet.me/')).toBe('https://docs-milestone.verdet.me/');
+    expect(safeHelpUrl('  HTTPS://Intranet.Example/milestone-docs  ')).toBe('HTTPS://Intranet.Example/milestone-docs');
+    expect(safeHelpUrl('http://docs.internal:8080/manual///')).toBe('http://docs.internal:8080/manual///');
+    // A PDF on a file share: its query and fragment stay; no slash is added.
+    expect(safeHelpUrl(SHAREPOINT_PDF)).toBe(SHAREPOINT_PDF);
+    expect(safeHelpUrl('https://intranet.example/docs?next=a@b')).toBe('https://intranet.example/docs?next=a@b');
+    const longest = `https://intranet.example/${'d'.repeat(MAX_HELP_URL_LENGTH - 25)}`;
+    expect(longest).toHaveLength(2000);
+    expect(safeHelpUrl(longest)).toBe(longest);
+    expect(safeHelpUrl(`${longest}d`)).toBeNull();
+  });
+
+  it.each([
+    null,
+    undefined,
+    '',
+    'javascript:alert(1)',
+    'JAVASCRIPT://x.example/%0aalert(1)',
+    'data:text/html,<b>x</b>',
+    'intranet.example/docs',
+    '//intranet.example/docs',
+    'ftp://intranet.example/',
+    'https://',
+    'https:///docs',
+    'https://?x=1',
+    'https://user:secret@intranet.example/',
+    'https://user:pw@intranet.example?x=1',
+    'https://intranet example/',
+    'https://intranet.example/a\tb',
+    'https://intranet.example:99999/',
+  ])('refuses %s', (text) => {
+    expect(safeHelpUrl(text)).toBeNull();
+  });
+
+  it('opens the stored address as it is, or the public manual when there is none or it is not safe', () => {
+    expect(helpAddress({ help_url: 'https://intranet.example/docs' })).toBe('https://intranet.example/docs');
+    expect(helpAddress({ help_url: SHAREPOINT_PDF })).toBe(SHAREPOINT_PDF);
+    expect(helpAddress({ help_url: 'javascript:alert(1)' })).toBe('https://docs-milestone.verdet.me/');
+    expect(helpAddress({})).toBe('https://docs-milestone.verdet.me/');
+    expect(helpAddress(null)).toBe('https://docs-milestone.verdet.me/');
+    expect(INSTANCE_SETTING_DEFAULTS.help_url).toBe('https://docs-milestone.verdet.me/');
+  });
+
+  it('counts only an address other than the public manual as custom', () => {
+    expect(customHelpUrl({ help_url: SHAREPOINT_PDF })).toBe(SHAREPOINT_PDF);
+    expect(customHelpUrl({ help_url: 'https://docs-milestone.verdet.me/' })).toBeNull();
+    expect(customHelpUrl({ help_url: '' })).toBeNull();
+    expect(customHelpUrl({ help_url: 'data:text/html,x' })).toBeNull();
+    expect(customHelpUrl(undefined)).toBeNull();
   });
 });

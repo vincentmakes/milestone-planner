@@ -623,6 +623,8 @@ export interface InstanceSettings {
    * custom project field ids
    */
   project_tooltip_rows?: string;
+  /** Where Help in the user menu opens: an http(s) address, stored and opened as entered (read it with `helpAddress`) */
+  help_url?: string;
   /** Days the audit log keeps its rows, `"0"` – `"3650"` (`"0"` = indefinitely; 2.4.0) */
   audit_log_retention_days?: string;
   /**
@@ -988,6 +990,7 @@ export type Measure =
   | 'phases_due'
   | 'phases_overdue'
   | 'capacity_days'
+  | 'capacity_weeks'
   | 'available_days'
   | 'utilisation'
   | 'people_over_capacity'
@@ -1032,7 +1035,10 @@ export type RelativePeriod =
   | 'next_12_months'
   | 'all';
 
-/** Units of a result: the measure's, or `percent` when the query asks a percentage. */
+/**
+ * Units of a result: the measure's, or `percent` when the query asks a
+ * percentage; `number` is a calculated widget's plain ratio (no unit word).
+ */
 export type MetricUnit =
   | 'days'
   | 'weeks'
@@ -1042,7 +1048,8 @@ export type MetricUnit =
   | 'phases'
   | 'volume'
   | 'equipment'
-  | 'percent';
+  | 'percent'
+  | 'number';
 
 export type MetricDimension =
   | { kind: Exclude<DimensionKind, 'field' | 'period'> }
@@ -1072,6 +1079,27 @@ export interface MetricFilters {
   equipment_types?: string[] | null;
   /** Phase measures: milestones counted too (`include`, the default, is never stored), only, or left out */
   milestones?: 'include' | 'only' | 'exclude';
+  /** Projects with a customer (`true`), without one (`false`), or any (absent) */
+  has_customer?: boolean | null;
+}
+
+/** One named term of a calculated widget: a summed or counted measure with its own filters. */
+export interface MetricTerm {
+  /** A lowercase word (`a`, `customer_weeks`), used in the formula */
+  name: string;
+  measure: Measure;
+  /** Its filters; the widget's period applies to every term */
+  filters?: Omit<MetricFilters, 'period'>;
+  /** Not split by the dimensions other than the period (its whole-scope value in every row) */
+  total?: boolean;
+}
+
+/** A calculated widget: named terms combined by a formula (`a / (b * 70%)`). */
+export interface MetricFormula {
+  expression: string;
+  terms: MetricTerm[];
+  /** A percentage (× 100, the default) or a plain number */
+  result?: 'percent' | 'number';
 }
 
 export interface MetricQuery {
@@ -1080,6 +1108,8 @@ export interface MetricQuery {
   filters?: MetricFilters;
   percent_of?: 'total' | 'first_dimension' | null;
   top_n?: number | null;
+  /** A calculated widget: named terms combined by a formula */
+  formula?: MetricFormula | null;
 }
 
 /** One dimension value of a row: `key` true/false (confirmed, toggles), an id, a text, a period key, `null` (empty bucket) or `"__other__"`. */
@@ -1109,6 +1139,8 @@ export interface MetricResult {
   note?: string | null;
   /** The resolved period (`YYYY-MM-DD`) */
   period?: { from: string; to: string };
+  /** A calculated widget: each term's total over the period */
+  terms?: { name: string; value: number | null; unit: MetricUnit }[];
 }
 
 /** A widget whose query failed on `/data` (deleted field, missing permission, invalid spec). */
@@ -1124,8 +1156,12 @@ export interface WidgetOptions {
   show_legend?: boolean | null;
   /** The KPI's bucket when `percent_of` is set: a dimension value's key */
   kpi_bucket?: boolean | number | string | null;
-  /** The gauge's target, in the result's unit (≥ 0): green below it, then amber, then red */
+  /** The gauge's or KPI's target, in the result's unit (≥ 0): green below it, then amber, then red */
   target?: number | null;
+  /** Show the value as a percentage of `target` (kept only with a target above 0) */
+  percent_of_target?: boolean | null;
+  /** A gauge's target is a goal to reach: red below 85 % of it, amber up to it, green from it (target above 0 only) */
+  target_is_goal?: boolean | null;
 }
 
 export interface GridPosition {

@@ -186,4 +186,31 @@ describe('WidgetCard', () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
+
+  it('names a calculation\'s series after the widget and shows no "%" for a plain number', () => {
+    const formula = {
+      expression: 'a - b',
+      terms: [
+        { name: 'a', measure: 'booked_weeks' as const },
+        { name: 'b', measure: 'capacity_weeks' as const },
+      ],
+      result: 'number' as const,
+    };
+    const { unmount } = render(
+      <WidgetCard
+        widget={widget({ title: 'Weeks left', query: { measure: 'booked_weeks', dimensions: [{ kind: 'project' }], formula } })}
+        result={result({ unit: 'number' })}
+      />
+    );
+    expect(screen.getByTestId('echart')).toHaveAttribute('data-measure', 'Weeks left');
+    expect(screen.queryByText('%')).not.toBeInTheDocument();
+    unmount();
+    render(
+      <WidgetCard
+        widget={widget({ query: { measure: 'booked_weeks', dimensions: [{ kind: 'project' }], formula: { ...formula, result: 'percent' } } })}
+        result={result({ unit: 'percent' })}
+      />
+    );
+    expect(screen.getByText('%')).toBeInTheDocument();
+  });
 });
