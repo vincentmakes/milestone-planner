@@ -1,0 +1,24 @@
+{#-
+  Override of Material for MkDocs' partials/tabs.html, taken from
+  mkdocs-material 9.8.1. One change, marked "Milestone:": the repository
+  block (partials/source.html, which the theme still mounts and fills with
+  the version, stars and forks) at the right end of the tabs row, where the
+  header's top row used to show it (partials/header.html). On a Material
+  upgrade, diff against the new upstream partials/tabs.html.
+-#}
+{% import "partials/tabs-item.html" as item with context %}
+<nav class="md-tabs" aria-label="{{ lang.t('tabs') }}" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      {% for nav_item in nav.items %}
+        {{ item.render(nav_item) }}
+      {% endfor %}
+    </ul>
+    {#- Milestone: the repository block, moved here from the header's top row. -#}
+    {% if config.repo_url %}
+      <div class="md-tabs__source">
+        {% include "partials/source.html" %}
+      </div>
+    {% endif %}
+  </div>
+</nav>

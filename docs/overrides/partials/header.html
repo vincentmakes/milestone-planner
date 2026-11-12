@@ -1,0 +1,85 @@
+{#-
+  Override of Material for MkDocs' partials/header.html, taken from
+  mkdocs-material 9.8.1 (docs/requirements.txt allows >=9.5). Two changes
+  from upstream, marked "Milestone:" below:
+  - after the palette toggle, the manual's print and PDF buttons
+    (extra.manual_pdf_url in mkdocs.yml; empty hides the PDF button);
+  - no repository block (md-header__source) at the end of the top row: it
+    sits at the right end of the tabs row instead (partials/tabs.html).
+  On a Material upgrade, diff this file against the new upstream
+  partials/header.html and carry the two changes over.
+-#}
+{% set class = "md-header" %}
+{% if "navigation.tabs.sticky" in features %}
+  {% set class = class ~ " md-header--shadow md-header--lifted" %}
+{% elif "navigation.tabs" not in features %}
+  {% set class = class ~ " md-header--shadow" %}
+{% endif %}
+<header class="{{ class }}" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="{{ lang.t('header') }}">
+    <a href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}" title="{{ config.site_name | e }}" class="md-header__button md-logo" aria-label="{{ config.site_name }}" data-md-component="logo">
+      {% include "partials/logo.html" %}
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      {% set icon = config.theme.icon.menu or "material/menu" %}
+      {% include ".icons/" ~ icon ~ ".svg" %}
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            {{ config.site_name }}
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            {% if page.meta and page.meta.title %}
+              {{ page.meta.title }}
+            {% else %}
+              {{ page.title }}
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% if config.theme.palette %}
+      {% if not config.theme.palette is mapping %}
+        {% include "partials/palette.html" %}
+      {% endif %}
+    {% endif %}
+    {% if not config.theme.palette is mapping %}
+      {% include "partials/javascripts/palette.html" %}
+    {% endif %}
+    {#- Milestone: the manual on paper, the print page and the ready-made PDF
+        (extra.manual_pdf_url in mkdocs.yml; empty hides the PDF button). -#}
+    <div class="md-header__option milestone-header-pdf">
+      <a href="{{ 'print_page/' | url }}" class="md-header__button md-icon" title="Print or save as PDF" aria-label="Print or save as PDF">
+        {% include ".icons/material/printer.svg" %}
+      </a>
+      {% if config.extra.manual_pdf_url %}
+        <a href="{{ config.extra.manual_pdf_url }}" class="md-header__button md-icon" title="Download the manual as PDF" aria-label="Download the manual as PDF">
+          {% include ".icons/material/file-pdf-box.svg" %}
+        </a>
+      {% endif %}
+    </div>
+    {% if config.extra.alternate %}
+      {% include "partials/alternate.html" %}
+    {% endif %}
+    {% if "material/search" in config.plugins %}
+      {% set search = config.plugins["material/search"] | attr("config") %}
+      {% if search.enabled %}
+        <label class="md-header__button md-icon" for="__search">
+          {% set icon = config.theme.icon.search or "material/magnify" %}
+          {% include ".icons/" ~ icon ~ ".svg" %}
+        </label>
+        {% include "partials/search.html" %}
+      {% endif %}
+    {% endif %}
+    {#- Milestone: the repository block is in the tabs row (partials/tabs.html). -#}
+  </nav>
+  {% if "navigation.tabs.sticky" in features %}
+    {% if "navigation.tabs" in features %}
+      {% include "partials/tabs.html" %}
+    {% endif %}
+  {% endif %}
+</header>
