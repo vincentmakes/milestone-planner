@@ -414,6 +414,9 @@ docs/                  # MkDocs Material source (user-guide/, admin-guide/, deve
   hooks/manual_version.py  # MkDocs hook: /VERSION into config.extra.version (the print cover)
   print-templates/     # The print page's cover and on-screen banner (mkdocs-print-site-plugin;
                        #   kept out of the site by exclude_docs); stylesheets/print.css styles them
+  overrides/partials/   # Material theme overrides (custom_dir, copied from Material 9.8.1, kept out of the
+                       #   site): header.html (the print and PDF buttons, extra.manual_pdf_url; no
+                       #   repository block) and tabs.html (the repository block at the right of the tabs row)
   admin-guide/hosting-the-documentation.md  # Self-hosting the manual (Azure Static Web Apps,
                        #   Storage static website, any static host) and the help_url setting
 migrations/            # Raw idempotent SQL migrations + run_migration.py / run_migration_master.py,

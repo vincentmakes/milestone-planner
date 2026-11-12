@@ -17,3 +17,104 @@
   height: 2rem;
   width: auto;
 }
+
+/* The print and PDF buttons of the header (docs/overrides/partials/palette.html):
+   hidden where the theme already drops the repository link, so the title and
+   the search button keep their room; the home page and Getting Started link
+   to both. */
+@media screen and (max-width: 59.984375em) {
+  .milestone-header-pdf {
+    display: none;
+  }
+}
+
+/* The repository block at the right end of the tabs row
+   (docs/overrides/partials/tabs.html), on the content grid and centred with
+   the tab labels. Compact, on one line (name, then version, stars, forks), to
+   fit the row's height. */
+.md-tabs > .md-grid {
+  display: flex;
+  align-items: center;
+}
+
+.md-tabs__list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.md-tabs__source {
+  flex: 0 0 auto;
+  margin-left: 1rem;
+}
+
+.md-tabs__source .md-source {
+  display: flex;
+  align-items: center;
+  font-size: 0.6rem;
+  line-height: 1.2;
+}
+
+.md-tabs__source .md-source__icon {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+.md-tabs__source .md-source__icon svg {
+  margin-left: 0.4rem;
+  margin-top: 0.4rem;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.md-tabs__source .md-source__repository {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: none;
+  padding: 0;
+  margin: 0 0 0 0.4rem;
+}
+
+.md-tabs__source .md-source__facts {
+  margin-top: 0;
+}
+
+/* It fades out with the tab labels when the tabs row hides on scroll. */
+.md-tabs__source {
+  transition: opacity 0.25s;
+}
+
+.md-tabs[hidden] .md-tabs__source {
+  opacity: 0;
+}
+
+/* Between the theme's 60em and 76.25em breakpoints the tabs row is hidden
+   and the navigation is a drawer: the drawer shows the repository block
+   there too (the theme shows it only below 60em, as the header held it
+   above). */
+@media screen and (min-width: 60em) and (max-width: 76.234375em) {
+  .md-nav--primary .md-nav__source {
+    display: block;
+    padding: 0 0.2rem;
+    color: var(--md-primary-bg-color);
+    background-color: var(--md-primary-fg-color--dark);
+  }
+}
+
+/* The search field ends the top row now that the repository block sits in
+   the tabs row: where the tabs row shows (76.25em up) it ends exactly on the
+   content grid's right edge, above the repository block; between 60em and
+   76.25em (no tabs row) it keeps the same inset on the right as the menu
+   button on the left. Below 60em the search is a button and nothing
+   changes. */
+@media screen and (min-width: 76.25em) {
+  .md-header__inner > .md-search {
+    margin-right: -0.2rem;
+  }
+}
+
+@media screen and (min-width: 60em) and (max-width: 76.234375em) {
+  .md-header__inner > .md-search {
+    margin-right: 0.2rem;
+  }
+}

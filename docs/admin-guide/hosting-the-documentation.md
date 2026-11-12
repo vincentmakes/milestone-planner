@@ -160,6 +160,8 @@ The steps below need an administrator: {.print-keep-with-next}
 
 Publish the PDF next to your copy of the manual if your users want a download.
 
+The header of every page has two buttons: one opens the print page, the other downloads the PDF from `manual_pdf_url` under `extra` in `mkdocs.yml`, which is the public PDF by default. Set it to the address of your own copy of the PDF, or leave it empty to hide the download button (and the download link on the print page) on a network without internet access. On narrow screens both buttons are hidden; the home page links to the print page and the PDF.
+
 ## 3. Point Milestone at your copy
 
 In Milestone, open **Settings → Features & defaults** and enter the address Help should open in **Documentation URL** (an administrator, or any role with **Edit instance settings**), then **Save Changes**. See [Settings → Features & defaults](../user-guide/settings.md#features-defaults).
