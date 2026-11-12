@@ -100,3 +100,21 @@
     background-color: var(--md-primary-fg-color--dark);
   }
 }
+
+/* The search field ends the top row now that the repository block sits in
+   the tabs row: where the tabs row shows (76.25em up) it ends exactly on the
+   content grid's right edge, above the repository block; between 60em and
+   76.25em (no tabs row) it keeps the same inset on the right as the menu
+   button on the left. Below 60em the search is a button and nothing
+   changes. */
+@media screen and (min-width: 76.25em) {
+  .md-header__inner > .md-search {
+    margin-right: -0.2rem;
+  }
+}
+
+@media screen and (min-width: 60em) and (max-width: 76.234375em) {
+  .md-header__inner > .md-search {
+    margin-right: 0.2rem;
+  }
+}
