@@ -24,7 +24,7 @@ Copy the **contents** of `site/` to any static host. A few ways on Azure follow;
 
 ### Azure Static Web Apps
 
-Azure has no product called "Azure Pages"; its equivalent of GitHub Pages or Cloudflare Pages is **Azure Static Web Apps**. Create a Static Web App in the Azure portal (the **Free** plan is enough for a public manual; see [Keeping it internal](#keeping-it-internal) for the **Standard** plan), then deploy with either of the two methods below. Both use the app's **deployment token**: in the Azure portal, open the Static Web App, **Overview → Manage deployment token**, or with the Azure CLI:
+**Azure Static Web Apps** is Azure's service for static sites. Create a Static Web App in the Azure portal (the **Free** plan is enough for a public manual; see [Keeping it internal](#keeping-it-internal) for the **Standard** plan), then deploy with either of the two methods below. Both use the app's **deployment token**: in the Azure portal, open the Static Web App, **Overview → Manage deployment token**, or with the Azure CLI:
 
 ```bash
 az staticwebapp secrets list --name <APP_NAME> --query "properties.apiKey"
