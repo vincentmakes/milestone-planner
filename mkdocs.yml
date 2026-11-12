@@ -6,6 +6,9 @@ repo_name: vincentmakes/milestone-planner
 
 theme:
   name: material
+  # Template overrides (docs/overrides/partials/palette.html: the print and
+  # PDF buttons of the header); kept out of the pages by exclude_docs.
+  custom_dir: docs/overrides
   palette:
     - scheme: default
       primary: indigo
@@ -33,10 +36,11 @@ theme:
   logo: assets/logo.svg
   favicon: assets/favicon.svg
 
-# Build-time helpers inside docs/ that are not pages: the version hook and
-# the print page's templates.
+# Build-time helpers inside docs/ that are not pages: the version hook, the
+# print page's templates and the theme overrides.
 exclude_docs: |
   hooks/
+  overrides/
   print-templates/
 
 # Reads /VERSION into config.extra.version (the print page's cover).
@@ -93,6 +97,10 @@ extra_css:
   - stylesheets/print.css
 
 extra:
+  # The ready-made PDF the header's download button and the print page's
+  # banner link to (.github/workflows/manual-pdf.yml publishes it). A
+  # self-hosted copy can point it elsewhere; empty hides the button.
+  manual_pdf_url: https://github.com/vincentmakes/milestone-planner/releases/download/manual-latest/Milestone-Manual.pdf
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/vincentmakes/milestone-planner

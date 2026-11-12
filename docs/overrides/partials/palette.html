@@ -1,0 +1,36 @@
+{#-
+  Override of Material for MkDocs' partials/palette.html (taken from
+  mkdocs-material 9.8.1; docs/requirements.txt allows >=9.5). The upstream
+  part below is unchanged; the header buttons after it are ours. Material's
+  partials/header.html includes this partial between the page title and the
+  search button, which is where the two buttons belong: it is the smallest
+  partial at that place. On a Material upgrade, compare the form with the new
+  upstream partials/palette.html, and check that partials/header.html still
+  includes it there (it does only while theme.palette is a list, as in
+  mkdocs.yml).
+-#}
+<form class="md-header__option" data-md-component="palette">
+  {% for option in config.theme.palette %}
+    {% set scheme  = option.scheme  | d("default", true) %}
+    {% set primary = option.primary | d("indigo", true) %}
+    {% set accent  = option.accent  | d("indigo", true) %}
+    <input class="md-option" data-md-color-media="{{ option.media }}" data-md-color-scheme="{{ scheme | replace(' ', '-') }}" data-md-color-primary="{{ primary | replace(' ', '-') }}" data-md-color-accent="{{ accent | replace(' ', '-') }}" {% if option.toggle %} aria-label="{{ option.toggle.name }}" {% else %} aria-hidden="true" {% endif %} type="radio" name="__palette" id="__palette_{{ loop.index0 }}">
+    {% if option.toggle %}
+      <label class="md-header__button md-icon" title="{{ option.toggle.name }}" for="__palette_{{ loop.index % loop.length }}" hidden>
+        {% include ".icons/" ~ option.toggle.icon ~ ".svg" %}
+      </label>
+    {% endif %}
+  {% endfor %}
+</form>
+{#- The manual on paper: the print page, and the ready-made PDF
+    (extra.manual_pdf_url in mkdocs.yml; empty hides the button). -#}
+<div class="md-header__option milestone-header-pdf">
+  <a href="{{ 'print_page/' | url }}" class="md-header__button md-icon" title="Print or save as PDF" aria-label="Print or save as PDF">
+    {% include ".icons/material/printer.svg" %}
+  </a>
+  {% if config.extra.manual_pdf_url %}
+    <a href="{{ config.extra.manual_pdf_url }}" class="md-header__button md-icon" title="Download the manual as PDF" aria-label="Download the manual as PDF">
+      {% include ".icons/material/file-pdf-box.svg" %}
+    </a>
+  {% endif %}
+</div>

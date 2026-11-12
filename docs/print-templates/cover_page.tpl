@@ -1,4 +1,6 @@
 {# The print page's cover (mkdocs-print-site-plugin): a left-aligned document cover. The version and the month come from the build (docs/hooks/manual_version.py), the address from site_url; nothing is written in by hand. #}
+{# On screen only (hidden on paper by print.css): what to do next, since the banner with the same hint sits below the cover. #}
+<p class="milestone-print-hint">To keep a copy, press <strong>Ctrl+P</strong> (<strong>⌘+P</strong> on a Mac) and choose <strong>Save as PDF</strong>.</p>
 <div class="milestone-cover">
     <img class="milestone-cover__logo" src="../assets/logo-wordmark.svg" alt="Milestone">
     <div class="milestone-cover__title-block">

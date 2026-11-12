@@ -20,6 +20,20 @@ body:has(#print-site-page) .md-sidebar--secondary li:has(> a[href^="#section-"])
   display: none;
 }
 
+/* The line above the cover that says how to save the page as PDF: on
+   screen only (the header's print button leads here). */
+.milestone-print-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  color: var(--md-default-fg-color--light);
+}
+
+@media print {
+  .milestone-print-hint {
+    display: none;
+  }
+}
+
 /* The cover: a left-aligned document cover. The wordmark at a modest size,
    the title block a third of the way down after a short rule in the brand
    blue, the address and the license along the bottom margin. On screen it

@@ -17,3 +17,13 @@
   height: 2rem;
   width: auto;
 }
+
+/* The print and PDF buttons of the header (docs/overrides/partials/palette.html):
+   hidden where the theme already drops the repository link, so the title and
+   the search button keep their room; the home page and Getting Started link
+   to both. */
+@media screen and (max-width: 59.984375em) {
+  .milestone-header-pdf {
+    display: none;
+  }
+}
